@@ -77,6 +77,10 @@ index. Options that require full flow metadata, such as `--out-flows-list`, use
 the normal full-session index path instead. Raw capture input continues to use
 the normal import/session path.
 
+Fast v16 index summaries do not open, fingerprint, or otherwise probe the
+recorded source capture. If the `Input` section shows a stored source-capture
+name, it is recorded index identity only, not an accessibility verdict.
+
 ## Basic output
 
 The default summary output renders:

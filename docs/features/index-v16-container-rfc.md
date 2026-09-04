@@ -506,6 +506,19 @@ Frozen rules:
 v16 does not introduce a new per-section or per-block checksum policy beyond
 existing structural validation.
 
+The PcapFlowLab v16 writer validates each directional `PacketRef` sequence
+before emitting it. That writer-side validation establishes the strict
+`packet_index` ordering invariant for indexes produced by PcapFlowLab.
+
+Lazy readers validate the section/range boundaries and decoded records they
+actually consume. Normal selected-flow access is not required to perform an
+`O(direction-size)` scan of every untouched record before each random lookup.
+An arbitrary hidden ordering inversion located exclusively in an unread part of
+an otherwise structurally valid extent may therefore remain undiscovered by a
+bounded page request that never touches it. Exhaustive corruption verification,
+if added later, would be a separate validation operation or policy rather than
+a prerequisite for every selected-packet or selected-flow page access.
+
 ## Selected-Flow Lazy Paging
 
 Selected-flow packet paging remains a shared C++ concern.
@@ -514,16 +527,17 @@ The frozen bidirectional paging model is:
 
 1. Resolve the canonical connection metadata record.
 2. Resolve the two directional `packetref_directory` descriptors, if present.
-3. Open two bounded directional cursors over the referenced `PacketRef`
-   extents.
-4. Merge the two directional streams by global `packet_index`.
-5. Discard merged items until the requested merged offset is reached.
+3. Use the strict directional `packet_index` ordering invariant to position
+   within each extent using binary lower-bound / partition logic for the
+   requested merged offset.
+4. Read only bounded directional chunks around the positioned ranges.
+5. Merge the bounded directional chunks by global `packet_index`.
 6. Collect up to the requested merged limit.
-7. Refill only the cursor that was consumed when its local window is
-   exhausted.
+7. Refill only the direction whose local bounded chunk is exhausted.
 
 The implementation must never materialize full bidirectional `PacketRef`
-arrays solely to serve a bounded selected-flow page.
+arrays solely to serve a bounded selected-flow page. Deep packet/page access
+must not require replaying the entire preceding direction or flow prefix.
 
 ## Unrecognized Directory And Detail Storage
 
@@ -658,8 +672,9 @@ The reviewable implementation sequence was:
 6. Stage 4G: unrecognized directory/detail lazy access
 7. Stage 4H: move packet locator fully late/lazy and finish the full-session
    v16 reader
-8. Stage 4I: CLI stats-only fast path plus session/frontend staged-loading
-   plumbing remains future work
+8. Stage 4I: CLI stats-only fast path for compatible v16 index-backed
+   `summary` invocations; session/frontend staged-loading plumbing remains
+   future work
 
 Dependencies may be refined during implementation review, but the frozen
 target architecture should not change without a deliberate RFC update.
@@ -670,6 +685,8 @@ Stage 4 implementation must cover at least:
 
 - header inspection across v15/v16 revision boundaries
 - fast Statistics-only reads that stop before metadata/detail tiers
+- compatible CLI fast summaries that do not probe source capture availability
+  and still honor CLI progress policy
 - malformed snapshot invariant rejection
 - bounded top endpoint/port/top flow ordering and row-count limits
 - protocol-hint projection with `use_possible_tls_quic` both enabled and

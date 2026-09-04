@@ -439,6 +439,8 @@ Stage 4 implementation must cover at least:
 
 - header inspection across v15/v16 revision boundaries
 - fast Statistics-only reads that stop before metadata/detail tiers
+- compatible CLI fast summaries that avoid source-capture probes while
+  preserving `--progress on|off|auto` behavior
 - malformed snapshot invariant rejection
 - bounded top endpoint/port/top flow ordering and row-count limits
 - protocol-hint projection with `use_possible_tls_quic` both enabled and

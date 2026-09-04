@@ -17,6 +17,7 @@
 #include "cli/FlowInfoCommand.h"
 #include "cli/FlowsCommand.h"
 #include "cli/PacketInfoCommand.h"
+#include "../../core/open_context.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 
@@ -222,7 +223,10 @@ std::optional<ProtocolPathStatisticsMode> parse_protocol_path_mode(const std::st
     return std::nullopt;
 }
 
-std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
+std::string render_basic_summary_text(
+    const FrontendOverviewDto& overview,
+    const bool render_source_capture_availability = true
+) {
     constexpr std::array<std::string_view, 4> input_labels {
         "File",
         "Type",
@@ -261,7 +265,7 @@ std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
     if (overview.input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index &&
         overview.input_metadata.source_capture_path.has_value()) {
         auto source_capture = basename_for_display(*overview.input_metadata.source_capture_path);
-        if (!overview.input_metadata.source_capture_accessible) {
+        if (render_source_capture_availability && !overview.input_metadata.source_capture_accessible) {
             source_capture += " (not available)";
         }
         append_key_value_line(out, "Source capture", source_capture, input_label_width);
@@ -394,6 +398,72 @@ std::uint64_t file_size_or_zero(const std::filesystem::path& path) {
     return error ? 0U : static_cast<std::uint64_t>(size);
 }
 
+FrontendOpenProgressDto make_fast_v16_summary_progress_dto(
+    const std::filesystem::path& input_path,
+    const OpenProgress& progress,
+    const bool in_progress
+) {
+    return FrontendOpenProgressDto {
+        .in_progress = in_progress,
+        .opening_as_index = true,
+        .packets_processed = progress.packets_processed,
+        .bytes_processed = progress.bytes_processed,
+        .total_bytes = progress.total_bytes,
+        .percent = std::clamp(progress.percent(), 0.0, 1.0),
+        .input_path = input_path.string(),
+    };
+}
+
+void emit_summary_progress_line(
+    const CliRuntimeEnvironment& environment,
+    const bool interactive,
+    const std::string& line,
+    std::string& last_line,
+    std::size_t& last_visible_length,
+    bool& emitted_progress
+) {
+    if (line == last_line) {
+        return;
+    }
+
+    if (interactive) {
+        environment.progress_sink(render_interactive_progress_update(line, last_visible_length));
+        last_visible_length = line.size();
+    } else {
+        environment.progress_sink(line + '\n');
+    }
+
+    last_line = line;
+    emitted_progress = true;
+}
+
+void emit_fast_v16_summary_progress_completion(
+    const std::filesystem::path& input_path,
+    const CliRuntimeEnvironment& environment,
+    const bool interactive,
+    const OpenProgress& progress,
+    std::string& last_line,
+    std::size_t& last_visible_length,
+    bool& emitted_progress
+) {
+    auto completion_progress = progress;
+    if (completion_progress.total_bytes > 0U) {
+        completion_progress.bytes_processed =
+            std::max(completion_progress.bytes_processed, completion_progress.total_bytes);
+    }
+    const auto final_line = render_open_progress_text(
+        make_fast_v16_summary_progress_dto(input_path, completion_progress, false)
+    );
+    emit_summary_progress_line(
+        environment,
+        interactive,
+        final_line,
+        last_line,
+        last_visible_length,
+        emitted_progress
+    );
+}
+
 FrontendProtocolStatsDto make_frontend_protocol_stats(const ProtocolStats& stats) {
     return FrontendProtocolStatsDto {
         .flow_count = stats.flow_count,
@@ -432,7 +502,6 @@ FrontendOverviewDto build_fast_v16_overview(
     const auto protocol_summary =
         session_detail::project_protocol_summary(general_statistics, analysis_settings.use_possible_tls_quic);
     const auto source_info = source_info_from_stable_header(header);
-    const auto source_capture_accessible = validate_capture_source(source_info);
     const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
@@ -442,7 +511,7 @@ FrontendOverviewDto build_fast_v16_overview(
         .input_path = index_path.string(),
         .input_kind = FrontendInputKind::pcap_flow_lab_index,
         .input_file_size = index_file_size,
-        .source_capture_accessible = source_capture_accessible,
+        .source_capture_accessible = false,
     };
     if (!header.source_capture_path_utf8.empty()) {
         input_metadata.source_capture_path = source_info.capture_path.string();
@@ -1050,12 +1119,42 @@ bool summary_options_allow_fast_v16_index_path(const SummaryCommandOptions& opti
 }
 
 SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
-    const SummaryCommandOptions& options
+    const SummaryCommandOptions& options,
+    const CliRuntimeEnvironment& environment
 ) {
     CaptureIndexReader reader {};
     detail::CaptureIndexV16FastStatisticsTier fast_tier {};
     detail::CaptureIndexV16FastStatisticsTierReadResult read_result {};
-    if (!reader.read_v16_fast_statistics(options.input_path, fast_tier, read_result)) {
+    OpenContext open_context {};
+    const bool progress_enabled =
+        should_enable_summary_progress(options.progress_mode, environment.stderr_is_terminal) &&
+        static_cast<bool>(environment.progress_sink);
+    const bool interactive_progress = progress_enabled && environment.stderr_is_terminal;
+    std::string last_progress_line_text {};
+    std::size_t last_progress_visible_length = 0U;
+    bool emitted_progress = false;
+
+    if (progress_enabled) {
+        open_context.on_progress = [&](const OpenProgress& progress) {
+            emit_summary_progress_line(
+                environment,
+                interactive_progress,
+                render_open_progress_text(make_fast_v16_summary_progress_dto(options.input_path, progress, true)),
+                last_progress_line_text,
+                last_progress_visible_length,
+                emitted_progress
+            );
+        };
+    }
+
+    if (!reader.read_v16_fast_statistics(
+            options.input_path,
+            fast_tier,
+            read_result,
+            progress_enabled ? &open_context : nullptr)) {
+        if (interactive_progress && emitted_progress) {
+            environment.progress_sink("\n");
+        }
         const auto& error = reader.last_error();
         return {
             .exit_code = 1,
@@ -1064,6 +1163,21 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
                 ? "Failed to open input: " + options.input_path.string() + '\n'
                 : error.reason + '\n',
         };
+    }
+
+    if (progress_enabled) {
+        emit_fast_v16_summary_progress_completion(
+            options.input_path,
+            environment,
+            interactive_progress,
+            open_context.progress,
+            last_progress_line_text,
+            last_progress_visible_length,
+            emitted_progress
+        );
+        if (interactive_progress && emitted_progress) {
+            environment.progress_sink("\n");
+        }
     }
 
     const auto overview = build_fast_v16_overview(
@@ -1075,7 +1189,7 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
     const auto statistics = build_fast_v16_summary_statistics_dtos(fast_tier);
 
     std::ostringstream stdout_builder {};
-    stdout_builder << render_basic_summary_text(overview);
+    stdout_builder << render_basic_summary_text(overview, false);
 
     if (options.extended) {
         stdout_builder << render_extended_summary_text(statistics, overview);
@@ -1169,7 +1283,7 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
     }
 
     if (input_looks_like_index && summary_options_allow_fast_v16_index_path(options)) {
-        return execute_fast_v16_index_summary_command(options);
+        return execute_fast_v16_index_summary_command(options, environment);
     }
 
     FrontendSettingsDto effective_settings {};

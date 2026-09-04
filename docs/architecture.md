@@ -65,19 +65,35 @@ transport-correct session analysis during open.
 
 Saved indexes reopen previously imported session state.
 
-Current stable index format is revision `15` and uses exact-version
-compatibility.
-Loading a mismatched version fails and requires rebuilding the index from the
-source capture.
+Current stable index format is revision `16` and uses exact-version
+compatibility. Stable v15 and older production indexes remain recognizable at
+the header level, but full payload load requires rebuilding from the source
+capture.
+
+The v16 physical architecture is tiered:
+
+- fast Statistics tier;
+- flow metadata tier;
+- detail / `PacketRef` tier.
+
+Whole-capture Statistics can be read from the fast tier without loading flow
+metadata, packet-reference detail, or source packet bytes. Normal v16 session
+open loads the metadata needed for flow browsing and filtering, but it does not
+reconstruct capture-wide resident `PacketRef` vectors. Directional `PacketRef`
+detail, unrecognized reason/detail data, and sparse packet-locator lookup are
+lazy facilities used only when a caller needs the corresponding selected-flow,
+unrecognized-row, or source-backed packet access.
 
 The index persists reusable session metadata such as:
 
 - grouped flow and connection state;
-- packet references and related packet metadata;
+- packet-reference directories and lazy packet-reference detail;
 - capture/source metadata used for source reattachment validation;
 - protocol-path identity needed for stored flow grouping;
 - persisted whole-session statistics inputs and related indexed state;
-- persisted unrecognized-packet metadata in the current format.
+- persisted unrecognized-packet metadata plus lazy reason/detail storage in the
+  current format;
+- sparse packet-locator data for source-backed byte lookup.
 
 The index does not persist:
 
@@ -87,9 +103,10 @@ The index does not persist:
 - selected-flow ephemeral caches.
 
 An index can therefore open in a metadata-only mode without current source
-capture access. Reattaching the original source capture restores byte-backed
-capabilities for the stored session, but it does not regroup or reinterpret the
-indexed flow inventory.
+capture access. Source-independent metadata and Statistics access are distinct
+from source-backed packet-byte inspection. Reattaching the original source
+capture restores byte-backed capabilities for the stored session, but it does
+not regroup or reinterpret the indexed flow inventory.
 
 ### 3. Selected-packet lazy inspection
 

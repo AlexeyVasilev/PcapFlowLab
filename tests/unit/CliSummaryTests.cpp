@@ -813,23 +813,36 @@ void expect_index_summary_rendering_without_source_capture() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_index.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
-    std::filesystem::remove(capture_path);
+
+    {
+        std::ofstream mismatched_source {capture_path, std::ios::binary | std::ios::trunc};
+        mismatched_source << "not the indexed source capture";
+        PFL_REQUIRE(mismatched_source.good());
+    }
 
     cli::SummaryCommandOptions options {};
     options.input_path = index_path;
-    const auto execution_result = cli::execute_summary_command(options);
-    PFL_EXPECT(execution_result.exit_code == 0);
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "PcapFlowLab Index"));
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "Source capture:"));
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "not available"));
-    PFL_EXPECT(has_no_tabs_or_trailing_spaces(execution_result.stdout_text));
+    const auto mismatched_source_result = cli::execute_summary_command(options);
+    PFL_EXPECT(mismatched_source_result.exit_code == 0);
+    PFL_EXPECT(contains_text(mismatched_source_result.stdout_text, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(mismatched_source_result.stdout_text, "Source capture:"));
+    PFL_EXPECT(!contains_text(mismatched_source_result.stdout_text, "not available"));
+    PFL_EXPECT(has_no_tabs_or_trailing_spaces(mismatched_source_result.stdout_text));
+
+    std::filesystem::remove(capture_path);
+    const auto missing_source_result = cli::execute_summary_command(options);
+    PFL_EXPECT(missing_source_result.exit_code == 0);
+    PFL_EXPECT(contains_text(missing_source_result.stdout_text, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(missing_source_result.stdout_text, "Source capture:"));
+    PFL_EXPECT(!contains_text(missing_source_result.stdout_text, "not available"));
+    PFL_EXPECT(has_no_tabs_or_trailing_spaces(missing_source_result.stdout_text));
 
     FrontendSessionAdapter index_adapter {};
     PFL_REQUIRE(index_adapter.open_capture(index_path).opened);
     const auto overview = index_adapter.get_overview();
     PFL_EXPECT(overview.whole_capture_totals.packet_count == 1U);
     PFL_EXPECT(contains_text(
-        execution_result.stdout_text,
+        missing_source_result.stdout_text,
         "Packets:   " + session_detail::format_statistics_count_value(overview.whole_capture_totals.packet_count)
     ));
 }
@@ -1810,7 +1823,13 @@ void expect_open_progress_helper_behavior() {
 void expect_live_progress_runtime_contracts() {
     const auto capture_path = build_cli_progress_capture_path();
     const auto export_path = std::filesystem::temp_directory_path() / "pfl_cli_progress_export_output.pcap";
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_progress_index.idx";
     std::filesystem::remove(export_path);
+    std::filesystem::remove(index_path);
+
+    FrontendSessionAdapter raw_adapter {};
+    PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+    PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
 
     const std::vector<std::vector<std::string>> command_args {
         {"summary", capture_path.string(), "--progress", "on"},
@@ -1833,12 +1852,32 @@ void expect_live_progress_runtime_contracts() {
         PFL_EXPECT(count_text_occurrences(invocation.progress_text, final_line) == 1U);
     }
 
+    const auto index_invocation = invoke_cli_with_runtime(
+        {"summary", index_path.string(), "--progress", "on"},
+        false
+    );
+    PFL_EXPECT(index_invocation.result.handled);
+    PFL_EXPECT(index_invocation.result.exit_code == 0);
+    PFL_EXPECT(!index_invocation.progress_text.empty());
+    PFL_EXPECT(contains_text(index_invocation.progress_text, "Opening index: "));
+    PFL_EXPECT(!contains_text(index_invocation.result.stderr_text, "Opening index: "));
+    const auto index_final_line = last_progress_line(index_invocation.progress_text);
+    PFL_EXPECT(contains_text(index_final_line, "100%"));
+    PFL_EXPECT(count_text_occurrences(index_invocation.progress_text, index_final_line) == 1U);
+
     const auto off_invocation = invoke_cli_with_runtime(
         {"summary", capture_path.string(), "--progress", "off"},
         true
     );
     PFL_EXPECT(off_invocation.result.exit_code == 0);
     PFL_EXPECT(off_invocation.progress_text.empty());
+
+    const auto index_off_invocation = invoke_cli_with_runtime(
+        {"summary", index_path.string(), "--progress", "off"},
+        true
+    );
+    PFL_EXPECT(index_off_invocation.result.exit_code == 0);
+    PFL_EXPECT(index_off_invocation.progress_text.empty());
 
     const auto auto_terminal_invocation = invoke_cli_with_runtime(
         {"summary", capture_path.string(), "--progress", "auto"},
@@ -1847,12 +1886,26 @@ void expect_live_progress_runtime_contracts() {
     PFL_EXPECT(auto_terminal_invocation.result.exit_code == 0);
     PFL_EXPECT(contains_text(auto_terminal_invocation.progress_text, "Opening capture: "));
 
+    const auto index_auto_terminal_invocation = invoke_cli_with_runtime(
+        {"summary", index_path.string(), "--progress", "auto"},
+        true
+    );
+    PFL_EXPECT(index_auto_terminal_invocation.result.exit_code == 0);
+    PFL_EXPECT(contains_text(index_auto_terminal_invocation.progress_text, "Opening index: "));
+
     const auto auto_redirected_invocation = invoke_cli_with_runtime(
         {"summary", capture_path.string(), "--progress", "auto"},
         false
     );
     PFL_EXPECT(auto_redirected_invocation.result.exit_code == 0);
     PFL_EXPECT(auto_redirected_invocation.progress_text.empty());
+
+    const auto index_auto_redirected_invocation = invoke_cli_with_runtime(
+        {"summary", index_path.string(), "--progress", "auto"},
+        false
+    );
+    PFL_EXPECT(index_auto_redirected_invocation.result.exit_code == 0);
+    PFL_EXPECT(index_auto_redirected_invocation.progress_text.empty());
 }
 
 void expect_progress_failure_and_partial_open_contracts() {

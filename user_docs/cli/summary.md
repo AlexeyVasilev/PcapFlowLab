@@ -182,6 +182,10 @@ Statistics tier. This means the command can report summary data without
 opening the original capture file and without scanning the later flow-detail
 parts of the index.
 
+When fast summary output shows `Source capture`, that line is the source
+identity recorded in the index. It is not a live check that the original
+capture is still present or readable.
+
 Flow-list CSV export is different: `--out-flows-list` needs flow metadata, so
 it uses the normal full index-opening path.
 

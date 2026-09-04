@@ -51,6 +51,15 @@ Packet list invariants:
 - Marker visibility must not depend on whether stream contribution is suppressed.
 - Packet-level Summary and Bytes inspection remain available for the selected packet when bytes are available.
 
+For v16 index-backed sessions, selected-flow packet paging relies on the
+persisted invariant that each directional `PacketRef` extent is strictly
+ordered by global packet index. PcapFlowLab validates this ordering before
+writing its own v16 indexes, and lazy readers validate the bounded ranges they
+consume. Normal selected-flow interaction is not expected to scan untouched
+detail records merely to prove that no hidden ordering corruption exists
+elsewhere in the flow; exhaustive corruption verification would be a separate
+validation policy.
+
 ## 5. Stream Contract
 
 A stream item is a semantic or presentation unit for the selected flow.
