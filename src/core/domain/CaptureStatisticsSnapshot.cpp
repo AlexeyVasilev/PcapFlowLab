@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <vector>
 
 namespace pfl {
 
@@ -44,6 +45,9 @@ constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 16> kDetectedPro
     CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate,
     CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
 }};
+
+constexpr std::uint64_t kMaximumRepresentableFlowOrdinalCount =
+    static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)()) + 1U;
 
 constexpr std::array<FlowPacketCountBucketDefinition, kCaptureStatisticsFlowPacketCountHistogramBucketCount>
     kFlowPacketCountBucketDefinitions {{
@@ -285,6 +289,11 @@ ProtocolPathId connection_key_protocol_path_id(const CaptureStatisticsConnection
     return std::get<ConnectionKeyV6>(connection_key).protocol_path_id;
 }
 
+bool capture_statistics_scope_is_valid(const CaptureStatisticsScope scope) noexcept {
+    return scope == CaptureStatisticsScope::complete ||
+           scope == CaptureStatisticsScope::partial;
+}
+
 }  // namespace
 
 std::vector<CaptureStatisticsTransportProtocolRow> make_default_capture_statistics_transport_protocol_rows() {
@@ -330,6 +339,23 @@ CaptureStatisticsFlowPacketCountHistogram make_default_capture_statistics_flow_p
 CaptureStatisticsSnapshotValidationResult validate_capture_statistics_snapshot(
     const CaptureStatisticsSnapshot& snapshot
 ) noexcept {
+    if (!capture_statistics_scope_is_valid(snapshot.scope)) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::invalid_scope,
+            "scope"
+        );
+    }
+
+    if (snapshot.total_flow_count > kMaximumRepresentableFlowOrdinalCount) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::flow_count_exceeds_top_flow_ordinal_range,
+            "total_flow_count",
+            std::nullopt,
+            kMaximumRepresentableFlowOrdinalCount,
+            snapshot.total_flow_count
+        );
+    }
+
     if (!snapshot.timestamp_range.available &&
         (snapshot.timestamp_range.earliest_timestamp_us != 0U || snapshot.timestamp_range.latest_timestamp_us != 0U)) {
         return make_validation_error(
@@ -541,6 +567,24 @@ CaptureStatisticsSnapshotValidationResult validate_capture_statistics_snapshot(
 
     for (std::size_t index = 0U; index < snapshot.top_flows.size(); ++index) {
         const auto& row = snapshot.top_flows[index];
+        if (row.canonical_flow_ordinal >= snapshot.total_flow_count) {
+            return make_validation_error(
+                CaptureStatisticsSnapshotValidationErrorCode::top_flow_ordinal_out_of_range,
+                "top_flows.canonical_flow_ordinal",
+                index,
+                snapshot.total_flow_count,
+                row.canonical_flow_ordinal
+            );
+        }
+        for (std::size_t prior_index = 0U; prior_index < index; ++prior_index) {
+            if (snapshot.top_flows[prior_index].canonical_flow_ordinal == row.canonical_flow_ordinal) {
+                return make_validation_error(
+                    CaptureStatisticsSnapshotValidationErrorCode::duplicate_top_flow_ordinal,
+                    "top_flows.canonical_flow_ordinal",
+                    index
+                );
+            }
+        }
         if (!connection_key_matches_family(row.connection_key, row.family)) {
             return make_validation_error(
                 CaptureStatisticsSnapshotValidationErrorCode::invalid_top_flow_key_family,

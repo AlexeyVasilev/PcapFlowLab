@@ -6,6 +6,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -32,6 +33,50 @@ struct SectionInfo {
     std::uint16_t flags {0};
     std::size_t offset {0};
     std::size_t total_size {0};
+};
+
+class ForbiddenRangeCountingStreamBuf final : public std::stringbuf {
+public:
+    struct Range {
+        std::size_t begin {0};
+        std::size_t end {0};
+    };
+
+    ForbiddenRangeCountingStreamBuf(
+        const std::vector<std::uint8_t>& bytes,
+        std::vector<Range> forbidden_ranges
+    )
+        : std::stringbuf(std::string(bytes.begin(), bytes.end()), std::ios::binary | std::ios::in),
+          forbidden_ranges_(std::move(forbidden_ranges)) {}
+
+    [[nodiscard]] std::uint64_t forbidden_bytes_read() const noexcept {
+        return forbidden_bytes_read_;
+    }
+
+protected:
+    std::streamsize xsgetn(char* destination, const std::streamsize count) override {
+        const auto start = gptr() != nullptr
+            ? static_cast<std::size_t>(gptr() - eback())
+            : 0U;
+        const auto read_count = std::stringbuf::xsgetn(destination, count);
+        if (read_count <= 0) {
+            return read_count;
+        }
+
+        const auto end = start + static_cast<std::size_t>(read_count);
+        for (const auto& range : forbidden_ranges_) {
+            const auto overlap_begin = std::max(start, range.begin);
+            const auto overlap_end = std::min(end, range.end);
+            if (overlap_begin < overlap_end) {
+                forbidden_bytes_read_ += static_cast<std::uint64_t>(overlap_end - overlap_begin);
+            }
+        }
+        return read_count;
+    }
+
+private:
+    std::vector<Range> forbidden_ranges_ {};
+    std::uint64_t forbidden_bytes_read_ {0};
 };
 
 std::uint32_t read_le32_at(const std::vector<std::uint8_t>& bytes, const std::size_t offset) {
@@ -252,6 +297,56 @@ std::vector<std::uint8_t> duplicate_section(const std::vector<std::uint8_t>& byt
 
     PFL_EXPECT(false);
     return {};
+}
+
+std::vector<std::uint8_t> replace_section_payload(
+    const std::vector<std::uint8_t>& bytes,
+    const std::uint32_t section_id,
+    const std::size_t occurrence_index,
+    const std::uint64_t payload_size
+) {
+    const auto sections = parse_sections(bytes);
+    const auto* section = find_section_occurrence(sections, section_id, occurrence_index);
+    PFL_REQUIRE(section != nullptr);
+    PFL_REQUIRE(payload_size <= static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)()));
+
+    auto mutated = bytes;
+    const auto payload_begin = section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+    const auto payload_end = section->offset + section->total_size;
+    write_le64_at(mutated, section->offset + 8U, payload_size);
+    mutated.erase(
+        mutated.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+        mutated.begin() + static_cast<std::ptrdiff_t>(payload_end)
+    );
+    mutated.insert(
+        mutated.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+        static_cast<std::size_t>(payload_size),
+        0xA5U
+    );
+    return mutated;
+}
+
+std::vector<ForbiddenRangeCountingStreamBuf::Range> section_payload_ranges(
+    const std::vector<std::uint8_t>& bytes,
+    const std::vector<std::uint32_t>& section_ids
+) {
+    const auto sections = parse_sections(bytes);
+    std::vector<ForbiddenRangeCountingStreamBuf::Range> ranges {};
+    for (const auto& section : sections) {
+        if (std::find(section_ids.begin(), section_ids.end(), section.id) == section_ids.end()) {
+            continue;
+        }
+
+        const auto payload_begin = section.offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto payload_end = section.offset + section.total_size;
+        if (payload_begin < payload_end) {
+            ranges.push_back(ForbiddenRangeCountingStreamBuf::Range {
+                .begin = payload_begin,
+                .end = payload_end,
+            });
+        }
+    }
+    return ranges;
 }
 
 std::vector<std::uint8_t> corrupt_first_section_size(const std::vector<std::uint8_t>& bytes) {
@@ -699,7 +794,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .original_bytes = 600U,
         },
         CaptureStatisticsTopFlowRow {
-            .canonical_flow_ordinal = 7U,
+            .canonical_flow_ordinal = 2U,
             .family = CaptureStatisticsAddressFamily::ipv6,
             .connection_key = ConnectionKeyV6 {
                 .first = EndpointKeyV6 {
@@ -1300,6 +1395,15 @@ void run_index_format_tests() {
         PFL_REQUIRE(static_cast<bool>(read_result));
         PFL_EXPECT(decoded_snapshot == snapshot);
         PFL_EXPECT(stream.peek() == std::char_traits<char>::eof());
+    }
+
+    {
+        auto snapshot = make_valid_capture_statistics_snapshot();
+        snapshot.scope = CaptureStatisticsScope::reserved_unknown;
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+        PFL_EXPECT(!detail::write_v16_capture_statistics_snapshot_section(stream, snapshot));
     }
 
     {
@@ -1939,6 +2043,19 @@ void run_index_format_tests() {
         }
 
         {
+            auto oversized_registry_bytes = base_bytes;
+            write_le64_at(
+                oversized_registry_bytes,
+                sections[1].offset + 8U,
+                (std::numeric_limits<std::uint64_t>::max)()
+            );
+            expect_fast_tier_status(
+                std::move(oversized_registry_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload
+            );
+        }
+
+        {
             auto malformed_display_bytes = base_bytes;
             write_le64_at(malformed_display_bytes, display_payload_offset, 99U);
             expect_fast_tier_status(
@@ -2087,6 +2204,40 @@ void run_index_format_tests() {
         );
         const auto trailing_read = detail::read_capture_index_v16(trailing_stream);
         PFL_EXPECT(trailing_read.status == detail::CaptureIndexV16CompleteReadStatus::trailing_data);
+
+        std::istringstream progress_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        std::vector<std::uint64_t> progress_offsets {};
+        const detail::CaptureIndexV16ReadControl progress_control {
+            .progress_callback = [&](const std::uint64_t processed, const std::uint64_t total) {
+                PFL_EXPECT(total == static_cast<std::uint64_t>(container_bytes.size()));
+                progress_offsets.push_back(processed);
+                return true;
+            },
+            .total_bytes = static_cast<std::uint64_t>(container_bytes.size()),
+        };
+        const auto progress_read = detail::read_capture_index_v16(progress_stream, &progress_control);
+        PFL_REQUIRE(static_cast<bool>(progress_read));
+        PFL_REQUIRE(progress_offsets.size() >= 2U);
+        PFL_EXPECT(std::is_sorted(progress_offsets.begin(), progress_offsets.end()));
+        PFL_EXPECT(progress_offsets.back() == static_cast<std::uint64_t>(container_bytes.size()));
+
+        std::istringstream cancelled_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        std::uint32_t progress_callback_count {0};
+        const detail::CaptureIndexV16ReadControl cancelling_control {
+            .progress_callback = [&](const std::uint64_t, const std::uint64_t) {
+                ++progress_callback_count;
+                return progress_callback_count < 2U;
+            },
+            .total_bytes = static_cast<std::uint64_t>(container_bytes.size()),
+        };
+        const auto cancelled_read = detail::read_capture_index_v16(cancelled_stream, &cancelling_control);
+        PFL_EXPECT(cancelled_read.status == detail::CaptureIndexV16CompleteReadStatus::cancelled);
     }
 
     {
@@ -2114,6 +2265,42 @@ void run_index_format_tests() {
     }
 
     {
+        const CaptureState state {};
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        container_bytes = replace_section_payload(
+            container_bytes,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+            0U,
+            1024U
+        );
+        container_bytes = replace_section_payload(
+            container_bytes,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_reason_blobs),
+            0U,
+            2048U
+        );
+
+        const auto forbidden_ranges = section_payload_ranges(
+            container_bytes,
+            {
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_reason_blobs),
+            }
+        );
+        PFL_REQUIRE(forbidden_ranges.size() == 2U);
+
+        ForbiddenRangeCountingStreamBuf stream_buffer(container_bytes, forbidden_ranges);
+        std::istream read_stream(&stream_buffer);
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(read_stream, decoded_metadata)));
+        PFL_EXPECT(stream_buffer.forbidden_bytes_read() == 0U);
+    }
+
+    {
         auto state = make_v16_metadata_capture_state_fixture();
         state.packet_locator.clear();
         const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
@@ -2135,6 +2322,190 @@ void run_index_format_tests() {
         const auto index_path = write_temp_binary_file("pfl_v16_packet_locator_empty.idx", container_bytes);
         session_detail::CaptureIndexV16PacketLocatorAccessSource v16_source(index_path, decoded_metadata);
         PFL_EXPECT(v16_source.lookup(0U).status == session_detail::PacketLocatorAccessStatus::not_found);
+
+        auto mixed_locator_metadata = decoded_metadata;
+        mixed_locator_metadata.packet_locator_sections.push_back(CaptureIndexV16PacketLocatorSectionInfo {
+            .section_occurrence_index = 1U,
+            .payload_file_offset = 0U,
+            .payload_size = 8U + kCaptureIndexV16PacketLocatorEncodedStrideBytes,
+            .logical_entry_start = 0U,
+            .entry_count = 1U,
+            .first_packet_index = 10U,
+            .last_packet_index = 10U,
+            .first_file_offset = 100U,
+            .last_file_offset = 100U,
+        });
+        session_detail::CaptureIndexV16PacketLocatorAccessSource mixed_locator_source(
+            index_path,
+            mixed_locator_metadata
+        );
+        PFL_EXPECT(
+            mixed_locator_source.lookup(10U).status ==
+            session_detail::PacketLocatorAccessStatus::malformed_locator);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* ipv4_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_flow_metadata),
+                0U
+            );
+            PFL_REQUIRE(ipv4_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                ipv4_section->offset + 8U,
+                (std::numeric_limits<std::uint64_t>::max)()
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::malformed_ipv4_flow_metadata_payload);
+        }
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* ipv4_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_flow_metadata),
+                0U
+            );
+            PFL_REQUIRE(ipv4_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                ipv4_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize,
+                fast_tier.capture_statistics_snapshot.total_flow_count + 1U
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::malformed_ipv4_flow_metadata_payload);
+        }
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* membership_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_membership),
+                0U
+            );
+            PFL_REQUIRE(membership_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                membership_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize + 8U + 4U,
+                fast_tier.capture_statistics_snapshot.total_flow_count + 1U
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::malformed_protocol_path_membership_payload);
+        }
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* directory_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_directory),
+                0U
+            );
+            PFL_REQUIRE(directory_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                directory_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize,
+                (fast_tier.capture_statistics_snapshot.total_flow_count * 2U) + 1U
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::malformed_packetref_directory_payload);
+        }
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* detail_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+                0U
+            );
+            PFL_REQUIRE(detail_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                detail_section->offset + 8U,
+                (std::numeric_limits<std::uint64_t>::max)()
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::detail_section_framing_error);
+        }
+
+        {
+            auto mutated_bytes = container_bytes;
+            const auto sections = parse_sections(mutated_bytes);
+            const auto* reason_section = find_section_occurrence(
+                sections,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_reason_blobs),
+                0U
+            );
+            PFL_REQUIRE(reason_section != nullptr);
+            write_le64_at(
+                mutated_bytes,
+                reason_section->offset + 8U,
+                (std::numeric_limits<std::uint64_t>::max)()
+            );
+
+            std::istringstream read_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            CaptureIndexV16MetadataTier decoded_metadata {};
+            const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::unrecognized_reason_framing_error);
+        }
     }
 
     {
@@ -2427,6 +2798,35 @@ void run_index_format_tests() {
         );
         PFL_REQUIRE(static_cast<bool>(empty_read));
         PFL_EXPECT(empty_read.packet_refs.empty());
+
+        std::istringstream zero_limit_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto zero_limit_read = detail::read_v16_packetref_extent_range(
+            zero_limit_stream,
+            decoded_metadata.packetref_detail_sections,
+            *forward_extent_it,
+            0U,
+            0U
+        );
+        PFL_REQUIRE(static_cast<bool>(zero_limit_read));
+        PFL_EXPECT(zero_limit_read.packet_refs.empty());
+
+        std::istringstream invalid_offset_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto invalid_offset_read = detail::read_v16_packetref_extent_range(
+            invalid_offset_stream,
+            decoded_metadata.packetref_detail_sections,
+            *forward_extent_it,
+            forward_extent_it->packet_count + 1U,
+            0U
+        );
+        PFL_EXPECT(
+            invalid_offset_read.status ==
+            detail::CaptureIndexV16PacketRefExtentReadStatus::invalid_local_offset);
     }
 
     {

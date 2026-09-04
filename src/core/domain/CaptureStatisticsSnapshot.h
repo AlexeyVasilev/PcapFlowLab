@@ -272,6 +272,7 @@ struct CaptureStatisticsSnapshot {
 
 enum class CaptureStatisticsSnapshotValidationErrorCode : std::uint8_t {
     nonzero_timestamps_without_range = 0,
+    invalid_scope,
     invalid_timestamp_range,
     invalid_captured_packet_size_distribution,
     invalid_original_packet_size_distribution,
@@ -298,6 +299,9 @@ enum class CaptureStatisticsSnapshotValidationErrorCode : std::uint8_t {
     invalid_top_flow_endpoint_family,
     invalid_top_flow_protocol_mismatch,
     invalid_top_flow_protocol_path_mismatch,
+    top_flow_ordinal_out_of_range,
+    duplicate_top_flow_ordinal,
+    flow_count_exceeds_top_flow_ordinal_range,
     invalid_quic_sni_sum,
     invalid_quic_version_sum,
     invalid_tls_sni_sum,

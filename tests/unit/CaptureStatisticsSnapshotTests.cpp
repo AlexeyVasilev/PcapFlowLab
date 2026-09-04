@@ -231,7 +231,7 @@ CaptureStatisticsSnapshot make_valid_snapshot() {
             .original_bytes = 600U,
         },
         CaptureStatisticsTopFlowRow {
-            .canonical_flow_ordinal = 7U,
+            .canonical_flow_ordinal = 2U,
             .family = CaptureStatisticsAddressFamily::ipv6,
             .connection_key = ConnectionKeyV6 {
                 .first = EndpointKeyV6 {
@@ -267,6 +267,23 @@ CaptureStatisticsSnapshot make_valid_snapshot() {
 
 CaptureStatisticsSnapshot make_rich_snapshot_with_maximum_top_capacities() {
     auto snapshot = make_valid_snapshot();
+    const auto top_flow_capacity =
+        static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopFlowCapacity);
+    snapshot.total_flow_count = top_flow_capacity;
+    snapshot.packet_direction_distribution = CaptureStatisticsDirectionDistribution {
+        .mostly_a_to_b_flow_count = 4U,
+        .balanced_flow_count = 3U,
+        .mostly_b_to_a_flow_count = 3U,
+    };
+    snapshot.original_byte_direction_distribution = CaptureStatisticsDirectionDistribution {
+        .mostly_a_to_b_flow_count = 4U,
+        .balanced_flow_count = 3U,
+        .mostly_b_to_a_flow_count = 3U,
+    };
+    snapshot.flow_packet_count_histogram = make_default_capture_statistics_flow_packet_count_histogram();
+    snapshot.flow_packet_count_histogram.total_flow_count = top_flow_capacity;
+    snapshot.flow_packet_count_histogram.maximum_bucket_flow_count = top_flow_capacity;
+    snapshot.flow_packet_count_histogram.buckets[0].flow_count = top_flow_capacity;
     snapshot.top_endpoints.clear();
     snapshot.top_ports.clear();
     snapshot.top_flows.clear();
@@ -460,8 +477,14 @@ void expect_default_and_scope_variants_are_valid() {
     PFL_EXPECT(validate_capture_statistics_snapshot(snapshot).ok);
 
     snapshot.scope = CaptureStatisticsScope::reserved_unknown;
-    PFL_EXPECT(validate_capture_statistics_snapshot(snapshot).ok);
+    const auto reserved_scope_validation = validate_capture_statistics_snapshot(snapshot);
+    PFL_REQUIRE(!reserved_scope_validation.ok);
+    PFL_REQUIRE(reserved_scope_validation.error.has_value());
+    PFL_EXPECT(
+        reserved_scope_validation.error->code ==
+        CaptureStatisticsSnapshotValidationErrorCode::invalid_scope);
 
+    snapshot.scope = CaptureStatisticsScope::partial;
     snapshot.total_packet_count = 1U;
     snapshot.total_captured_bytes = 64U;
     snapshot.total_original_bytes = 80U;
@@ -652,6 +675,12 @@ void expect_decoder_rejects_malformed_payloads() {
 
     {
         auto snapshot = make_valid_snapshot();
+        snapshot.scope = CaptureStatisticsScope::reserved_unknown;
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
         snapshot.transport_protocols[0].category = static_cast<CaptureStatisticsTransportProtocolCategory>(99U);
         expect_decode_fails(snapshot);
     }
@@ -705,6 +734,43 @@ void expect_decoder_rejects_malformed_payloads() {
     {
         auto snapshot = make_rich_snapshot_with_maximum_top_capacities();
         snapshot.top_flows.push_back(snapshot.top_flows.front());
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.top_flows.front().canonical_flow_ordinal = static_cast<std::uint32_t>(snapshot.total_flow_count);
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::top_flow_ordinal_out_of_range);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.top_flows.back().canonical_flow_ordinal = snapshot.top_flows.front().canonical_flow_ordinal;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::duplicate_top_flow_ordinal);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.total_flow_count =
+            static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)()) + 2U;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flow_count_exceeds_top_flow_ordinal_range);
         expect_decode_fails(snapshot);
     }
 

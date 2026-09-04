@@ -55,7 +55,7 @@ namespace {
     const CaptureIndexV16PacketLocatorSectionInfo& prior
 ) noexcept {
     if (section.entry_count == 0U || prior.entry_count == 0U) {
-        return true;
+        return section.entry_count == 0U && prior.entry_count == 0U;
     }
     if (!section.first_packet_index.has_value() ||
         !section.first_file_offset.has_value() ||
@@ -119,8 +119,12 @@ CaptureIndexV16PacketLocatorAccessSource::CaptureIndexV16PacketLocatorAccessSour
     : index_path_(std::move(index_path)),
       locator_sections_(metadata.packet_locator_sections) {
     std::uint64_t expected_logical_entry_start {0};
+    bool has_empty_section {false};
+    bool has_non_empty_section {false};
     for (std::size_t index = 0U; index < locator_sections_.size(); ++index) {
         const auto& section = locator_sections_[index];
+        has_empty_section = has_empty_section || section.entry_count == 0U;
+        has_non_empty_section = has_non_empty_section || section.entry_count > 0U;
         if (section.section_occurrence_index != static_cast<std::uint32_t>(index) ||
             section.logical_entry_start != expected_logical_entry_start) {
             initialization_status_ = PacketLocatorAccessStatus::malformed_locator;
@@ -149,6 +153,12 @@ CaptureIndexV16PacketLocatorAccessSource::CaptureIndexV16PacketLocatorAccessSour
             initialization_error_detail_ = "v16 packet locator logical entry count overflowed";
             return;
         }
+    }
+
+    if (has_empty_section && has_non_empty_section) {
+        initialization_status_ = PacketLocatorAccessStatus::malformed_locator;
+        initialization_error_detail_ = "v16 packet locator topology cannot mix empty and non-empty sections";
+        return;
     }
 }
 

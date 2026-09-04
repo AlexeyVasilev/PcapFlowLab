@@ -190,6 +190,10 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     const CaptureState& state,
     const CaptureIndexV16PacketRefDetailLayoutOptions& options = {}
 );
+CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
+    const CaptureState&& state,
+    const CaptureIndexV16PacketRefDetailLayoutOptions& options = {}
+) = delete;
 CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
     const ProtocolPathRegistry& registry,
     const ProtocolPathDisplayStatistics& statistics,

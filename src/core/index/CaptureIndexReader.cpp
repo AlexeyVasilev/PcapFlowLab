@@ -132,6 +132,8 @@ constexpr char kFutureStableIndexRevisionMessage[] =
     switch (result.status) {
     case detail::CaptureIndexV16CompleteReadStatus::ok:
         return "";
+    case detail::CaptureIndexV16CompleteReadStatus::cancelled:
+        return "v16 index load was cancelled";
     case detail::CaptureIndexV16CompleteReadStatus::invalid_metadata_tier:
         return "invalid v16 index metadata tier";
     case detail::CaptureIndexV16CompleteReadStatus::trailing_data:
@@ -465,8 +467,28 @@ bool CaptureIndexReader::read_v16_complete(
         }
 
         stream.seekg(0, std::ios::beg);
-        out_result = detail::read_capture_index_v16(stream);
+        const detail::CaptureIndexV16ReadControl read_control {
+            .cancel_requested = [ctx]() {
+                return should_cancel(ctx);
+            },
+            .progress_callback = [ctx](const std::uint64_t processed, const std::uint64_t total) {
+                if (ctx != nullptr) {
+                    ctx->progress.bytes_processed = processed;
+                    ctx->progress.total_bytes = total;
+                    if (ctx->on_progress) {
+                        ctx->on_progress(ctx->progress);
+                    }
+                }
+                return !should_cancel(ctx);
+            },
+            .total_bytes = ctx != nullptr ? ctx->progress.total_bytes : 0U,
+        };
+        out_result = detail::read_capture_index_v16(stream, &read_control);
         if (!out_result) {
+            if (out_result.status == detail::CaptureIndexV16CompleteReadStatus::cancelled) {
+                report_index_progress(ctx, stream);
+                return false;
+            }
             set_error_context(0, v16_complete_read_error_text(out_result));
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);

@@ -276,6 +276,7 @@ struct CaptureIndexV16FastStatisticsTierReadResult {
 
 enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
     ok = 0,
+    cancelled,
     invalid_header,
     unsupported_revision,
     invalid_fast_tier,
@@ -414,6 +415,7 @@ struct CaptureIndexV16PacketLocatorLookupReadResult {
 
 enum class CaptureIndexV16CompleteReadStatus : std::uint8_t {
     ok = 0,
+    cancelled,
     invalid_metadata_tier,
     trailing_data,
 };
@@ -443,6 +445,12 @@ bool write_capture_summary(std::ostream& stream, const CaptureSummary& summary);
 bool read_capture_summary(std::istream& stream, CaptureSummary& summary);
 
 using SerializationProgressCallback = std::function<bool(std::uint64_t processed, std::uint64_t total)>;
+
+struct CaptureIndexV16ReadControl {
+    std::function<bool()> cancel_requested {};
+    SerializationProgressCallback progress_callback {};
+    std::uint64_t total_bytes {0};
+};
 
 bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegistry& registry);
 bool write_protocol_path_registry(
@@ -616,7 +624,8 @@ bool write_capture_index_v16(
 );
 CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     std::istream& stream,
-    CaptureIndexV16MetadataTier& metadata
+    CaptureIndexV16MetadataTier& metadata,
+    const CaptureIndexV16ReadControl* read_control = nullptr
 );
 CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
     std::istream& stream,
@@ -644,7 +653,8 @@ CaptureIndexV16PacketLocatorLookupReadResult lookup_v16_packet_locator(
     std::uint64_t packet_index
 );
 CaptureIndexV16CompleteReadResult read_capture_index_v16(
-    std::istream& stream
+    std::istream& stream,
+    const CaptureIndexV16ReadControl* read_control = nullptr
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

@@ -25,6 +25,13 @@ bool has_port_443(std::uint16_t first_port, std::uint16_t second_port) noexcept;
 bool is_listable_connection(const ListedConnectionRef& connection) noexcept;
 std::size_t flow_packet_count_histogram_bucket_index(std::uint64_t packet_count_value) noexcept;
 
+std::uint32_t to_v16_top_flow_ordinal(const std::size_t flow_index) noexcept {
+    if (flow_index > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+        return (std::numeric_limits<std::uint32_t>::max)();
+    }
+    return static_cast<std::uint32_t>(flow_index);
+}
+
 struct FlowPacketCountHistogramBucketDefinition {
     const char* stable_id;
     std::uint64_t lower_bound_inclusive;
@@ -2541,7 +2548,7 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
     snapshot.top_flows.reserve(general_statistics.top_summary.flows_by_original_bytes.size());
     for (const auto& row : general_statistics.top_summary.flows_by_original_bytes) {
         snapshot.top_flows.push_back(CaptureStatisticsTopFlowRow {
-            .canonical_flow_ordinal = static_cast<std::uint32_t>(row.flow_index),
+            .canonical_flow_ordinal = to_v16_top_flow_ordinal(row.flow_index),
             .family = make_capture_statistics_address_family(row.family),
             .connection_key = row.key,
             .endpoint_a = row.endpoint_a_key,
@@ -2838,7 +2845,9 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
     CaptureIndexV16WritePlanBuildResult result {};
     const auto connections = list_connections(state);
-    if (connections.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    constexpr auto max_representable_v16_connection_count =
+        static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)()) + 1U;
+    if (static_cast<std::uint64_t>(connections.size()) > max_representable_v16_connection_count) {
         result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
         result.error_detail = "canonical connection ordinals exceed the supported v16 u32 range";
         return result;

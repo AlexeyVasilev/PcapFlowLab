@@ -238,6 +238,8 @@ struct CaptureIndexV16PacketLocatorSectionWritePlan {
 };
 
 struct CaptureIndexV16WritePlan {
+    // The plan borrows PacketRef and reason-text storage from the CaptureState used
+    // to build it; consume it before that state mutates or is destroyed.
     CaptureIndexV16MetadataTier metadata {};
     std::vector<CaptureIndexV16PacketRefDetailSectionWritePlan> packetref_detail_sections {};
     std::vector<CaptureIndexV16UnrecognizedDirectorySectionWritePlan> unrecognized_directory_sections {};
