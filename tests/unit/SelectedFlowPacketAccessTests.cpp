@@ -523,6 +523,43 @@ std::filesystem::path write_quic_bounded_access_capture(const std::size_t packet
     );
 }
 
+std::filesystem::path write_quic_client_initial_after_non_quic_prefix_capture(
+    const std::size_t prefix_packet_count,
+    const bool include_initial
+) {
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+    packets.reserve(prefix_packet_count + (include_initial ? 1U : 0U));
+    for (std::uint32_t packet_index = 0U; packet_index < prefix_packet_count; ++packet_index) {
+        packets.push_back({
+            1000U + packet_index,
+            make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                ipv4(10, 44, 1, 1),
+                ipv4(10, 44, 1, 2),
+                54080,
+                443,
+                std::vector<std::uint8_t> {0x01U, 0x02U, static_cast<std::uint8_t>(packet_index)})
+        });
+    }
+    if (include_initial) {
+        packets.push_back({
+            1000U + static_cast<std::uint32_t>(prefix_packet_count),
+            make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                ipv4(10, 44, 1, 1),
+                ipv4(10, 44, 1, 2),
+                54080,
+                443,
+                make_plaintext_quic_initial_payload(make_quic_ack_frame_bytes()))
+        });
+    }
+
+    return write_temp_pcap(
+        include_initial
+            ? "pfl_selected_flow_quic_cid_later_chunk.pcap"
+            : "pfl_selected_flow_quic_cid_no_initial_chunks.pcap",
+        make_classic_pcap(packets)
+    );
+}
+
 std::filesystem::path write_interleaved_quic_ownership_capture() {
     return write_temp_pcap(
         "pfl_selected_flow_quic_provider_ownership_interleaved.pcap",
@@ -573,6 +610,10 @@ std::span<const std::uint8_t> optional_bytes_span(const std::optional<std::vecto
     return bytes.has_value()
         ? std::span<const std::uint8_t>(bytes->data(), bytes->size())
         : std::span<const std::uint8_t> {};
+}
+
+std::vector<std::uint8_t> expected_quic_client_initial_dcid() {
+    return {0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U};
 }
 
 void expect_equal_quic_presentation(
@@ -1261,6 +1302,55 @@ void run_selected_flow_packet_access_tests() {
         PFL_EXPECT(v16_server->tls_handshake->handshake_type_text == "ServerHello");
         PFL_EXPECT(!v16_server->sni.has_value());
         PFL_EXPECT(v16_server->used_bounded_crypto_assembly);
+    }
+
+    {
+        ScopedTestContext context {"quic_client_initial_connection_id_provider_finds_later_chunk"};
+
+        constexpr std::size_t kNonQuicPrefixPacketCount = 70U;
+        const auto capture_path = write_quic_client_initial_after_non_quic_prefix_capture(
+            kNonQuicPrefixPacketCount,
+            true
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        CountingSelectedFlowPacketAccessSource source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto connection_id =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source(session, source, 0U);
+        PFL_REQUIRE(connection_id.has_value());
+        PFL_EXPECT(*connection_id == expected_quic_client_initial_dcid());
+        PFL_EXPECT(source.read_call_count() > 1U);
+    }
+
+    {
+        ScopedTestContext context {"quic_client_initial_connection_id_provider_handles_no_initial_chunks"};
+
+        constexpr std::size_t kNonQuicPacketCount = 130U;
+        const auto capture_path = write_quic_client_initial_after_non_quic_prefix_capture(
+            kNonQuicPacketCount,
+            false
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        CountingSelectedFlowPacketAccessSource source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto connection_id =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source(session, source, 0U);
+        PFL_EXPECT(!connection_id.has_value());
+        PFL_EXPECT(source.read_call_count() > 1U);
     }
 
     {

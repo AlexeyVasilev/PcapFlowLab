@@ -1161,17 +1161,17 @@ bool packet_index_is_selected(
         selected_packet_indices.end();
 }
 
-bool packet_is_quic_presentation_candidate(
+std::optional<QuicPresentationCandidate> read_quic_presentation_candidate(
     const CaptureSession& session,
+    PacketPayloadService& payload_service,
     const PacketRef& packet,
     const std::optional<std::size_t> flow_index
 ) {
     if (session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented.value_or(false)) {
-        return false;
+        return std::nullopt;
     }
 
-    PacketPayloadService payload_service {};
-    const auto udp_payload = flow_index.has_value()
+    auto udp_payload = flow_index.has_value()
         ? session.read_selected_flow_transport_payload(*flow_index, packet)
         : [&]() {
             const auto packet_bytes = session.read_packet_data(packet);
@@ -1181,13 +1181,22 @@ bool packet_is_quic_presentation_candidate(
             return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
         }();
     if (udp_payload.empty()) {
-        return false;
+        return std::nullopt;
     }
 
     const auto datagram_packets = parse_quic_presentation_datagram(
         std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
     );
-    return !datagram_packets.empty();
+    if (datagram_packets.empty()) {
+        return std::nullopt;
+    }
+
+    QuicPresentationCandidate candidate {};
+    candidate.packet = packet;
+    candidate.udp_payload = std::move(udp_payload);
+    candidate.parsed = datagram_packets.front();
+    candidate.datagram_packets = datagram_packets;
+    return candidate;
 }
 
 }  // namespace
@@ -1238,7 +1247,7 @@ std::optional<QuicPresentationDirectionalWindowPlan> plan_quic_selected_directio
 
 namespace {
 
-std::optional<std::vector<PacketRef>> read_selected_direction_presentation_window(
+std::optional<std::vector<QuicPresentationCandidate>> read_selected_direction_presentation_window(
     const CaptureSession& session,
     const SelectedFlowPacketAccessSource& source,
     const Direction direction,
@@ -1260,17 +1269,17 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
 
     constexpr std::uint64_t kDirectionalReadChunkSize = 64U;
 
-    std::vector<PacketRef> window_packets {};
     const auto reserve_count = std::min<std::uint64_t>(
-        window_plan->leading_packet_count + static_cast<std::uint64_t>(kQuicPresentationPacketBudget),
+        static_cast<std::uint64_t>(kQuicPresentationPacketBudget),
         static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())
     );
-    window_packets.reserve(static_cast<std::size_t>(reserve_count));
+    std::vector<QuicPresentationCandidate> window_candidates {};
+    window_candidates.reserve(static_cast<std::size_t>(reserve_count));
 
     std::vector<std::uint64_t> found_selected_packet_indices {};
     found_selected_packet_indices.reserve(selected_packet_indices.size());
 
-    std::size_t candidate_count = 0U;
+    PacketPayloadService payload_service {};
 
     const auto all_selected_packets_found = [&]() {
         return found_selected_packet_indices.size() == selected_packet_indices.size();
@@ -1288,11 +1297,10 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
 
         for (const auto& packet : read_result.packet_refs) {
             const bool is_selected = packet_index_is_selected(selected_packet_indices, packet.packet_index);
-            const bool is_candidate = packet_is_quic_presentation_candidate(session, packet, flow_index);
+            auto candidate = read_quic_presentation_candidate(session, payload_service, packet, flow_index);
 
-            window_packets.push_back(packet);
-            if (is_candidate) {
-                ++candidate_count;
+            if (candidate.has_value() && window_candidates.size() < kQuicPresentationPacketBudget) {
+                window_candidates.push_back(std::move(*candidate));
             }
             if (is_selected &&
                 std::find(
@@ -1303,8 +1311,8 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
             }
 
             if (all_selected_packets_found() &&
-                candidate_count >= kQuicPresentationPacketBudget) {
-                return window_packets;
+                window_candidates.size() >= kQuicPresentationPacketBudget) {
+                return window_candidates;
             }
         }
 
@@ -1315,7 +1323,7 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
         return std::nullopt;
     }
 
-    return window_packets;
+    return window_candidates;
 }
 
 bool selected_packet_indices_are_covered(
@@ -1448,70 +1456,16 @@ bool is_quic_client_to_server(const FlowKey& flow_key) noexcept {
 
 template <typename FlowKey>
 std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction_impl(
-    const CaptureSession& session,
     const FlowKey& flow_key,
-    std::span<const PacketRef> packets,
+    std::span<const QuicPresentationCandidate> candidates,
     const std::vector<std::uint64_t>& selected_packet_indices,
-    std::span<const std::uint8_t> initial_secret_connection_id = {},
-    const std::optional<std::size_t> flow_index = std::nullopt
+    std::span<const std::uint8_t> initial_secret_connection_id = {}
 ) {
     if (selected_packet_indices.empty()) {
         return std::nullopt;
     }
 
-    const auto selected_positions = find_selected_packet_positions(packets, selected_packet_indices);
-    if (!selected_positions.has_value() || selected_positions->empty()) {
-        return std::nullopt;
-    }
-    const auto earliest_selected_position = *std::min_element(selected_positions->begin(), selected_positions->end());
-    const auto scan_start_position = earliest_selected_position >= (kQuicPresentationPacketBudget - 1U)
-        ? earliest_selected_position - (kQuicPresentationPacketBudget - 1U)
-        : 0U;
-
-    PacketPayloadService payload_service {};
     QuicInitialParser initial_parser {};
-    std::vector<QuicPresentationCandidate> candidates {};
-    candidates.reserve(kQuicPresentationPacketBudget);
-
-    for (std::size_t position = scan_start_position;
-         position < packets.size() && candidates.size() < kQuicPresentationPacketBudget;
-         ++position) {
-        const auto& packet = packets[position];
-        if (session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented.value_or(false)) {
-            continue;
-        }
-
-        const auto udp_payload = flow_index.has_value()
-            ? session.read_selected_flow_transport_payload(*flow_index, packet)
-            : [&]() {
-                const auto packet_bytes = session.read_packet_data(packet);
-                if (packet_bytes.empty()) {
-                    return std::vector<std::uint8_t> {};
-                }
-                return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-            }();
-        if (udp_payload.empty()) {
-            continue;
-        }
-
-        const auto datagram_packets = parse_quic_presentation_datagram(
-            std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
-        );
-        if (datagram_packets.empty()) {
-            if (std::find(selected_packet_indices.begin(), selected_packet_indices.end(), packet.packet_index) != selected_packet_indices.end()) {
-                return std::nullopt;
-            }
-            continue;
-        }
-
-        QuicPresentationCandidate candidate {};
-        candidate.packet = packet;
-        candidate.udp_payload = std::move(udp_payload);
-        candidate.parsed = datagram_packets.front();
-        candidate.datagram_packets = datagram_packets;
-        candidates.push_back(std::move(candidate));
-    }
-
     if (candidates.empty()) {
         return std::nullopt;
     }
@@ -1821,6 +1775,55 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
 }
 
 template <typename FlowKey>
+std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction_impl(
+    const CaptureSession& session,
+    const FlowKey& flow_key,
+    std::span<const PacketRef> packets,
+    const std::vector<std::uint64_t>& selected_packet_indices,
+    std::span<const std::uint8_t> initial_secret_connection_id = {},
+    const std::optional<std::size_t> flow_index = std::nullopt
+) {
+    if (selected_packet_indices.empty()) {
+        return std::nullopt;
+    }
+
+    const auto selected_positions = find_selected_packet_positions(packets, selected_packet_indices);
+    if (!selected_positions.has_value() || selected_positions->empty()) {
+        return std::nullopt;
+    }
+    const auto earliest_selected_position = *std::min_element(selected_positions->begin(), selected_positions->end());
+    const auto scan_start_position = earliest_selected_position >= (kQuicPresentationPacketBudget - 1U)
+        ? earliest_selected_position - (kQuicPresentationPacketBudget - 1U)
+        : 0U;
+
+    PacketPayloadService payload_service {};
+    std::vector<QuicPresentationCandidate> candidates {};
+    candidates.reserve(kQuicPresentationPacketBudget);
+
+    for (std::size_t position = scan_start_position;
+         position < packets.size() && candidates.size() < kQuicPresentationPacketBudget;
+         ++position) {
+        const auto& packet = packets[position];
+        auto candidate = read_quic_presentation_candidate(session, payload_service, packet, flow_index);
+        if (!candidate.has_value()) {
+            if (std::find(selected_packet_indices.begin(), selected_packet_indices.end(), packet.packet_index) != selected_packet_indices.end()) {
+                return std::nullopt;
+            }
+            continue;
+        }
+
+        candidates.push_back(std::move(*candidate));
+    }
+
+    return build_quic_presentation_for_selected_direction_impl(
+        flow_key,
+        std::span<const QuicPresentationCandidate>(candidates.data(), candidates.size()),
+        selected_packet_indices,
+        initial_secret_connection_id
+    );
+}
+
+template <typename FlowKey>
 QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -2084,7 +2087,6 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     const std::optional<std::size_t> flow_index
 ) {
     constexpr std::uint64_t kMergedReadChunkSize = 64U;
-    std::vector<PacketRef> packets {};
 
     for (std::uint64_t offset = 0U; ; ) {
         const auto read_result = read_selected_flow_merged_range(source, offset, kMergedReadChunkSize);
@@ -2095,7 +2097,8 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
             break;
         }
 
-        packets.reserve(packets.size() + read_result.packets.size());
+        std::vector<PacketRef> packets {};
+        packets.reserve(read_result.packets.size());
         for (const auto& merged_packet : read_result.packets) {
             packets.push_back(merged_packet.packet);
         }
@@ -2163,24 +2166,22 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     std::span<const std::uint8_t> initial_secret_connection_id,
     const std::optional<std::size_t> flow_index
 ) {
-    const auto window_packets = read_selected_direction_presentation_window(
+    const auto window_candidates = read_selected_direction_presentation_window(
         session,
         source,
         direction,
         selected_packet_indices,
         flow_index
     );
-    if (!window_packets.has_value()) {
+    if (!window_candidates.has_value()) {
         return std::nullopt;
     }
 
     return build_quic_presentation_for_selected_direction_impl(
-        session,
         flow_key,
-        std::span<const PacketRef>(window_packets->data(), window_packets->size()),
+        std::span<const QuicPresentationCandidate>(window_candidates->data(), window_candidates->size()),
         selected_packet_indices,
-        initial_secret_connection_id,
-        flow_index
+        initial_secret_connection_id
     );
 }
 
@@ -2193,24 +2194,22 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     std::span<const std::uint8_t> initial_secret_connection_id,
     const std::optional<std::size_t> flow_index
 ) {
-    const auto window_packets = read_selected_direction_presentation_window(
+    const auto window_candidates = read_selected_direction_presentation_window(
         session,
         source,
         direction,
         selected_packet_indices,
         flow_index
     );
-    if (!window_packets.has_value()) {
+    if (!window_candidates.has_value()) {
         return std::nullopt;
     }
 
     return build_quic_presentation_for_selected_direction_impl(
-        session,
         flow_key,
-        std::span<const PacketRef>(window_packets->data(), window_packets->size()),
+        std::span<const QuicPresentationCandidate>(window_candidates->data(), window_candidates->size()),
         selected_packet_indices,
-        initial_secret_connection_id,
-        flow_index
+        initial_secret_connection_id
     );
 }
 
