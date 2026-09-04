@@ -73,6 +73,22 @@ struct SelectedFlowPacketLookupResult {
     }
 };
 
+struct SelectedFlowDirectionalPacketContext {
+    PacketRef packet {};
+    Direction direction {Direction::a_to_b};
+    std::uint64_t directional_local_offset {0};
+};
+
+struct SelectedFlowDirectionalPacketLookupResult {
+    SelectedFlowPacketAccessStatus status {SelectedFlowPacketAccessStatus::ok};
+    std::optional<SelectedFlowDirectionalPacketContext> packet {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == SelectedFlowPacketAccessStatus::ok;
+    }
+};
+
 class SelectedFlowPacketAccessSource {
 public:
     virtual ~SelectedFlowPacketAccessSource() = default;
@@ -168,6 +184,12 @@ private:
 
 [[nodiscard]] SelectedFlowPacketLookupResult selected_flow_packet_context_for_packet_index(
     const SelectedFlowPacketAccessSource& source,
+    std::uint64_t packet_index
+);
+
+[[nodiscard]] SelectedFlowDirectionalPacketLookupResult selected_flow_directional_packet_context_for_packet_index(
+    const SelectedFlowPacketAccessSource& source,
+    Direction direction,
     std::uint64_t packet_index
 );
 

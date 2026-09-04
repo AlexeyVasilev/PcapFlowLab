@@ -950,4 +950,42 @@ SelectedFlowPacketLookupResult selected_flow_packet_context_for_packet_index(
     return result;
 }
 
+SelectedFlowDirectionalPacketLookupResult selected_flow_directional_packet_context_for_packet_index(
+    const SelectedFlowPacketAccessSource& source,
+    const Direction direction,
+    const std::uint64_t packet_index
+) {
+    SelectedFlowDirectionalPacketLookupResult result {};
+
+    const auto count = source.directional_packet_count(direction);
+    if (!count) {
+        result.status = count.status;
+        result.error_detail = count.error_detail;
+        return result;
+    }
+
+    const auto lower = directional_lower_bound(
+        source,
+        direction,
+        count.packet_count,
+        packet_index
+    );
+    if (!lower) {
+        result.status = lower.status;
+        result.error_detail = lower.error_detail;
+        return result;
+    }
+
+    if (!lower.packet.has_value() || lower.packet->packet_index != packet_index) {
+        return result;
+    }
+
+    result.packet = SelectedFlowDirectionalPacketContext {
+        .packet = *lower.packet,
+        .direction = direction,
+        .directional_local_offset = lower.local_offset,
+    };
+    return result;
+}
+
 }  // namespace pfl::session_detail

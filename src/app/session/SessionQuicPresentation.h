@@ -116,6 +116,15 @@ struct QuicPresentationResult {
     bool used_bounded_crypto_assembly {false};
 };
 
+struct QuicPresentationDirectionalWindowPlan {
+    std::uint64_t directional_packet_count {0};
+    std::uint64_t window_start_offset {0};
+    std::uint64_t earliest_selected_offset {0};
+    std::uint64_t latest_selected_offset {0};
+    std::uint64_t leading_packet_count {0};
+    std::vector<std::uint64_t> selected_offsets {};
+};
+
 enum class QuicStreamItemSemanticKind : std::uint8_t {
     none = 0,
     initial_crypto,
@@ -174,6 +183,12 @@ bool has_confirming_quic_long_header_for_packets(
     const CaptureSession& session,
     std::span<const PacketRef> packets,
     std::optional<std::size_t> flow_index = std::nullopt
+);
+
+std::optional<QuicPresentationDirectionalWindowPlan> plan_quic_selected_direction_presentation_window(
+    const SelectedFlowPacketAccessSource& source,
+    Direction direction,
+    const std::vector<std::uint64_t>& selected_packet_indices
 );
 
 std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(

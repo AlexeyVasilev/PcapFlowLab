@@ -801,6 +801,65 @@ void run_selected_flow_packet_access_tests() {
     }
 
     {
+        ScopedTestContext context {"exact_directional_packet_index_lookup_reports_directional_offset"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto lookup = session_detail::selected_flow_directional_packet_context_for_packet_index(
+            source,
+            Direction::a_to_b,
+            900'000U
+        );
+        PFL_REQUIRE(static_cast<bool>(lookup));
+        PFL_REQUIRE(lookup.packet.has_value());
+        PFL_EXPECT(lookup.packet->packet.packet_index == 900'000U);
+        PFL_EXPECT(lookup.packet->direction == Direction::a_to_b);
+        PFL_EXPECT(lookup.packet->directional_local_offset == 450'000U);
+        PFL_EXPECT(source.read_call_count() <= 80U);
+        PFL_EXPECT(source.total_requested_packets() <= 256U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"exact_directional_packet_index_lookup_wrong_direction_is_not_found"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto lookup = session_detail::selected_flow_directional_packet_context_for_packet_index(
+            source,
+            Direction::b_to_a,
+            900'000U
+        );
+        PFL_REQUIRE(static_cast<bool>(lookup));
+        PFL_EXPECT(!lookup.packet.has_value());
+        PFL_EXPECT(source.read_call_count() <= 80U);
+        PFL_EXPECT(source.total_requested_packets() <= 256U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
         ScopedTestContext context {"exact_packet_index_lookup_not_found_stays_bounded"};
 
         SyntheticCountingSelectedFlowPacketAccessSource source(
@@ -830,6 +889,103 @@ void run_selected_flow_packet_access_tests() {
 
         PFL_EXPECT(source.read_call_count() <= 240U);
         PFL_EXPECT(source.total_requested_packets() <= 768U);
+    }
+
+    {
+        ScopedTestContext context {"quic_directional_window_plan_positions_deep_selected_packet_without_prefix_walk"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 1'000'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 1U,
+            },
+            SyntheticDirectionalSequence {}
+        );
+
+        const auto plan = session_detail::plan_quic_selected_direction_presentation_window(
+            source,
+            Direction::a_to_b,
+            std::vector<std::uint64_t> {900'000U}
+        );
+        PFL_REQUIRE(plan.has_value());
+        PFL_EXPECT(plan->directional_packet_count == 1'000'000U);
+        PFL_EXPECT(plan->earliest_selected_offset == 900'000U);
+        PFL_EXPECT(plan->latest_selected_offset == 900'000U);
+        PFL_EXPECT(plan->leading_packet_count == 3U);
+        PFL_EXPECT(plan->window_start_offset == 899'997U);
+        const std::vector<std::uint64_t> expected_selected_offsets {900'000U};
+        PFL_EXPECT(plan->selected_offsets == expected_selected_offsets);
+        PFL_EXPECT(source.read_call_count() <= 80U);
+        PFL_EXPECT(source.total_requested_packets() <= 256U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"quic_directional_window_plan_handles_multi_select_without_prefix_walk"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 1'000'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 1U,
+            },
+            SyntheticDirectionalSequence {}
+        );
+
+        const auto plan = session_detail::plan_quic_selected_direction_presentation_window(
+            source,
+            Direction::a_to_b,
+            std::vector<std::uint64_t> {900'010U, 900'000U}
+        );
+        PFL_REQUIRE(plan.has_value());
+        PFL_EXPECT(plan->earliest_selected_offset == 900'000U);
+        PFL_EXPECT(plan->latest_selected_offset == 900'010U);
+        PFL_EXPECT(plan->leading_packet_count == 3U);
+        PFL_EXPECT(plan->window_start_offset == 899'997U);
+        const std::vector<std::uint64_t> expected_selected_offsets {900'010U, 900'000U};
+        PFL_EXPECT(plan->selected_offsets == expected_selected_offsets);
+        PFL_EXPECT(source.read_call_count() <= 160U);
+        PFL_EXPECT(source.total_requested_packets() <= 512U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"quic_directional_window_plan_rejects_missing_or_wrong_direction_selection"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto wrong_direction = session_detail::plan_quic_selected_direction_presentation_window(
+            source,
+            Direction::b_to_a,
+            std::vector<std::uint64_t> {8U}
+        );
+        PFL_EXPECT(!wrong_direction.has_value());
+
+        const auto missing = session_detail::plan_quic_selected_direction_presentation_window(
+            source,
+            Direction::a_to_b,
+            std::vector<std::uint64_t> {999U}
+        );
+        PFL_EXPECT(!missing.has_value());
+
+        const auto empty = session_detail::plan_quic_selected_direction_presentation_window(
+            source,
+            Direction::a_to_b,
+            {}
+        );
+        PFL_EXPECT(!empty.has_value());
     }
 
     {
@@ -1135,6 +1291,43 @@ void run_selected_flow_packet_access_tests() {
         PFL_EXPECT(source.read_call_count() > 0U);
         PFL_EXPECT(source.total_requested_packets() < kPacketCount);
         PFL_EXPECT(!presentation->packets.empty());
+    }
+
+    {
+        ScopedTestContext context {"quic_selected_flow_presentation_window_matches_resident_slice_semantics"};
+
+        constexpr std::size_t kPacketCount = 8U;
+        const auto capture_path = write_quic_bounded_access_capture(kPacketCount);
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        const auto& packets = ipv4_connections.front()->flow_a.packets;
+        PFL_REQUIRE(packets.size() == kPacketCount);
+
+        CountingSelectedFlowPacketAccessSource source(packets, {});
+        const auto source_presentation = session_detail::build_quic_presentation_for_selected_direction(
+            session,
+            ipv4_connections.front()->flow_a.key,
+            source,
+            Direction::a_to_b,
+            std::vector<std::uint64_t> {4U},
+            {},
+            0U
+        );
+        const auto expected_presentation = session_detail::build_quic_presentation_for_selected_direction(
+            session,
+            ipv4_connections.front()->flow_a.key,
+            std::span<const PacketRef>(packets.data() + 1U, 4U),
+            std::vector<std::uint64_t> {4U},
+            {},
+            0U
+        );
+        PFL_REQUIRE(source_presentation.has_value());
+        PFL_REQUIRE(expected_presentation.has_value());
+        expect_equal_quic_presentation(*source_presentation, *expected_presentation);
     }
 
     {

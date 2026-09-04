@@ -1190,6 +1190,54 @@ bool packet_is_quic_presentation_candidate(
     return !datagram_packets.empty();
 }
 
+}  // namespace
+
+std::optional<QuicPresentationDirectionalWindowPlan> plan_quic_selected_direction_presentation_window(
+    const SelectedFlowPacketAccessSource& source,
+    const Direction direction,
+    const std::vector<std::uint64_t>& selected_packet_indices
+) {
+    if (selected_packet_indices.empty()) {
+        return std::nullopt;
+    }
+
+    const auto count_result = source.directional_packet_count(direction);
+    if (!count_result) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint64_t> selected_offsets {};
+    selected_offsets.reserve(selected_packet_indices.size());
+    for (const auto packet_index : selected_packet_indices) {
+        const auto lookup = selected_flow_directional_packet_context_for_packet_index(
+            source,
+            direction,
+            packet_index
+        );
+        if (!lookup || !lookup.packet.has_value()) {
+            return std::nullopt;
+        }
+        selected_offsets.push_back(lookup.packet->directional_local_offset);
+    }
+
+    const auto [earliest_it, latest_it] = std::minmax_element(selected_offsets.begin(), selected_offsets.end());
+    const auto leading_budget = kQuicPresentationPacketBudget > 0U
+        ? static_cast<std::uint64_t>(kQuicPresentationPacketBudget - 1U)
+        : 0U;
+    const auto leading_count = std::min(*earliest_it, leading_budget);
+
+    return QuicPresentationDirectionalWindowPlan {
+        .directional_packet_count = count_result.packet_count,
+        .window_start_offset = *earliest_it - leading_count,
+        .earliest_selected_offset = *earliest_it,
+        .latest_selected_offset = *latest_it,
+        .leading_packet_count = leading_count,
+        .selected_offsets = std::move(selected_offsets),
+    };
+}
+
+namespace {
+
 std::optional<std::vector<PacketRef>> read_selected_direction_presentation_window(
     const CaptureSession& session,
     const SelectedFlowPacketAccessSource& source,
@@ -1201,35 +1249,35 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
         return std::nullopt;
     }
 
-    const auto count_result = source.directional_packet_count(direction);
-    if (!count_result) {
+    const auto window_plan = plan_quic_selected_direction_presentation_window(
+        source,
+        direction,
+        selected_packet_indices
+    );
+    if (!window_plan.has_value()) {
         return std::nullopt;
     }
 
     constexpr std::uint64_t kDirectionalReadChunkSize = 64U;
-    struct WindowPacket {
-        PacketRef packet {};
-        bool is_candidate {false};
-    };
-
-    std::vector<WindowPacket> leading_packets {};
-    leading_packets.reserve(kQuicPresentationPacketBudget > 0U ? (kQuicPresentationPacketBudget - 1U) : 0U);
 
     std::vector<PacketRef> window_packets {};
-    window_packets.reserve(kQuicPresentationPacketBudget);
+    const auto reserve_count = std::min<std::uint64_t>(
+        window_plan->leading_packet_count + static_cast<std::uint64_t>(kQuicPresentationPacketBudget),
+        static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())
+    );
+    window_packets.reserve(static_cast<std::size_t>(reserve_count));
 
     std::vector<std::uint64_t> found_selected_packet_indices {};
     found_selected_packet_indices.reserve(selected_packet_indices.size());
 
     std::size_t candidate_count = 0U;
-    bool window_started = false;
 
     const auto all_selected_packets_found = [&]() {
         return found_selected_packet_indices.size() == selected_packet_indices.size();
     };
 
-    for (std::uint64_t offset = 0U; offset < count_result.packet_count; ) {
-        const auto remaining = count_result.packet_count - offset;
+    for (std::uint64_t offset = window_plan->window_start_offset; offset < window_plan->directional_packet_count; ) {
+        const auto remaining = window_plan->directional_packet_count - offset;
         const auto read_result = source.read_direction(direction, offset, std::min(kDirectionalReadChunkSize, remaining));
         if (!read_result) {
             return std::nullopt;
@@ -1241,29 +1289,6 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
         for (const auto& packet : read_result.packet_refs) {
             const bool is_selected = packet_index_is_selected(selected_packet_indices, packet.packet_index);
             const bool is_candidate = packet_is_quic_presentation_candidate(session, packet, flow_index);
-
-            if (!window_started) {
-                if (!is_selected) {
-                    if (leading_packets.size() == (kQuicPresentationPacketBudget > 0U ? (kQuicPresentationPacketBudget - 1U) : 0U) &&
-                        !leading_packets.empty()) {
-                        leading_packets.erase(leading_packets.begin());
-                    }
-                    leading_packets.push_back(WindowPacket {
-                        .packet = packet,
-                        .is_candidate = is_candidate,
-                    });
-                    continue;
-                }
-
-                window_started = true;
-                for (const auto& leading_packet : leading_packets) {
-                    window_packets.push_back(leading_packet.packet);
-                    if (leading_packet.is_candidate) {
-                        ++candidate_count;
-                    }
-                }
-                leading_packets.clear();
-            }
 
             window_packets.push_back(packet);
             if (is_candidate) {
@@ -1277,8 +1302,7 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
                 found_selected_packet_indices.push_back(packet.packet_index);
             }
 
-            if (window_started &&
-                all_selected_packets_found() &&
+            if (all_selected_packets_found() &&
                 candidate_count >= kQuicPresentationPacketBudget) {
                 return window_packets;
             }
@@ -1287,7 +1311,7 @@ std::optional<std::vector<PacketRef>> read_selected_direction_presentation_windo
         offset += static_cast<std::uint64_t>(read_result.packet_refs.size());
     }
 
-    if (!window_started || !all_selected_packets_found()) {
+    if (!all_selected_packets_found()) {
         return std::nullopt;
     }
 
