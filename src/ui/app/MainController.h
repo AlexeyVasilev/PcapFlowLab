@@ -5,12 +5,14 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "app/session/CaptureSession.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
@@ -54,6 +56,7 @@ public:
         protocol_path,
         protocol_hints,
         quic_tls,
+        top_flows,
         top_endpoints_ports,
     };
     Q_ENUM(StatisticsOptionalSection)
@@ -165,6 +168,12 @@ private:
     Q_PROPERTY(QString analysisMaxCapturedPacketSizeText READ analysisMaxCapturedPacketSizeText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeAToBText READ analysisMaxPacketSizeAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeBToAText READ analysisMaxPacketSizeBToAText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalText READ analysisPacketSizeHistogramMaximumOriginalText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalAToBText READ analysisPacketSizeHistogramMaximumOriginalAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalBToAText READ analysisPacketSizeHistogramMaximumOriginalBToAText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedText READ analysisPacketSizeHistogramMaximumCapturedText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedAToBText READ analysisPacketSizeHistogramMaximumCapturedAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedBToAText READ analysisPacketSizeHistogramMaximumCapturedBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketRatioText READ analysisPacketRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisByteRatioText READ analysisByteRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketDirectionText READ analysisPacketDirectionText NOTIFY analysisStateChanged)
@@ -204,6 +213,9 @@ private:
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramAll READ analysisPacketSizeHistogramAll NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramAToB READ analysisPacketSizeHistogramAToB NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramBToA READ analysisPacketSizeHistogramBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramAll READ analysisCapturedPacketSizeHistogramAll NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramAToB READ analysisCapturedPacketSizeHistogramAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramBToA READ analysisCapturedPacketSizeHistogramBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogram READ analysisPacketSizeHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisSequencePreview READ analysisSequencePreview NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
@@ -213,6 +225,13 @@ private:
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
     Q_PROPERTY(QString originalBytesText READ originalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap captureTimeStatistics READ captureTimeStatistics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap captureMetrics READ captureMetrics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap flowCharacteristics READ flowCharacteristics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap packetDirectionDistribution READ packetDirectionDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap dataDirectionDistribution READ dataDirectionDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap tcpFlagStatistics READ tcpFlagStatistics NOTIFY stateChanged)
+    Q_PROPERTY(QString statisticsPartialOpenWarningText READ statisticsPartialOpenWarningText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsSectionsResetToken READ statisticsSectionsResetToken NOTIFY statisticsSectionsResetTokenChanged)
     Q_PROPERTY(int packetSizeDistributionState READ packetSizeDistributionState NOTIFY stateChanged)
     Q_PROPERTY(QString packetSizeDistributionStatusText READ packetSizeDistributionStatusText NOTIFY stateChanged)
@@ -221,6 +240,8 @@ private:
     Q_PROPERTY(qulonglong packetSizeDistributionMaximumBucketPacketCount READ packetSizeDistributionMaximumBucketPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong packetSizeDistributionMaximumCapturedPacketLength READ packetSizeDistributionMaximumCapturedPacketLength NOTIFY stateChanged)
     Q_PROPERTY(QString packetSizeDistributionMaximumCapturedPacketLengthText READ packetSizeDistributionMaximumCapturedPacketLengthText NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong packetSizeDistributionMaximumOriginalPacketLength READ packetSizeDistributionMaximumOriginalPacketLength NOTIFY stateChanged)
+    Q_PROPERTY(QString packetSizeDistributionMaximumOriginalPacketLengthText READ packetSizeDistributionMaximumOriginalPacketLengthText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList packetSizeDistributionRows READ packetSizeDistributionRows NOTIFY stateChanged)
     Q_PROPERTY(int flowPacketHistogramState READ flowPacketHistogramState NOTIFY stateChanged)
     Q_PROPERTY(QString flowPacketHistogramStatusText READ flowPacketHistogramStatusText NOTIFY stateChanged)
@@ -296,6 +317,9 @@ private:
     Q_PROPERTY(qulonglong tlsVersion12 READ tlsVersion12 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
+    Q_PROPERTY(int topFlowSectionState READ topFlowSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString topFlowSectionStatusText READ topFlowSectionStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList topFlowRows READ topFlowRows NOTIFY stateChanged)
     Q_PROPERTY(int topEndpointPortSectionState READ topEndpointPortSectionState NOTIFY stateChanged)
     Q_PROPERTY(QString topEndpointPortSectionStatusText READ topEndpointPortSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
@@ -439,6 +463,12 @@ public:
     [[nodiscard]] QString analysisMaxCapturedPacketSizeText() const;
     [[nodiscard]] QString analysisMaxPacketSizeAToBText() const;
     [[nodiscard]] QString analysisMaxPacketSizeBToAText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalAToBText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalBToAText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedAToBText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedBToAText() const;
     [[nodiscard]] QString analysisPacketRatioText() const;
     [[nodiscard]] QString analysisByteRatioText() const;
     [[nodiscard]] QString analysisPacketDirectionText() const;
@@ -478,6 +508,9 @@ public:
     [[nodiscard]] QVariantList analysisPacketSizeHistogramAll() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogramAToB() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogramBToA() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramAll() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramAToB() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramBToA() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogram() const;
     [[nodiscard]] QVariantList analysisSequencePreview() const;
     [[nodiscard]] qulonglong packetCount() const noexcept;
@@ -487,6 +520,13 @@ public:
     [[nodiscard]] qulonglong originalBytes() const noexcept;
     [[nodiscard]] QString originalBytesText() const;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
+    [[nodiscard]] QVariantMap captureTimeStatistics() const;
+    [[nodiscard]] QVariantMap captureMetrics() const;
+    [[nodiscard]] QVariantMap flowCharacteristics() const;
+    [[nodiscard]] QVariantMap packetDirectionDistribution() const;
+    [[nodiscard]] QVariantMap dataDirectionDistribution() const;
+    [[nodiscard]] QVariantMap tcpFlagStatistics() const;
+    [[nodiscard]] QString statisticsPartialOpenWarningText() const;
     [[nodiscard]] int statisticsSectionsResetToken() const noexcept;
     [[nodiscard]] int packetSizeDistributionState() const noexcept;
     [[nodiscard]] QString packetSizeDistributionStatusText() const;
@@ -495,6 +535,8 @@ public:
     [[nodiscard]] qulonglong packetSizeDistributionMaximumBucketPacketCount() const noexcept;
     [[nodiscard]] qulonglong packetSizeDistributionMaximumCapturedPacketLength() const noexcept;
     [[nodiscard]] QString packetSizeDistributionMaximumCapturedPacketLengthText() const;
+    [[nodiscard]] qulonglong packetSizeDistributionMaximumOriginalPacketLength() const noexcept;
+    [[nodiscard]] QString packetSizeDistributionMaximumOriginalPacketLengthText() const;
     [[nodiscard]] QVariantList packetSizeDistributionRows() const;
     [[nodiscard]] int flowPacketHistogramState() const noexcept;
     [[nodiscard]] QString flowPacketHistogramStatusText() const;
@@ -570,6 +612,9 @@ public:
     [[nodiscard]] qulonglong tlsVersion12() const noexcept;
     [[nodiscard]] qulonglong tlsVersion13() const noexcept;
     [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
+    [[nodiscard]] int topFlowSectionState() const noexcept;
+    [[nodiscard]] QString topFlowSectionStatusText() const;
+    [[nodiscard]] QVariantList topFlowRows() const;
     [[nodiscard]] int topEndpointPortSectionState() const noexcept;
     [[nodiscard]] QString topEndpointPortSectionStatusText() const;
     [[nodiscard]] int statisticsMode() const noexcept;
@@ -784,7 +829,13 @@ private:
         stream,
     };
 
+    struct SelectedPacketResolution {
+        PacketRef packet {};
+        std::optional<std::uint64_t> zero_based_flow_packet_index {};
+    };
+
     bool openPath(const QString& path, bool asIndex);
+    [[nodiscard]] std::optional<SelectedPacketResolution> resolveSelectedPacket() const;
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
@@ -795,7 +846,9 @@ private:
     void ensureProtocolHintsLoaded();
     void ensureProtocolPathSectionLoaded();
     void ensureQuicTlsSectionLoaded();
+    void ensureTopFlowsSectionLoaded();
     void ensureTopEndpointsAndPortsSectionLoaded();
+    void ensureTopStatisticsLoaded();
     void resetStatisticsSectionState(bool emitResetToken);
     void setStatisticsSectionState(StatisticsOptionalSection section, StatisticsSectionRequestState state, QString errorText = {});
     [[nodiscard]] QString statisticsSectionStatusText(StatisticsOptionalSection section) const;
@@ -895,14 +948,22 @@ private:
     void setLastDirectoryFromPath(const std::filesystem::path& path);
     void finalizeAdvancedFlowFilterClearAll();
     void refreshAdvancedFlowFilterEditingPresentation();
+    void refreshStatisticsOverviewPresentation();
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
-    CapturePacketSizeStatistics packet_size_statistics_ {};
+    CapturePacketStatistics packet_size_statistics_ {};
     QVariantList packet_size_distribution_rows_ {};
     FlowPacketCountHistogram flow_packet_count_histogram_ {};
     QVariantList flow_packet_histogram_rows_ {};
     QVariantList protocol_hint_distribution_ {};
+    QVariantMap capture_time_statistics_ {};
+    QVariantMap capture_metrics_ {};
+    QVariantMap flow_characteristics_ {};
+    QVariantMap packet_direction_distribution_ {};
+    QVariantMap data_direction_distribution_ {};
+    QVariantMap tcp_flag_statistics_ {};
+    QString statistics_partial_open_warning_text_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
     std::uint64_t whole_capture_packet_count_ {0U};
     std::uint64_t whole_capture_captured_bytes_ {0U};
@@ -910,6 +971,7 @@ private:
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
+    QVariantList top_flow_rows_ {};
     FlowListModel flow_model_ {};
     session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     AdvancedFlowFilterEditorModel advanced_flow_filter_editor_model_;
@@ -934,6 +996,7 @@ private:
     QString protocol_hints_error_text_ {};
     QString protocol_path_error_text_ {};
     QString quic_tls_error_text_ {};
+    QString top_flows_error_text_ {};
     QString top_endpoints_ports_error_text_ {};
     AnalysisSettings pending_analysis_settings_ {};
     bool validate_selected_packet_checksums_ {false};
@@ -956,6 +1019,7 @@ private:
     bool protocol_path_section_expanded_ {false};
     bool protocol_hints_section_expanded_ {false};
     bool quic_tls_section_expanded_ {false};
+    bool top_flows_section_expanded_ {false};
     bool top_endpoints_ports_section_expanded_ {false};
     bool has_active_protocol_path_filter_ {false};
     ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};
@@ -986,6 +1050,7 @@ private:
     StatisticsSectionRequestState protocol_hints_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState protocol_path_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState quic_tls_section_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState top_flows_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState top_endpoints_ports_section_state_ {StatisticsSectionRequestState::not_requested};
     bool analysis_sequence_export_in_progress_ {false};
     bool flow_info_csv_export_in_progress_ {false};

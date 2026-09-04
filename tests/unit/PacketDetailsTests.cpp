@@ -1120,6 +1120,20 @@ void run_packet_details_tests() {
         PacketPayloadService payload_service {};
         const auto udp_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
         PFL_EXPECT(presentation->selected_initial_plaintext_payload.size() <= udp_payload.size());
+
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_quic_presentation_v16_roundtrip.idx";
+        std::filesystem::remove(index_path);
+        PFL_EXPECT(session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(loaded_session.state().ipv4_connections.size() == 0U);
+        const auto loaded_presentation = loaded_session.derive_quic_presentation_for_packet(0U, 0U);
+        PFL_REQUIRE(loaded_presentation.has_value());
+        PFL_REQUIRE(loaded_presentation->packets.size() == 1U);
+        PFL_EXPECT(loaded_presentation->packets[0].shell_type == presentation->packets[0].shell_type);
+        PFL_EXPECT(!loaded_presentation->selected_initial_plaintext_payload.empty());
+        PFL_EXPECT(loaded_presentation->sni == presentation->sni);
     }
 
     {

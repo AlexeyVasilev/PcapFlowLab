@@ -176,6 +176,19 @@ This workflow shows that:
 - the full Protocol Path Tree can be exported as a side output;
 - this summary workflow does not require packet-byte-backed inspection.
 
+For current v16 indexes, standard summary output, `--extended`, Protocol Path
+Tree preview, and Protocol Path Tree export are read from the index's fast
+Statistics tier. This means the command can report summary data without
+opening the original capture file and without scanning the later flow-detail
+parts of the index.
+
+When fast summary output shows `Source capture`, that line is the source
+identity recorded in the index. It is not a live check that the original
+capture is still present or readable.
+
+Flow-list CSV export is different: `--out-flows-list` needs flow metadata, so
+it uses the normal full index-opening path.
+
 ## Get a deeper overview with `--extended`
 
 Use `--extended` when the standard summary is not enough and you want a broader
@@ -467,6 +480,10 @@ The CLI recognizes both `.idx` and `.pflidx` as index file extensions.
 For `summary`, an index is meant to be self-sufficient for summary data.
 Unlike byte-backed inspection commands, `summary` does not need
 `--source-capture`.
+
+For current v16 indexes, summary-style outputs use the index fast Statistics
+tier when possible. This is a quick metadata read, not a full validation of
+every later flow-detail section in the index.
 
 ## Invalid combinations and errors
 

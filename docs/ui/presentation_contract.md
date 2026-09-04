@@ -407,9 +407,20 @@ The Statistics contract aligns to current shared behavior:
 
 ### Always-visible core
 
-- overview counters;
+- overview counters in the order `Packets`, `Flows`, `Original Bytes`,
+  `Captured Bytes`;
+- Capture Start / Capture End / Duration values;
 - Transport Summary;
 - IP Family Summary.
+
+When the active capture was opened partially, the Statistics page must show a
+compact warning that the values cover successfully imported packets only.
+
+Shared always-visible Statistics semantics now also include:
+
+- absolute UTC capture start/end timestamps;
+- capture duration, with zero duration distinct from unavailable time;
+- millisecond-precision visible formatting for capture-level timestamps and duration.
 
 ### Optional/lazy sections
 
@@ -419,17 +430,121 @@ The current optional independently collapsible/lazy statistics sections are:
 - `Flows by Packet Count`
 - `Protocol Path Tree`
 - `Detected Protocol Hints`
+- `Capture Metrics`
+- `Flow Characteristics`
+- `Direction Distribution`
+- `TCP Flags`
 - `QUIC and TLS`
+- `Top Flows by Original Bytes`
 - `Top Endpoints and Ports`
 
 These sections are based on whole-capture/session statistics, not selected-flow
 state.
+
+`Packet Size Distribution` loads one shared whole-capture DTO per expansion and
+supports frontend-local `Captured` and `Original` display modes over the same
+bucket boundaries. Mode switching changes only presentation and must not by
+itself trigger another backend statistics request.
+
+`Flows by Packet Count` likewise loads one shared whole-capture histogram DTO
+per expansion and supports frontend-local `Flows`, `Captured bytes`, and
+`Original bytes` modes over identical packet-count bucket membership.
+
+`Direction Distribution` is one collapsible section containing both:
+
+- `Packet Direction`
+- `Data Direction (Original Bytes)`
+
+`TCP Flags` is one collapsible whole-capture section containing:
+
+- `SYN`
+- `FIN`
+- `RST`
+
+Each row shows:
+
+- `Packets`
+- `Percent`
+
+Shared semantics include:
+
+- counts come from authoritative connection aggregate TCP flag counts rather
+  than rescanning packet refs;
+- percentages use the whole-capture TCP packet count as the denominator;
+- `SYN` includes `SYN+ACK`;
+- one packet may contribute to more than one row when multiple flags are set;
+- zero TCP packets must render stable zero percentages rather than `NaN`/`Inf`.
+
+`Top Flows by Original Bytes` is one collapsible whole-capture section
+containing at most ten rows ranked by:
+
+- original bytes descending;
+- packet count descending;
+- canonical flow index ascending for deterministic ties.
+
+Each row shows:
+
+- `Flow`
+- `Endpoint A`
+- `Endpoint B`
+- `Protocol`
+- `Detected Protocol`
+- `Service`
+- `Protocol Path`
+- `Packets`
+- `Captured`
+- `Original`
+
+Shared semantics include:
+
+- `Flow` uses the same user-visible one-based numbering convention as the
+  normal Flows list while remaining anchored to the same canonical flow index;
+- `Endpoint A` / `Endpoint B` preserve first-observed orientation semantics;
+- `Protocol` uses the same canonical transport/protocol presentation as the
+  normal Flows list;
+- `Detected Protocol` reuses the same effective possible-TLS/QUIC projection
+  policy as the normal Flows list rather than owning an independent top-flow
+  heuristic;
+- `Service` uses the stored canonical service hint and renders a neutral `—`
+  marker when empty;
+- `Protocol Path` reuses the shared compact Protocol Path presentation for the
+  stored `protocol_path_id`;
+- `Packets`, `Captured`, and `Original` are metadata-backed connection totals;
+- ranking is by `Original`, not by `Captured`.
+
+`Top Endpoints and Ports` is one collapsible whole-capture section containing
+two bounded tables:
+
+- `Top Endpoints`
+- `Top Ports`
+
+Each table currently shows:
+
+- identity column (`Endpoint` or `Port`)
+- `Flows`
+- `Packets`
+- `Original Bytes`
+
+Shared semantics include:
+
+- both tables rank by original bytes descending, then packet count descending,
+  then deterministic identity ascending;
+- endpoint rows count distinct canonical flows involving that endpoint;
+- port rows count distinct canonical flows involving each non-zero port number;
+- a canonical flow contributes once per distinct non-zero port number, so a
+  `4500 -> 4500` flow counts once for port `4500`, not twice;
+- the section continues to share one metadata-backed top-statistics source with
+  the top-flow section rather than triggering separate whole-flow traversals.
 
 Shared semantics include:
 
 - whole-capture totals;
 - original bytes;
 - percentages;
+- packet-level derived metrics from `CapturePacketStatistics`;
+- flow-level characteristics from canonical-flow totals;
+- packet-direction distribution by canonical flow count;
+- original-byte direction distribution by canonical flow count;
 - structured drill-down / `Show flows` behavior where currently exposed.
 
 This contract does not preserve implementation chronology for how those sections
@@ -450,6 +565,26 @@ Shared semantic expectations:
 - burst/idle metrics;
 - histograms;
 - sequence preview and export.
+
+Current visible Analysis contract also includes:
+
+- `First packet` and `Last packet` remain the existing Overview labels, but
+  their visible values use shared full UTC timestamp presentation;
+- `Duration` remains the existing Overview label, but its visible value uses
+  shared millisecond-precision duration presentation, including `00:00:00.000`
+  for a valid zero-duration flow;
+- `Packet Size Histogram` exposes two orthogonal local controls:
+  `Original` / `Captured` and `All` / `A->B` / `B->A`;
+- `Original` packet size means the original packet length recorded by capture
+  metadata, while `Captured` means the bytes retained in the capture;
+- the packet-size footer label and value follow the currently selected size
+  mode and direction, using the exact maximum packet length already computed
+  by selected-flow Analysis rather than inferring a value from bucket ranges;
+- `Flow Rate` exposes only `Original data/s` and `Packets/s`, with
+  `A->B` / `B->A` / `Both` remaining local presentation controls;
+- switching Analysis metric or direction controls is frontend-local over the
+  already loaded selected-flow Analysis DTO and must not trigger a backend
+  recomputation or additional selected-flow packet traversal.
 
 This contract records stable visible semantics, not a new analysis RFC and not a
 promise of identical Qt/Tauri layout.

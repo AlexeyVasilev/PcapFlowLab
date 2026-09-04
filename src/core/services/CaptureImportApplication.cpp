@@ -612,7 +612,7 @@ bool apply_decoded_packet_import(
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv4);
-        return apply_decoded_flow_import(
+        if (!apply_decoded_flow_import(
             packet,
             connection,
             decoded.ipv4->flow_key,
@@ -620,7 +620,11 @@ bool apply_decoded_packet_import(
             hint_service,
             decoded.terminal_transport_payload_bounds,
             materializer
-        );
+        )) {
+            return false;
+        }
+        observe_capture_packet_statistics(state.packet_statistics, decoded.ipv4->packet_ref, true);
+        return true;
     }
 
     if (decoded.ipv6.has_value()) {
@@ -628,7 +632,7 @@ bool apply_decoded_packet_import(
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv6);
-        return apply_decoded_flow_import(
+        if (!apply_decoded_flow_import(
             packet,
             connection,
             decoded.ipv6->flow_key,
@@ -636,7 +640,11 @@ bool apply_decoded_packet_import(
             hint_service,
             decoded.terminal_transport_payload_bounds,
             materializer
-        );
+        )) {
+            return false;
+        }
+        observe_capture_packet_statistics(state.packet_statistics, decoded.ipv6->packet_ref, true);
+        return true;
     }
 
     return true;
@@ -716,10 +724,12 @@ void apply_unrecognized_packet_import(
     const std::span<const std::uint8_t> packet_bytes,
     CaptureState& state
 ) {
+    const auto packet_ref = packet_ref_from_raw_packet(packet);
     state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
-        .packet = packet_ref_from_raw_packet(packet),
+        .packet = packet_ref,
         .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
     });
+    observe_capture_packet_statistics(state.packet_statistics, packet_ref, false);
 }
 
 }  // namespace pfl

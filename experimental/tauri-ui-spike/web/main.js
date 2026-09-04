@@ -21,11 +21,16 @@
   const tauriEagerFlowLoadLimit = 250000;
   const topEndpointPortStatisticsLimit = 5;
   const statisticsSectionKeys = Object.freeze({
+    captureMetrics: "captureMetrics",
+    flowCharacteristics: "flowCharacteristics",
+    directionDistribution: "directionDistribution",
+    tcpFlags: "tcpFlags",
     packetSizeDistribution: "packetSizeDistribution",
     flowPacketHistogram: "flowPacketHistogram",
     protocolPath: "protocolPath",
     protocolHints: "protocolHints",
     quicTls: "quicTls",
+    topFlows: "topFlows",
     topEndpointsPorts: "topEndpointsPorts",
   });
   const statisticsSectionRequestStates = Object.freeze({
@@ -46,11 +51,16 @@
 
   function createStatisticsSectionsState() {
     return {
+      [statisticsSectionKeys.captureMetrics]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.flowCharacteristics]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.directionDistribution]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.tcpFlags]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.packetSizeDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowPacketHistogram]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolHints]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.quicTls]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.topFlows]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.topEndpointsPorts]: createStatisticsSectionEntry(),
     };
   }
@@ -309,6 +319,7 @@
     analysisFlowVirtualizationActive: false,
     statisticsSections: createStatisticsSectionsState(),
     capturePacketSizeStatistics: null,
+    packetSizeDistributionDisplayMode: "captured",
     flowPacketCountHistogram: null,
     flowPacketHistogramDisplayMode: "flows",
     protocolHintStatistics: null,
@@ -324,9 +335,10 @@
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
-    analysisRateMetricMode: "data",
+    analysisRateMetricMode: "original_data",
     analysisRateDirectionMode: "both",
-    analysisPacketSizeHistogramMode: "all",
+    analysisPacketSizeHistogramMetricMode: "original",
+    analysisPacketSizeHistogramDirectionMode: "all",
     analysisInterArrivalHistogramMode: "all",
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
@@ -3526,7 +3538,7 @@
     analysisRateGraphStatusText: document.getElementById("analysisRateGraphStatusText"),
     analysisRateGraphSurface: document.getElementById("analysisRateGraphSurface"),
     analysisRateGraphSvg: document.getElementById("analysisRateGraphSvg"),
-    analysisRateMetricModeData: document.getElementById("analysisRateMetricModeData"),
+    analysisRateMetricModeOriginalData: document.getElementById("analysisRateMetricModeOriginalData"),
     analysisRateMetricModePackets: document.getElementById("analysisRateMetricModePackets"),
     analysisRateDirectionModeAToB: document.getElementById("analysisRateDirectionModeAToB"),
     analysisRateDirectionModeBToA: document.getElementById("analysisRateDirectionModeBToA"),
@@ -3535,6 +3547,8 @@
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
     analysisPacketSizeCapturedSummary: document.getElementById("analysisPacketSizeCapturedSummary"),
+    analysisPacketSizeHistogramMetricOriginal: document.getElementById("analysisPacketSizeHistogramMetricOriginal"),
+    analysisPacketSizeHistogramMetricCaptured: document.getElementById("analysisPacketSizeHistogramMetricCaptured"),
     analysisPacketSizeHistogramModeAll: document.getElementById("analysisPacketSizeHistogramModeAll"),
     analysisPacketSizeHistogramModeAToB: document.getElementById("analysisPacketSizeHistogramModeAToB"),
     analysisPacketSizeHistogramModeBToA: document.getElementById("analysisPacketSizeHistogramModeBToA"),
@@ -3553,12 +3567,35 @@
     metricFlows: document.getElementById("metricFlows"),
     metricCapturedBytes: document.getElementById("metricCapturedBytes"),
     metricOriginalBytes: document.getElementById("metricOriginalBytes"),
+    statisticsPartialOpenWarning: document.getElementById("statisticsPartialOpenWarning"),
+    captureStartValue: document.getElementById("captureStartValue"),
+    captureEndValue: document.getElementById("captureEndValue"),
+    captureDurationValue: document.getElementById("captureDurationValue"),
+    captureMetricsDetails: document.getElementById("captureMetricsDetails"),
+    averageCapturedPacketSizeValue: document.getElementById("averageCapturedPacketSizeValue"),
+    averageOriginalPacketSizeValue: document.getElementById("averageOriginalPacketSizeValue"),
+    averagePacketRateValue: document.getElementById("averagePacketRateValue"),
+    averageCapturedDataRateValue: document.getElementById("averageCapturedDataRateValue"),
+    averageOriginalDataRateValue: document.getElementById("averageOriginalDataRateValue"),
+    truncatedPacketsValue: document.getElementById("truncatedPacketsValue"),
+    notCapturedBytesValue: document.getElementById("notCapturedBytesValue"),
+    captureCompletenessValue: document.getElementById("captureCompletenessValue"),
+    flowCharacteristicsDetails: document.getElementById("flowCharacteristicsDetails"),
+    onlyAToBFlowsValue: document.getElementById("onlyAToBFlowsValue"),
+    serviceRecognizedFlowsValue: document.getElementById("serviceRecognizedFlowsValue"),
+    directionDistributionDetails: document.getElementById("directionDistributionDetails"),
+    packetDirectionDistributionBody: document.getElementById("packetDirectionDistributionBody"),
+    dataDirectionDistributionHelpText: document.getElementById("dataDirectionDistributionHelpText"),
+    dataDirectionDistributionBody: document.getElementById("dataDirectionDistributionBody"),
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
     unrecognizedStatsSection: document.getElementById("unrecognizedStatsSection"),
     unrecognizedStatsBody: document.getElementById("unrecognizedStatsBody"),
     packetSizeDistributionDetails: document.getElementById("packetSizeDistributionDetails"),
     packetSizeDistributionSummaryValue: document.getElementById("packetSizeDistributionSummaryValue"),
+    packetSizeDistributionModeCaptured: document.getElementById("packetSizeDistributionModeCaptured"),
+    packetSizeDistributionModeOriginal: document.getElementById("packetSizeDistributionModeOriginal"),
+    packetSizeDistributionHelperText: document.getElementById("packetSizeDistributionHelperText"),
     packetSizeDistributionStateText: document.getElementById("packetSizeDistributionStateText"),
     packetSizeDistributionMaximumValue: document.getElementById("packetSizeDistributionMaximumValue"),
     packetSizeDistributionRows: document.getElementById("packetSizeDistributionRows"),
@@ -3566,6 +3603,7 @@
     flowPacketHistogramSummaryValue: document.getElementById("flowPacketHistogramSummaryValue"),
     flowPacketHistogramStateText: document.getElementById("flowPacketHistogramStateText"),
     flowPacketHistogramModeFlows: document.getElementById("flowPacketHistogramModeFlows"),
+    flowPacketHistogramModeCapturedBytes: document.getElementById("flowPacketHistogramModeCapturedBytes"),
     flowPacketHistogramModeOriginalBytes: document.getElementById("flowPacketHistogramModeOriginalBytes"),
     flowPacketHistogramExcludedZeroPacketLabel: document.getElementById("flowPacketHistogramExcludedZeroPacketLabel"),
     flowPacketHistogramRows: document.getElementById("flowPacketHistogramRows"),
@@ -3584,10 +3622,16 @@
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
     protocolPathStatsViewport: document.getElementById("protocolPathStatsViewport"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
+    tcpFlagsDetails: document.getElementById("tcpFlagsDetails"),
+    tcpFlagsHelpText: document.getElementById("tcpFlagsHelpText"),
+    tcpFlagsBody: document.getElementById("tcpFlagsBody"),
     quicTlsDetails: document.getElementById("quicTlsDetails"),
     quicTlsSummaryValue: document.getElementById("quicTlsSummaryValue"),
     quicStatsBody: document.getElementById("quicStatsBody"),
     tlsStatsBody: document.getElementById("tlsStatsBody"),
+    topFlowsDetails: document.getElementById("topFlowsDetails"),
+    topFlowsSummaryValue: document.getElementById("topFlowsSummaryValue"),
+    topFlowsBody: document.getElementById("topFlowsBody"),
     topEndpointsPortsDetails: document.getElementById("topEndpointsPortsDetails"),
     topEndpointsPortsSummaryValue: document.getElementById("topEndpointsPortsSummaryValue"),
     topEndpointsBody: document.getElementById("topEndpointsBody"),
@@ -3604,6 +3648,47 @@
       return "0";
     }
     return String(Math.trunc(number));
+  }
+
+  function statisticsDisplayText(value) {
+    const text = String(value ?? "").trim();
+    return text.length > 0 ? text : "—";
+  }
+
+  function setStatisticsText(element, value) {
+    if (element) {
+      element.textContent = statisticsDisplayText(value);
+    }
+  }
+
+  function renderDirectionDistributionRows(rows, emptyText) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) {
+      return renderStatsStateRow(3, emptyText);
+    }
+
+    return safeRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(String(row?.label ?? "—"))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.flow_count_text))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.percent_text))}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderTcpFlagRows(rows, emptyText) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) {
+      return renderStatsStateRow(3, emptyText);
+    }
+
+    return safeRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(String(row?.label ?? "—"))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.packet_count_text))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.percent_text))}</td>
+      </tr>
+    `).join("");
   }
 
   function currentCaptureGeneration() {
@@ -3634,6 +3719,7 @@
   function resetOptionalStatisticsSections() {
     state.statisticsSections = createStatisticsSectionsState();
     state.capturePacketSizeStatistics = null;
+    state.packetSizeDistributionDisplayMode = "captured";
     state.flowPacketCountHistogram = null;
     state.flowPacketHistogramDisplayMode = "flows";
     state.protocolHintStatistics = null;
@@ -3650,11 +3736,16 @@
 
   function synchronizeStatisticsDisclosureState() {
     const detailsBindings = [
+      [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
+      [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
+      [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
+      [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
       [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
       [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
       [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
       [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
+      [elements.topFlowsDetails, statisticsSectionKeys.topFlows],
       [elements.topEndpointsPortsDetails, statisticsSectionKeys.topEndpointsPorts],
     ];
 
@@ -3681,6 +3772,11 @@
     return `${protocol} (${hint})`;
   }
 
+  function analysisDisplayText(value, unavailableText = "-") {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : unavailableText;
+  }
+
   function trimTrailingZeros(text) {
     return String(text).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
   }
@@ -3688,7 +3784,7 @@
   function ratePointValue(point, metricMode) {
     return metricMode === "packets"
       ? Number(point?.packets_per_second ?? 0)
-      : Number(point?.data_per_second ?? 0);
+      : Number(point?.original_data_per_second ?? 0);
   }
 
   function trimRateGraphSeries(seriesA, seriesB) {
@@ -3698,8 +3794,8 @@
     while (lastIndex >= 0) {
       const pointA = lastIndex < safeA.length ? safeA[lastIndex] : null;
       const pointB = lastIndex < safeB.length ? safeB[lastIndex] : null;
-      const zeroA = !pointA || (Number(pointA.data_per_second ?? 0) === 0 && Number(pointA.packets_per_second ?? 0) === 0);
-      const zeroB = !pointB || (Number(pointB.data_per_second ?? 0) === 0 && Number(pointB.packets_per_second ?? 0) === 0);
+      const zeroA = !pointA || (Number(pointA.original_data_per_second ?? 0) === 0 && Number(pointA.packets_per_second ?? 0) === 0);
+      const zeroB = !pointB || (Number(pointB.original_data_per_second ?? 0) === 0 && Number(pointB.packets_per_second ?? 0) === 0);
       if (!zeroA || !zeroB) {
         break;
       }
@@ -3822,10 +3918,10 @@
     );
     const unit = rateUnitForValue(state.analysisRateMetricMode, peakValue);
     const metricLabel = state.analysisRateMetricMode === "packets"
-      ? "Packets rate (pkt/s)"
-      : `Data rate (${unit})`;
+      ? "Packet rate (packets/s)"
+      : `Original data rate (${unit})`;
     header.textContent = `${metricLabel} • Peak: ${formatRatePeakValue(peakValue, unit)}`;
-    context.textContent = `Duration: ${analysis?.duration_text || "-"} • ${formatRateGraphWindowContext(analysis?.rate_graph_window_text)} • Samples: ${trimmed.sampleCount}`;
+    context.textContent = `Duration: ${analysis?.duration_text_milliseconds || analysis?.unavailable_text || "-"} • ${formatRateGraphWindowContext(analysis?.rate_graph_window_text)} • Samples: ${trimmed.sampleCount}`;
     legend.style.display = state.analysisRateDirectionMode === "both" ? "" : "none";
 
     const maxX = Math.max(
@@ -4374,6 +4470,7 @@
     clearHtml(elements.protocolPathStatsBody);
     clearHtml(elements.quicStatsBody);
     clearHtml(elements.tlsStatsBody);
+    clearHtml(elements.topFlowsBody);
     clearHtml(elements.topEndpointsBody);
     clearHtml(elements.topPortsBody);
     clearHtml(elements.packetDetailsSummary);
@@ -4410,8 +4507,8 @@
     const analysisSequenceRows = Array.isArray(state.analysis?.sequence_preview_rows)
       ? state.analysis.sequence_preview_rows.length
       : 0;
-    const packetSizeHistogramRows = Array.isArray(state.analysis?.packet_size_histogram_rows)
-      ? state.analysis.packet_size_histogram_rows.length
+    const packetSizeHistogramRows = Array.isArray(state.analysis?.packet_size_histogram_dimension_rows)
+      ? state.analysis.packet_size_histogram_dimension_rows.length
       : 0;
     const interArrivalHistogramRows = Array.isArray(state.analysis?.inter_arrival_histogram_rows)
       ? state.analysis.inter_arrival_histogram_rows.length
@@ -6030,28 +6127,39 @@
   }
 
   async function ensureTopEndpointPortStatisticsLoaded() {
-    const sectionKey = statisticsSectionKeys.topEndpointsPorts;
-    const section = statisticsSectionEntry(sectionKey);
+    const topFlowsSection = statisticsSectionEntry(statisticsSectionKeys.topFlows);
+    const topEndpointsSection = statisticsSectionEntry(statisticsSectionKeys.topEndpointsPorts);
     if (state.openState !== "opened" || !state.overview) {
       return null;
     }
 
     if (state.topEndpointPortStatistics) {
-      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.ready);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.ready);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.ready);
       return state.topEndpointPortStatistics;
     }
 
-    if (section?.requestState === statisticsSectionRequestStates.unavailable || section?.requestState === statisticsSectionRequestStates.error) {
+    if (
+      topFlowsSection?.requestState === statisticsSectionRequestStates.unavailable ||
+      topFlowsSection?.requestState === statisticsSectionRequestStates.error ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.unavailable ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.error
+    ) {
       return null;
     }
 
-    if (section?.requestState === statisticsSectionRequestStates.loading) {
+    if (
+      topFlowsSection?.requestState === statisticsSectionRequestStates.loading ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.loading
+    ) {
       return null;
     }
 
     const captureGeneration = currentCaptureGeneration();
-    setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.loading);
+    setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.loading);
+    setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.loading);
     if (state.activeTab === "statistics") {
+      renderTopFlowsSection();
       renderTopEndpointPortSection();
     }
 
@@ -6063,7 +6171,11 @@
 
       state.topEndpointPortStatistics = statistics || null;
       setStatisticsSectionRequestState(
-        sectionKey,
+        statisticsSectionKeys.topFlows,
+        statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
+      );
+      setStatisticsSectionRequestState(
+        statisticsSectionKeys.topEndpointsPorts,
         statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
       );
       return state.topEndpointPortStatistics;
@@ -6072,10 +6184,13 @@
         return null;
       }
 
-      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.error, `Failed to load top endpoints and ports: ${String(error)}`);
+      const errorText = `Failed to load top statistics: ${String(error)}`;
+      setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.error, errorText);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.error, errorText);
       return null;
     } finally {
       if (captureGeneration === currentCaptureGeneration() && state.activeTab === "statistics") {
+        renderTopFlowsSection();
         renderTopEndpointPortSection();
       }
     }
@@ -6097,7 +6212,10 @@
     if (statisticsSectionEligible(statisticsSectionKeys.quicTls)) {
       void ensureQuicTlsStatisticsLoaded();
     }
-    if (statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)) {
+    if (
+      statisticsSectionEligible(statisticsSectionKeys.topFlows) ||
+      statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)
+    ) {
       void ensureTopEndpointPortStatisticsLoaded();
     }
   }
@@ -6348,9 +6466,10 @@
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
-    state.analysisRateMetricMode = "data";
+    state.analysisRateMetricMode = "original_data";
     state.analysisRateDirectionMode = "both";
-    state.analysisPacketSizeHistogramMode = "all";
+    state.analysisPacketSizeHistogramMetricMode = "original";
+    state.analysisPacketSizeHistogramDirectionMode = "all";
     state.analysisInterArrivalHistogramMode = "all";
   }
 
@@ -7156,8 +7275,29 @@
     }
     elements.protocolPathSummaryValue && (elements.protocolPathSummaryValue.textContent = "");
     elements.protocolHintsSummaryValue && (elements.protocolHintsSummaryValue.textContent = "");
+    elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
+    elements.tcpFlagsBody && (elements.tcpFlagsBody.innerHTML = "");
     elements.quicTlsSummaryValue && (elements.quicTlsSummaryValue.textContent = "");
+    elements.topFlowsSummaryValue && (elements.topFlowsSummaryValue.textContent = "");
     elements.topEndpointsPortsSummaryValue && (elements.topEndpointsPortsSummaryValue.textContent = "");
+    elements.statisticsPartialOpenWarning && elements.statisticsPartialOpenWarning.classList.add("is-hidden");
+    elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
+    setStatisticsText(elements.captureStartValue, "");
+    setStatisticsText(elements.captureEndValue, "");
+    setStatisticsText(elements.captureDurationValue, "");
+    setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+    setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+    setStatisticsText(elements.averagePacketRateValue, "");
+    setStatisticsText(elements.averageCapturedDataRateValue, "");
+    setStatisticsText(elements.averageOriginalDataRateValue, "");
+    setStatisticsText(elements.truncatedPacketsValue, "");
+    setStatisticsText(elements.notCapturedBytesValue, "");
+    setStatisticsText(elements.captureCompletenessValue, "");
+    setStatisticsText(elements.onlyAToBFlowsValue, "");
+    setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+    elements.packetDirectionDistributionBody && (elements.packetDirectionDistributionBody.innerHTML = "");
+    elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+    elements.dataDirectionDistributionBody && (elements.dataDirectionDistributionBody.innerHTML = "");
     elements.transportStatsBody && (elements.transportStatsBody.innerHTML = "");
     elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
     elements.unrecognizedStatsBody && (elements.unrecognizedStatsBody.innerHTML = "");
@@ -7166,17 +7306,37 @@
     state.protocolPathStatsVisibleRows = [];
     elements.quicStatsBody && (elements.quicStatsBody.innerHTML = "");
     elements.tlsStatsBody && (elements.tlsStatsBody.innerHTML = "");
+    elements.topFlowsBody && (elements.topFlowsBody.innerHTML = "");
     elements.topEndpointsBody && (elements.topEndpointsBody.innerHTML = "");
     elements.topPortsBody && (elements.topPortsBody.innerHTML = "");
   }
 
   function renderFlowPacketHistogramModeButtons() {
     elements.flowPacketHistogramModeFlows?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "flows");
+    elements.flowPacketHistogramModeCapturedBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "captured_bytes");
     elements.flowPacketHistogramModeOriginalBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "original_bytes");
   }
 
+  function renderPacketSizeDistributionModeButtons() {
+    elements.packetSizeDistributionModeCaptured?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "captured");
+    elements.packetSizeDistributionModeOriginal?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "original");
+  }
+
+  function setPacketSizeDistributionDisplayMode(mode) {
+    const normalizedMode = mode === "original" ? "original" : "captured";
+    if (state.packetSizeDistributionDisplayMode === normalizedMode) {
+      renderPacketSizeDistributionModeButtons();
+      return;
+    }
+
+    state.packetSizeDistributionDisplayMode = normalizedMode;
+    renderCapturePacketSizeStatisticsSection();
+  }
+
   function setFlowPacketHistogramDisplayMode(mode) {
-    const normalizedMode = mode === "original_bytes" ? "original_bytes" : "flows";
+    const normalizedMode = mode === "captured_bytes"
+      ? "captured_bytes"
+      : (mode === "original_bytes" ? "original_bytes" : "flows");
     if (state.flowPacketHistogramDisplayMode === normalizedMode) {
       renderFlowPacketHistogramModeButtons();
       return;
@@ -7189,6 +7349,14 @@
   function renderCapturePacketSizeStatisticsSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.packetSizeDistribution);
     const statistics = state.capturePacketSizeStatistics;
+    const showingOriginal = state.packetSizeDistributionDisplayMode === "original";
+
+    renderPacketSizeDistributionModeButtons();
+    if (elements.packetSizeDistributionHelperText) {
+      elements.packetSizeDistributionHelperText.textContent = showingOriginal
+        ? "Original packet lengths for all packets imported from the capture, including unrecognized packets."
+        : "Captured packet lengths for all packets imported from the capture, including unrecognized packets.";
+    }
 
     if (elements.packetSizeDistributionSummaryValue) {
       elements.packetSizeDistributionSummaryValue.textContent = statistics?.has_capture
@@ -7202,15 +7370,23 @@
       }
       if (elements.packetSizeDistributionMaximumValue) {
         elements.packetSizeDistributionMaximumValue.textContent =
-          `Maximum captured packet size: ${String(statistics.maximum_captured_packet_length_text || "0 B")}`;
+          showingOriginal
+            ? `Maximum original packet size: ${String(statistics.maximum_original_packet_length_text || "0 B")}`
+            : `Maximum captured packet size: ${String(statistics.maximum_captured_packet_length_text || "0 B")}`;
       }
 
       const buckets = Array.isArray(statistics.buckets) ? statistics.buckets : [];
       elements.packetSizeDistributionRows.innerHTML = buckets.length > 0
         ? buckets
           .map((bucket) => {
-            const packetCount = Number(bucket?.packet_count ?? 0);
-            const normalizedFraction = Number(bucket?.normalized_fraction ?? 0);
+            const packetCountText = showingOriginal
+              ? String(bucket?.original_packet_count_text || "0")
+              : String(bucket?.captured_packet_count_text || "0");
+            const normalizedFraction = Number(
+              showingOriginal
+                ? bucket?.original_normalized_fraction
+                : bucket?.captured_normalized_fraction
+            );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             return `
               <div class="statistics-histogram-row">
@@ -7218,7 +7394,7 @@
                 <div class="statistics-histogram-track">
                   <div class="statistics-histogram-fill" style="width:${percent}%; background:#34d399;"></div>
                 </div>
-                <span class="statistics-histogram-count">${formatNumber(packetCount)}</span>
+                <span class="statistics-histogram-count">${escapeHtml(packetCountText)}</span>
               </div>
             `;
           })
@@ -7594,6 +7770,12 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const unrecognizedStats = overview?.unrecognized_packets || null;
+    const captureTime = overview?.capture_time || null;
+    const captureMetrics = overview?.capture_metrics || null;
+    const flowCharacteristics = overview?.flow_characteristics || null;
+    const packetDirectionDistribution = overview?.packet_direction_distribution || null;
+    const dataDirectionDistribution = overview?.original_byte_direction_distribution || null;
+    const tcpFlagStatistics = overview?.tcp_flag_statistics || null;
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.whole_capture_totals?.packet_count ?? overview.summary?.packet_count ?? 0) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
@@ -7605,6 +7787,32 @@
       : "-";
 
     if (state.openState === "opening") {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Loading packet-direction statistics...")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Loading original-byte direction statistics...")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Loading TCP flag statistics...")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "Loading overview...";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
@@ -7616,6 +7824,32 @@
     }
 
     if (state.openState === "error") {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open failed. No packet-direction statistics were loaded.", "error")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open failed. No original-byte direction statistics were loaded.", "error")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Open failed. No TCP flag statistics were loaded.", "error")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No overview is available after open failure.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
@@ -7627,6 +7861,32 @@
     }
 
     if (state.openState !== "opened" || !overview) {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load packet-direction statistics.")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load original-byte direction statistics.")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load TCP flag statistics.")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No capture loaded.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
@@ -7637,6 +7897,48 @@
       return;
     }
 
+    setStatisticsText(elements.captureStartValue, captureTime?.capture_start_text);
+    setStatisticsText(elements.captureEndValue, captureTime?.capture_end_text);
+    setStatisticsText(elements.captureDurationValue, captureTime?.duration_text);
+    setStatisticsText(elements.averageCapturedPacketSizeValue, captureMetrics?.average_captured_packet_size_text);
+    setStatisticsText(elements.averageOriginalPacketSizeValue, captureMetrics?.average_original_packet_size_text);
+    setStatisticsText(elements.averagePacketRateValue, captureMetrics?.average_packet_rate_text);
+    setStatisticsText(elements.averageCapturedDataRateValue, captureMetrics?.average_captured_data_rate_text);
+    setStatisticsText(elements.averageOriginalDataRateValue, captureMetrics?.average_original_data_rate_text);
+    setStatisticsText(elements.truncatedPacketsValue, captureMetrics?.truncated_packets_text);
+    setStatisticsText(elements.notCapturedBytesValue, captureMetrics?.not_captured_bytes_text);
+    setStatisticsText(elements.captureCompletenessValue, captureMetrics?.capture_completeness_text);
+    setStatisticsText(elements.onlyAToBFlowsValue, flowCharacteristics?.only_a_to_b_flows_text);
+    setStatisticsText(elements.serviceRecognizedFlowsValue, flowCharacteristics?.service_recognized_flows_text);
+    if (elements.packetDirectionDistributionBody) {
+      elements.packetDirectionDistributionBody.innerHTML = renderDirectionDistributionRows(
+        packetDirectionDistribution?.rows,
+        "No packet-direction statistics are available."
+      );
+    }
+    if (elements.dataDirectionDistributionHelpText) {
+      elements.dataDirectionDistributionHelpText.textContent = String(dataDirectionDistribution?.help_text ?? "");
+    }
+    if (elements.dataDirectionDistributionBody) {
+      elements.dataDirectionDistributionBody.innerHTML = renderDirectionDistributionRows(
+        dataDirectionDistribution?.rows,
+        "No original-byte direction statistics are available."
+      );
+    }
+    if (elements.tcpFlagsHelpText) {
+      elements.tcpFlagsHelpText.textContent = String(tcpFlagStatistics?.help_text ?? "");
+    }
+    if (elements.tcpFlagsBody) {
+      elements.tcpFlagsBody.innerHTML = renderTcpFlagRows(
+        tcpFlagStatistics?.rows,
+        "No TCP flag statistics are available."
+      );
+    }
+    if (elements.statisticsPartialOpenWarning) {
+      const warningText = String(overview.statistics_partial_open_warning_text ?? "");
+      elements.statisticsPartialOpenWarning.textContent = warningText;
+      elements.statisticsPartialOpenWarning.classList.toggle("is-hidden", warningText.length === 0);
+    }
     elements.overviewMeta.textContent = "Overview and protocol summaries loaded from the active capture or index.";
     elements.transportStatsBody.innerHTML = transportRows
       .map(([label, stats]) => `
@@ -7668,8 +7970,8 @@
         ? `
           <tr>
             <td>${formatNumber(unrecognizedStats?.packet_count)}</td>
-            <td>${formatNumber(unrecognizedStats?.captured_bytes)}</td>
-            <td>${formatNumber(unrecognizedStats?.original_bytes)}</td>
+            <td>${escapeHtml(statisticsDisplayText(unrecognizedStats?.captured_bytes_text))}</td>
+            <td>${escapeHtml(statisticsDisplayText(unrecognizedStats?.original_bytes_text))}</td>
           </tr>
         `
         : "";
@@ -7702,6 +8004,7 @@
       }
 
       const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
+      const showingCapturedBytes = state.flowPacketHistogramDisplayMode === "captured_bytes";
       const showingOriginalBytes = state.flowPacketHistogramDisplayMode === "original_bytes";
       elements.flowPacketHistogramRows.innerHTML = buckets.length > 0
         ? buckets
@@ -7710,12 +8013,16 @@
             const normalizedFraction = Number(
               showingOriginalBytes
                 ? bucket?.normalized_original_byte_fraction
-                : bucket?.normalized_flow_fraction
+                : (showingCapturedBytes
+                    ? bucket?.normalized_captured_byte_fraction
+                    : bucket?.normalized_flow_fraction)
             );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             const valueText = showingOriginalBytes
               ? String(bucket?.original_byte_count_text || "0 B")
-              : formatNumber(flowCount);
+              : (showingCapturedBytes
+                  ? String(bucket?.captured_byte_count_text || "0 B")
+                  : formatNumber(flowCount));
             return `
               <div class="statistics-histogram-row">
                 <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
@@ -7863,6 +8170,58 @@
     elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, message, kind);
   }
 
+  function renderTopFlowsSection() {
+    const section = statisticsSectionEntry(statisticsSectionKeys.topFlows);
+    const statistics = state.topEndpointPortStatistics;
+    const topFlows = Array.isArray(statistics?.top_flows) ? statistics.top_flows : [];
+    const topTalkersVisible = Number(state.overview?.summary?.flow_count ?? 0) > 30;
+
+    if (elements.topFlowsSummaryValue) {
+      elements.topFlowsSummaryValue.textContent = statistics?.has_capture
+        ? `Top ${formatNumber(topFlows.length)}`
+        : "";
+    }
+
+    if (section.requestState === statisticsSectionRequestStates.ready && statistics?.has_capture) {
+      elements.topFlowsBody.innerHTML = topFlows.length > 0 && topTalkersVisible
+        ? topFlows.map((row) => `
+            <tr>
+              <td>${escapeHtml(String(row.flow_index_text ?? ""))}</td>
+              <td title="${escapeHtml(String(row.endpoint_a ?? ""))}">${escapeHtml(String(row.endpoint_a ?? ""))}</td>
+              <td title="${escapeHtml(String(row.endpoint_b ?? ""))}">${escapeHtml(String(row.endpoint_b ?? ""))}</td>
+              <td>${escapeHtml(String(row.protocol_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.detected_protocol_text ?? ""))}</td>
+              <td title="${escapeHtml(statisticsDisplayText(row.service_text))}">${escapeHtml(statisticsDisplayText(row.service_text))}</td>
+              <td title="${escapeHtml(String(row.protocol_path_compact_text ?? ""))}">${escapeHtml(String(row.protocol_path_compact_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.packet_count_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.captured_bytes_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.original_bytes_text ?? ""))}</td>
+            </tr>
+          `).join("")
+        : renderStatsStateRow(
+          10,
+          topTalkersVisible
+            ? "No top-flow summary is available for this capture."
+            : "Top-flow summary appears once more than 30 flows are present."
+        );
+      return;
+    }
+
+    const message = section.requestState === statisticsSectionRequestStates.loading
+      ? "Calculating..."
+      : section.requestState === statisticsSectionRequestStates.error
+        ? (section.errorText || "Failed to load top flows.")
+        : section.requestState === statisticsSectionRequestStates.unavailable
+          ? "Top flows are unavailable."
+          : state.openState === "error"
+            ? "Open failed. No top-flow summary was loaded."
+            : state.openState !== "opened" || !state.overview
+              ? "Open a capture or index to load top flows."
+              : "Top flows load when this section is opened.";
+    const kind = section.requestState === statisticsSectionRequestStates.error || state.openState === "error" ? "error" : undefined;
+    elements.topFlowsBody.innerHTML = renderStatsStateRow(10, message, kind);
+  }
+
   function renderTopEndpointPortSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.topEndpointsPorts);
     const statistics = state.topEndpointPortStatistics;
@@ -7882,13 +8241,14 @@
           .map((row) => `
             <tr class="stats-drilldown-row" data-endpoint-filter="${escapeHtml(row.endpoint_label)}" title="Filter flows by this endpoint">
               <td>${escapeHtml(row.endpoint_label)}</td>
-              <td>${formatNumber(row.packet_count)}</td>
-              <td>${formatNumber(row.total_bytes)}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.flow_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.packet_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.total_bytes_text))}</td>
             </tr>
           `)
           .join("")
         : renderStatsStateRow(
-          3,
+          4,
           topTalkersVisible
             ? "No top-endpoint summary is available for this capture."
             : "Top-endpoint summary appears once more than 30 flows are present."
@@ -7898,13 +8258,14 @@
           .map((row) => `
             <tr class="stats-drilldown-row" data-port-filter="${row.port}" title="Filter flows by this port">
               <td>${formatNumber(row.port)}</td>
-              <td>${formatNumber(row.packet_count)}</td>
-              <td>${formatNumber(row.total_bytes)}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.flow_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.packet_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.total_bytes_text))}</td>
             </tr>
           `)
           .join("")
         : renderStatsStateRow(
-          3,
+          4,
           topTalkersVisible
             ? "No top-port summary is available for this capture."
             : "Top-port summary appears once more than 30 flows are present."
@@ -7944,8 +8305,8 @@
               ? "Open a capture or index to load top endpoints and ports."
               : "Top endpoints and ports load when this section is opened.";
     const kind = section.requestState === statisticsSectionRequestStates.error || state.openState === "error" ? "error" : undefined;
-    elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, message, kind);
-    elements.topPortsBody.innerHTML = renderStatsStateRow(3, message, kind);
+    elements.topEndpointsBody.innerHTML = renderStatsStateRow(4, message, kind);
+    elements.topPortsBody.innerHTML = renderStatsStateRow(4, message, kind);
   }
 
   function renderStatisticsTab() {
@@ -7956,6 +8317,7 @@
     renderProtocolPathStatsSection();
     renderProtocolHintSection();
     renderQuicTlsSection();
+    renderTopFlowsSection();
     renderTopEndpointPortSection();
   }
 
@@ -9002,6 +9364,7 @@
 
   function renderAnalysisOverview(container, analysis) {
     const serviceHint = analysisSelectedFlowServiceHint(analysis);
+    const unavailableText = analysisDisplayText(analysis?.unavailable_text, "-");
     const leftRows = [
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
@@ -9010,9 +9373,9 @@
       ["Service Hint", serviceHint || "-"],
     ];
     const rightRows = [
-      ["First Packet", analysis.first_packet_time_text || "-"],
-      ["Last Packet", analysis.last_packet_time_text || "-"],
-      ["Duration", analysis.duration_text || "-"],
+      ["First Packet", analysisDisplayText(analysis.start_time_full_utc_text, unavailableText)],
+      ["Last Packet", analysisDisplayText(analysis.end_time_full_utc_text, unavailableText)],
+      ["Duration", analysisDisplayText(analysis.duration_text_milliseconds, unavailableText)],
       ["Largest Gap", analysis.largest_gap_text || "-"],
       ["Packets Considered", analysis.packets_considered_text || "-"],
     ];
@@ -9153,6 +9516,45 @@
     return Number(row?.count_all ?? 0);
   }
 
+  function analysisPacketSizeHistogramRows(analysis, metricMode) {
+    const dimensionRows = Array.isArray(analysis?.packet_size_histogram_dimension_rows)
+      ? analysis.packet_size_histogram_dimension_rows
+      : [];
+    const useCaptured = metricMode === "captured";
+    return dimensionRows.map((row) => ({
+      bucket_label: row.bucket_label || "",
+      count_all: useCaptured ? Number(row.captured_count_all ?? 0) : Number(row.original_count_all ?? 0),
+      count_a_to_b: useCaptured ? Number(row.captured_count_a_to_b ?? 0) : Number(row.original_count_a_to_b ?? 0),
+      count_b_to_a: useCaptured ? Number(row.captured_count_b_to_a ?? 0) : Number(row.original_count_b_to_a ?? 0),
+    }));
+  }
+
+  function analysisPacketSizeHistogramMaximumSummary(analysis) {
+    const useCaptured = state.analysisPacketSizeHistogramMetricMode === "captured";
+    let value = "";
+
+    if (useCaptured) {
+      if (state.analysisPacketSizeHistogramDirectionMode === "a_to_b") {
+        value = analysis.packet_size_histogram_captured_maximum_a_to_b_text || "";
+      } else if (state.analysisPacketSizeHistogramDirectionMode === "b_to_a") {
+        value = analysis.packet_size_histogram_captured_maximum_b_to_a_text || "";
+      } else {
+        value = analysis.packet_size_histogram_captured_maximum_all_text || "";
+      }
+    } else if (state.analysisPacketSizeHistogramDirectionMode === "a_to_b") {
+      value = analysis.packet_size_histogram_original_maximum_a_to_b_text || "";
+    } else if (state.analysisPacketSizeHistogramDirectionMode === "b_to_a") {
+      value = analysis.packet_size_histogram_original_maximum_b_to_a_text || "";
+    } else {
+      value = analysis.packet_size_histogram_original_maximum_all_text || "";
+    }
+
+    return [
+      useCaptured ? "Maximum captured packet size" : "Maximum original packet size",
+      value || "-",
+    ];
+  }
+
   function renderAnalysisHistogram(section, rowsContainer, maxLabel, rows, mode, fillClassName = "") {
     if (!rows || rows.length === 0) {
       section.style.display = "";
@@ -9192,6 +9594,17 @@
     for (const [mode, button] of Object.entries(buttonMap)) {
       button.classList.toggle("is-active", mode === activeMode);
     }
+  }
+
+  function renderAnalysisPacketSizeMetricButtons() {
+    elements.analysisPacketSizeHistogramMetricOriginal.classList.toggle(
+      "is-active",
+      state.analysisPacketSizeHistogramMetricMode === "original"
+    );
+    elements.analysisPacketSizeHistogramMetricCaptured.classList.toggle(
+      "is-active",
+      state.analysisPacketSizeHistogramMetricMode === "captured"
+    );
   }
 
   function renderAnalysisFlowList() {
@@ -9443,7 +9856,7 @@
         analysis.packets_per_second_b_to_a_text || "-",
       ],
       [
-        "Data Rate",
+        "Original Data Rate",
         analysis.bytes_per_second_text || "-",
         analysis.bytes_per_second_a_to_b_text || "-",
         analysis.bytes_per_second_b_to_a_text || "-",
@@ -9490,19 +9903,20 @@
 
     renderAnalysisDirectional(elements.analysisDirectionSplit, analysis);
 
-    renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramMode);
+    renderAnalysisPacketSizeMetricButtons();
+    renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramDirectionMode);
     renderAnalysisHistogram(
       elements.analysisPacketSizeHistogramSection,
       elements.analysisPacketSizeHistogramRows,
       elements.analysisPacketSizeHistogramMax,
-      analysis.packet_size_histogram_rows || [],
-      state.analysisPacketSizeHistogramMode,
+      analysisPacketSizeHistogramRows(analysis, state.analysisPacketSizeHistogramMetricMode),
+      state.analysisPacketSizeHistogramDirectionMode,
       "is-packet-size"
     );
-    renderSummaryRows(elements.analysisPacketSizeCapturedSummary, [[
-      "Max captured packet size",
-      analysis.max_captured_packet_size_text || "-",
-    ]]);
+    renderSummaryRows(
+      elements.analysisPacketSizeCapturedSummary,
+      [analysisPacketSizeHistogramMaximumSummary(analysis)]
+    );
 
     renderAnalysisHistogramModeButtons("analysisInterArrivalHistogram", state.analysisInterArrivalHistogramMode);
     renderAnalysisHistogram(
@@ -10383,7 +10797,7 @@
   }
 
   function renderAnalysisRateGraphModeButtons() {
-    elements.analysisRateMetricModeData.classList.toggle("is-active", state.analysisRateMetricMode === "data");
+    elements.analysisRateMetricModeOriginalData.classList.toggle("is-active", state.analysisRateMetricMode === "original_data");
     elements.analysisRateMetricModePackets.classList.toggle("is-active", state.analysisRateMetricMode === "packets");
     elements.analysisRateDirectionModeAToB.classList.toggle("is-active", state.analysisRateDirectionMode === "a_to_b");
     elements.analysisRateDirectionModeBToA.classList.toggle("is-active", state.analysisRateDirectionMode === "b_to_a");
@@ -10963,6 +11377,7 @@
 
       if (state.openState === "opened") {
         await loadOverviewAndFlows();
+        state.topEndpointPortStatistics = null;
         if (state.analysisState !== "idle" && state.selectedFlowIndex != null) {
           await loadSelectedFlowAnalysis();
         }
@@ -10992,6 +11407,15 @@
         setStatus("Settings updated. Capture-processing changes apply when a raw capture is opened.", "success");
       } else {
         setStatus("Settings updated.", "success");
+      }
+      if (
+        state.activeTab === "statistics" &&
+        (
+          statisticsSectionEligible(statisticsSectionKeys.topFlows) ||
+          statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)
+        )
+      ) {
+        void ensureTopEndpointPortStatisticsLoaded();
       }
       state.settingsDialogVisible = false;
       clearSettingsStatus();
@@ -12332,6 +12756,10 @@
     scheduleProtocolPathStatsViewportRender();
   });
   for (const [detailsElement, sectionKey] of [
+    [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
+    [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
+    [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
+    [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
     [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
     [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
@@ -12343,8 +12771,17 @@
       handleStatisticsSectionToggle(sectionKey, detailsElement.open);
     });
   }
+  elements.packetSizeDistributionModeCaptured?.addEventListener("click", () => {
+    setPacketSizeDistributionDisplayMode("captured");
+  });
+  elements.packetSizeDistributionModeOriginal?.addEventListener("click", () => {
+    setPacketSizeDistributionDisplayMode("original");
+  });
   elements.flowPacketHistogramModeFlows?.addEventListener("click", () => {
     setFlowPacketHistogramDisplayMode("flows");
+  });
+  elements.flowPacketHistogramModeCapturedBytes?.addEventListener("click", () => {
+    setFlowPacketHistogramDisplayMode("captured_bytes");
   });
   elements.flowPacketHistogramModeOriginalBytes?.addEventListener("click", () => {
     setFlowPacketHistogramDisplayMode("original_bytes");
@@ -12440,8 +12877,8 @@
   });
   elements.analysisExportSequenceCsvButton.addEventListener("click", exportAnalysisSequenceCsv);
 
-  elements.analysisRateMetricModeData.addEventListener("click", () => {
-    state.analysisRateMetricMode = "data";
+  elements.analysisRateMetricModeOriginalData.addEventListener("click", () => {
+    state.analysisRateMetricMode = "original_data";
     render();
   });
   elements.analysisRateMetricModePackets.addEventListener("click", () => {
@@ -12461,16 +12898,24 @@
     render();
   });
 
+  elements.analysisPacketSizeHistogramMetricOriginal.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMetricMode = "original";
+    render();
+  });
+  elements.analysisPacketSizeHistogramMetricCaptured.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMetricMode = "captured";
+    render();
+  });
   elements.analysisPacketSizeHistogramModeAll.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "all";
+    state.analysisPacketSizeHistogramDirectionMode = "all";
     render();
   });
   elements.analysisPacketSizeHistogramModeAToB.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "a_to_b";
+    state.analysisPacketSizeHistogramDirectionMode = "a_to_b";
     render();
   });
   elements.analysisPacketSizeHistogramModeBToA.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "b_to_a";
+    state.analysisPacketSizeHistogramDirectionMode = "b_to_a";
     render();
   });
   elements.analysisInterArrivalHistogramModeAll.addEventListener("click", () => {

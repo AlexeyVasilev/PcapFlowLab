@@ -49,6 +49,7 @@ add_library(
     src/core/domain/ConnectionTable.cpp
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
+    src/core/domain/CaptureStatisticsSnapshot.cpp
     src/core/domain/PacketDetails.cpp
     src/core/dissection/PacketSlice.cpp
     src/core/dissection/DissectionRegistry.cpp
@@ -109,6 +110,7 @@ add_library(
     src/core/services/DnsInspectionParser.cpp
     src/core/services/IcmpInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
+    src/app/frontend/FrontendStatisticsOverview.cpp
     src/app/frontend/AdvancedFlowFilterStructuredDocument.cpp
     src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/ByteExport.cpp
@@ -120,6 +122,9 @@ add_library(
     src/app/session/ProtocolPathTextExport.cpp
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
+    src/app/session/SelectedFlowPacketAccess.cpp
+    src/app/session/PacketLocatorAccess.cpp
+    src/app/session/UnrecognizedPacketAccess.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SupportedProtocolCatalog.cpp
     src/app/session/DnsSummaryPresentation.cpp
@@ -427,6 +432,7 @@ if(BUILD_TESTING)
         tests/unit/ImportTests.cpp
         tests/unit/AnalysisSettingsTests.cpp
         tests/unit/FlowAnalysisTests.cpp
+        tests/unit/SelectedFlowPacketAccessTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/DnsInspectionParserTests.cpp
@@ -475,6 +481,7 @@ if(BUILD_TESTING)
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
         tests/unit/IndexFormatTests.cpp
+        tests/unit/CaptureStatisticsSnapshotTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp

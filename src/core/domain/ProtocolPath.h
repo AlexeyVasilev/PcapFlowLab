@@ -6,6 +6,7 @@
 #include <compare>
 #include <functional>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -207,8 +208,70 @@ private:
     std::unordered_map<std::size_t, std::vector<ProtocolPathId>> ids_by_hash_ {};
 };
 
+struct ProtocolPathDisplayAggregateRow {
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const ProtocolPathDisplayAggregateRow&,
+        const ProtocolPathDisplayAggregateRow&
+    ) = default;
+};
+
+struct ProtocolPathDisplayStatistics {
+    std::vector<ProtocolPathDisplayAggregateRow> terminal_path_aggregates {};
+
+    [[nodiscard]] friend bool operator==(
+        const ProtocolPathDisplayStatistics&,
+        const ProtocolPathDisplayStatistics&
+    ) = default;
+};
+
+enum class ProtocolPathDisplayStatisticsValidationErrorCode : std::uint8_t {
+    invalid_protocol_path_id = 0,
+    unknown_protocol_path_id,
+    empty_protocol_path,
+    duplicate_protocol_path_id,
+    total_flow_count_overflow,
+    total_packet_count_overflow,
+    total_original_byte_count_overflow,
+};
+
+struct ProtocolPathDisplayStatisticsValidationError {
+    ProtocolPathDisplayStatisticsValidationErrorCode code {
+        ProtocolPathDisplayStatisticsValidationErrorCode::invalid_protocol_path_id
+    };
+    std::string field_path {};
+    std::string message {};
+
+    [[nodiscard]] friend bool operator==(
+        const ProtocolPathDisplayStatisticsValidationError&,
+        const ProtocolPathDisplayStatisticsValidationError&
+    ) = default;
+};
+
+struct ProtocolPathDisplayStatisticsValidationResult {
+    bool ok {true};
+    std::optional<ProtocolPathDisplayStatisticsValidationError> error {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return ok;
+    }
+
+    [[nodiscard]] friend bool operator==(
+        const ProtocolPathDisplayStatisticsValidationResult&,
+        const ProtocolPathDisplayStatisticsValidationResult&
+    ) = default;
+};
+
 [[nodiscard]] std::string format_protocol_layer_key(const LayerKey& key);
 [[nodiscard]] std::string format_protocol_path(const ProtocolPath& path);
+[[nodiscard]] ProtocolPathDisplayStatisticsValidationResult validate_protocol_path_display_statistics(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathDisplayStatistics& statistics
+);
 
 constexpr LayerKey LayerKey::unknown() noexcept {
     return LayerKey {};

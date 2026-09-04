@@ -64,12 +64,30 @@ flags, including:
 - `--protocol-path-mode` is valid only together with `--protocol-path-tree` or
   `--out-protocol-path-tree`.
 
+For current stable v16 indexes, compatible summary invocations use the
+Statistics fast tier directly. The fast path is used for the basic summary,
+`--extended`, Protocol Path Tree preview, and Protocol Path Tree export because
+those outputs are backed by the stable header, capture Statistics snapshot,
+early Protocol Path registry, and terminal Protocol Path aggregates.
+
+The fast path intentionally stops before later flow-metadata and packet-detail
+sections. A successful fast summary read therefore proves only the header and
+Statistics-tier data needed by `summary`; it does not validate the complete
+index. Options that require full flow metadata, such as `--out-flows-list`, use
+the normal full-session index path instead. Raw capture input continues to use
+the normal import/session path.
+
+Fast v16 index summaries do not open, fingerprint, or otherwise probe the
+recorded source capture. If the `Input` section shows a stored source-capture
+name, it is recorded index identity only, not an accessibility verdict.
+
 ## Basic output
 
 The default summary output renders:
 
 - `Input`
 - `Capture`
+- `Capture Time`
 - `Transport Summary`
 - `IP Family Summary`
 
@@ -83,6 +101,28 @@ include the stored source-capture basename when that metadata exists.
 - captured bytes;
 - original bytes;
 - unrecognized packet count.
+
+`Capture` uses whole-capture packet and byte totals. It does not fall back to a
+recognized-flow-only packet total.
+
+`Capture Time` includes:
+
+- `Start`
+- `End`
+- `Duration`
+
+The CLI reuses the shared runtime presentation strings:
+
+- absolute UTC timestamps in `YYYY-MM-DD HH:MM:SS.mmm UTC` form;
+- `HH:MM:SS.mmm` duration formatting;
+- `Nd HH:MM:SS.mmm` when the duration spans one or more full days.
+
+When the current open result is partial, the basic summary also prints a visible
+warning:
+
+```text
+Statistics cover successfully imported packets only; the capture was opened partially.
+```
 
 `Transport Summary` renders the fixed groups:
 
@@ -100,17 +140,67 @@ include the stored source-capture basename when that metadata exists.
 
 `--extended` appends exactly these sections:
 
+- `Capture Metrics`
+- `Flow Characteristics`
+- `Direction Distribution`
+- `TCP Flags`
 - `Packet Size Distribution`
 - `Flows by Packet Count`
 - `Detected Protocol Hints`
+- `QUIC and TLS`
+- `Top Flows by Original Bytes`
 - `Top Endpoints and Ports`
 
 Important details:
 
-- `Packet Size Distribution` uses total-based percentages.
-- `Flows by Packet Count` reports flow counts and original bytes by bucket.
+- `Capture Metrics` renders:
+  - average captured packet size;
+  - average original packet size;
+  - average packet rate;
+  - average captured data rate;
+  - average original data rate;
+  - truncated packets;
+  - not captured bytes;
+  - capture completeness.
+- `Not captured bytes` means capture truncation or incompleteness
+  (`original bytes - captured bytes` when positive). It does not imply network
+  loss.
+- `Flow Characteristics` renders `Only A -> B flows` and `Service recognized`
+  as count-plus-percentage values.
+- `Direction Distribution` contains two subtables:
+  - `Packet Direction`;
+  - `Data Direction (Original Bytes)`.
+- `TCP Flags` contains only `SYN`, `FIN`, and `RST`.
+- TCP flag percentages use total TCP packet count.
+- `SYN` includes packets with SYN+ACK set.
+- `Packet Size Distribution` uses one combined table with:
+  - `Captured Packets`;
+  - `Captured %`;
+  - `Original Packets`;
+  - `Original %`.
+- `Packet Size Distribution` appends `Maximum captured packet size` and
+  `Maximum original packet size`.
+- `Flows by Packet Count` uses one combined table with:
+  - `Flows`;
+  - `Captured Bytes`;
+  - `Original Bytes`.
 - `Detected Protocol Hints` omits zero rows and prints `None` when empty.
-- `Top Endpoints and Ports` is limited to the top 5 rows.
+- `Detected Protocol Hints` follows the shared runtime protocol-hint
+  projection. The CLI does not apply a separate hint-suppression policy for
+  this section.
+- `QUIC and TLS` renders whole-capture flow-count-oriented QUIC and TLS
+  recognition/version statistics.
+- `Top Flows by Original Bytes` renders the fixed top-10 table ranked by
+  original bytes descending.
+- `Top Endpoints and Ports` remains limited to the top 5 rows for each table.
+- `Top Endpoints` and `Top Ports` rank rows by original bytes.
+- In `Top Endpoints` and `Top Ports`, `Flows` means canonical flows involving
+  that endpoint or port identity.
+- Histogram sections use aligned text tables only. They do not render ASCII bar
+  charts.
+
+`--extended` does not automatically append a Protocol Path Tree. Protocol Path
+preview/export remains controlled only by the explicit Protocol Path options.
 
 ## Protocol Path Tree
 

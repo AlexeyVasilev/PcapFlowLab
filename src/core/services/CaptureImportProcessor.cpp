@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "../../../core/open_context.h"
-#include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/LinkType.h"
 #include "core/services/CaptureImportApplication.h"
@@ -224,7 +223,6 @@ ClassicImportPacketDisposition CaptureImportProcessor::process_classic_import_pa
         return ClassicImportPacketDisposition::failure_before_packet_surfaced;
     }
     append_capture_packet_locator_entry(state, packet.packet_index, packet.record_file_offset);
-    accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 
     return finalize_prefix_packet()
         ? ClassicImportPacketDisposition::continue_after_packet
@@ -239,7 +237,6 @@ void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState&
         hint_service_
     ));
     append_capture_packet_locator_entry(state, packet.packet_index, packet.record_file_offset);
-    accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 }
 
 CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {

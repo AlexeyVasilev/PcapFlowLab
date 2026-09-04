@@ -1312,6 +1312,12 @@ ApplicationWindow {
                 analysisMaxCapturedPacketSizeText: mainController.analysisMaxCapturedPacketSizeText
                 analysisMaxPacketSizeAToBText: mainController.analysisMaxPacketSizeAToBText
                 analysisMaxPacketSizeBToAText: mainController.analysisMaxPacketSizeBToAText
+                analysisPacketSizeHistogramMaximumOriginalText: mainController.analysisPacketSizeHistogramMaximumOriginalText
+                analysisPacketSizeHistogramMaximumOriginalAToBText: mainController.analysisPacketSizeHistogramMaximumOriginalAToBText
+                analysisPacketSizeHistogramMaximumOriginalBToAText: mainController.analysisPacketSizeHistogramMaximumOriginalBToAText
+                analysisPacketSizeHistogramMaximumCapturedText: mainController.analysisPacketSizeHistogramMaximumCapturedText
+                analysisPacketSizeHistogramMaximumCapturedAToBText: mainController.analysisPacketSizeHistogramMaximumCapturedAToBText
+                analysisPacketSizeHistogramMaximumCapturedBToAText: mainController.analysisPacketSizeHistogramMaximumCapturedBToAText
                 analysisPacketRatioText: mainController.analysisPacketRatioText
                 analysisByteRatioText: mainController.analysisByteRatioText
                 analysisPacketDirectionText: mainController.analysisPacketDirectionText
@@ -1347,11 +1353,12 @@ ApplicationWindow {
                 analysisInterArrivalHistogramAll: mainController.analysisInterArrivalHistogramAll
                 analysisInterArrivalHistogramAToB: mainController.analysisInterArrivalHistogramAToB
                 analysisInterArrivalHistogramBToA: mainController.analysisInterArrivalHistogramBToA
-                analysisInterArrivalHistogram: mainController.analysisInterArrivalHistogram
                 analysisPacketSizeHistogramAll: mainController.analysisPacketSizeHistogramAll
                 analysisPacketSizeHistogramAToB: mainController.analysisPacketSizeHistogramAToB
                 analysisPacketSizeHistogramBToA: mainController.analysisPacketSizeHistogramBToA
-                analysisPacketSizeHistogram: mainController.analysisPacketSizeHistogram
+                analysisCapturedPacketSizeHistogramAll: mainController.analysisCapturedPacketSizeHistogramAll
+                analysisCapturedPacketSizeHistogramAToB: mainController.analysisCapturedPacketSizeHistogramAToB
+                analysisCapturedPacketSizeHistogramBToA: mainController.analysisCapturedPacketSizeHistogramBToA
                 analysisSequencePreview: mainController.analysisSequencePreview
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
@@ -1373,6 +1380,13 @@ ApplicationWindow {
                 capturedBytesText: mainController.capturedBytesText
                 originalBytes: mainController.originalBytes
                 originalBytesText: mainController.originalBytesText
+                captureTimeStatistics: mainController.captureTimeStatistics
+                captureMetrics: mainController.captureMetrics
+                flowCharacteristics: mainController.flowCharacteristics
+                packetDirectionDistribution: mainController.packetDirectionDistribution
+                dataDirectionDistribution: mainController.dataDirectionDistribution
+                tcpFlagStatistics: mainController.tcpFlagStatistics
+                statisticsPartialOpenWarningText: mainController.statisticsPartialOpenWarningText
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount
                 tcpCapturedBytes: mainController.tcpCapturedBytes
@@ -1419,6 +1433,8 @@ ApplicationWindow {
                 packetSizeDistributionMaximumBucketPacketCount: mainController.packetSizeDistributionMaximumBucketPacketCount
                 packetSizeDistributionMaximumCapturedPacketLength: mainController.packetSizeDistributionMaximumCapturedPacketLength
                 packetSizeDistributionMaximumCapturedPacketLengthText: mainController.packetSizeDistributionMaximumCapturedPacketLengthText
+                packetSizeDistributionMaximumOriginalPacketLength: mainController.packetSizeDistributionMaximumOriginalPacketLength
+                packetSizeDistributionMaximumOriginalPacketLengthText: mainController.packetSizeDistributionMaximumOriginalPacketLengthText
                 packetSizeDistributionRows: mainController.packetSizeDistributionRows
                 flowPacketHistogramState: mainController.flowPacketHistogramState
                 flowPacketHistogramStatusText: mainController.flowPacketHistogramStatusText
@@ -1449,6 +1465,9 @@ ApplicationWindow {
                 tlsVersion12: mainController.tlsVersion12
                 tlsVersion13: mainController.tlsVersion13
                 tlsVersionUnknown: mainController.tlsVersionUnknown
+                topFlowSectionState: mainController.topFlowSectionState
+                topFlowSectionStatusText: mainController.topFlowSectionStatusText
+                topFlowRows: mainController.topFlowRows
                 topEndpointPortSectionState: mainController.topEndpointPortSectionState
                 topEndpointPortSectionStatusText: mainController.topEndpointPortSectionStatusText
                 topEndpointsModel: mainController.topEndpointsModel

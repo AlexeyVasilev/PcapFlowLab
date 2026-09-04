@@ -13,6 +13,13 @@ Item {
     property string capturedBytesText: ""
     property var originalBytes: 0
     property string originalBytesText: ""
+    property var captureTimeStatistics: ({})
+    property var captureMetrics: ({})
+    property var flowCharacteristics: ({})
+    property var packetDirectionDistribution: ({})
+    property var dataDirectionDistribution: ({})
+    property var tcpFlagStatistics: ({})
+    property string statisticsPartialOpenWarningText: ""
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
     property var tcpCapturedBytes: 0
@@ -59,6 +66,8 @@ Item {
     property var packetSizeDistributionMaximumBucketPacketCount: 0
     property var packetSizeDistributionMaximumCapturedPacketLength: 0
     property string packetSizeDistributionMaximumCapturedPacketLengthText: ""
+    property var packetSizeDistributionMaximumOriginalPacketLength: 0
+    property string packetSizeDistributionMaximumOriginalPacketLengthText: ""
     property var packetSizeDistributionRows: []
     property int flowPacketHistogramState: 0
     property string flowPacketHistogramStatusText: ""
@@ -89,6 +98,9 @@ Item {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property int topFlowSectionState: 0
+    property string topFlowSectionStatusText: ""
+    property var topFlowRows: []
     property int topEndpointPortSectionState: 0
     property string topEndpointPortSectionStatusText: ""
     property var topEndpointsModel: null
@@ -105,9 +117,13 @@ Item {
     readonly property int sectionProtocolPath: 2
     readonly property int sectionProtocolHints: 3
     readonly property int sectionQuicTls: 4
-    readonly property int sectionTopEndpointsPorts: 5
+    readonly property int sectionTopFlows: 5
+    readonly property int sectionTopEndpointsPorts: 6
+    readonly property int packetSizeDistributionModeCaptured: 0
+    readonly property int packetSizeDistributionModeOriginal: 1
     readonly property int flowPacketHistogramModeFlows: 0
-    readonly property int flowPacketHistogramModeOriginalBytes: 1
+    readonly property int flowPacketHistogramModeCapturedBytes: 1
+    readonly property int flowPacketHistogramModeOriginalBytes: 2
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
     readonly property int tablePadding: 8
@@ -119,6 +135,14 @@ Item {
     readonly property int hintCapturedColumnWidth: 118
     readonly property int hintOriginalColumnWidth: 118
     readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
+    readonly property int directionLabelColumnWidth: 220
+    readonly property int directionFlowColumnWidth: 96
+    readonly property int directionPercentColumnWidth: 110
+    readonly property int directionTableWidth: directionLabelColumnWidth + directionFlowColumnWidth + directionPercentColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
+    readonly property int tcpFlagLabelColumnWidth: 120
+    readonly property int tcpFlagPacketColumnWidth: 110
+    readonly property int tcpFlagPercentColumnWidth: 110
+    readonly property int tcpFlagTableWidth: tcpFlagLabelColumnWidth + tcpFlagPacketColumnWidth + tcpFlagPercentColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
     readonly property int pathTreeLabelColumnWidth: 420
     readonly property int pathTreeFlowsColumnWidth: 138
     readonly property int pathTreePacketsColumnWidth: 150
@@ -128,13 +152,28 @@ Item {
     readonly property int pathTreeIndentWidth: 18
     readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
+    readonly property int topFlowColumnFlowWidth: 72
+    readonly property int topFlowColumnEndpointWidth: 220
+    readonly property int topFlowColumnProtocolWidth: 82
+    readonly property int topFlowColumnDetectedWidth: 120
+    readonly property int topFlowColumnServiceWidth: 180
+    readonly property int topFlowColumnPathWidth: 120
+    readonly property int topFlowColumnPacketsWidth: 98
+    readonly property int topFlowColumnBytesWidth: 118
+    readonly property int topFlowTableWidth: topFlowColumnFlowWidth + (topFlowColumnEndpointWidth * 2) + topFlowColumnProtocolWidth + topFlowColumnDetectedWidth + topFlowColumnServiceWidth + topFlowColumnPathWidth + topFlowColumnPacketsWidth + (topFlowColumnBytesWidth * 2) + (tableColumnSpacing * 9) + (tablePadding * 2)
 
+    property bool captureMetricsExpanded: false
+    property bool flowCharacteristicsExpanded: false
+    property bool directionDistributionExpanded: false
+    property bool tcpFlagsExpanded: false
     property bool packetSizeDistributionExpanded: false
     property bool flowPacketHistogramExpanded: false
     property bool protocolPathExpanded: false
     property bool protocolHintsExpanded: false
     property bool quicTlsExpanded: false
+    property bool topFlowsExpanded: false
     property bool topEndpointsPortsExpanded: false
+    property int packetSizeDistributionDisplayMode: packetSizeDistributionModeCaptured
     property int flowPacketHistogramDisplayMode: flowPacketHistogramModeFlows
 
     signal endpointActivated(string endpointText)
@@ -145,12 +184,18 @@ Item {
     signal statisticsSectionExpandedChanged(int section, bool expanded)
 
     onStatisticsSectionsResetTokenChanged: {
+        captureMetricsExpanded = false
+        flowCharacteristicsExpanded = false
+        directionDistributionExpanded = false
+        tcpFlagsExpanded = false
         packetSizeDistributionExpanded = false
         flowPacketHistogramExpanded = false
         protocolPathExpanded = false
         protocolHintsExpanded = false
         quicTlsExpanded = false
+        topFlowsExpanded = false
         topEndpointsPortsExpanded = false
+        packetSizeDistributionDisplayMode = packetSizeDistributionModeCaptured
         flowPacketHistogramDisplayMode = flowPacketHistogramModeFlows
     }
 
@@ -202,6 +247,19 @@ Item {
         return formatShare(part, total) + " (" + groupInteger(part) + " flows)"
     }
 
+    function statisticsText(section, key) {
+        if (!section || section[key] === undefined || section[key] === null)
+            return "—"
+        const text = String(section[key])
+        return text.length > 0 ? text : "—"
+    }
+
+    function statisticsRows(section) {
+        if (!section || section.rows === undefined || section.rows === null)
+            return []
+        return section.rows
+    }
+
     function protocolHintGroup(title) {
         if (title === "Possible TLS" || title === "Possible QUIC")
             return "Possible"
@@ -237,6 +295,56 @@ Item {
         color: "#334155"
         wrapMode: Text.NoWrap
         elide: Text.ElideRight
+    }
+
+    component OverviewMetricBlock: Rectangle {
+        required property string title
+        required property string valueText
+        property string subtitleText: ""
+        property string valueObjectName: ""
+        property bool wrapValue: false
+
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        radius: 6
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+        implicitHeight: metricBlockLayout.implicitHeight + 16
+
+        ColumnLayout {
+            id: metricBlockLayout
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 4
+
+            Label {
+                Layout.fillWidth: true
+                text: parent.parent.title
+                font.pixelSize: 12
+                color: "#64748b"
+                elide: Text.ElideRight
+            }
+
+            Label {
+                objectName: parent.parent.valueObjectName
+                Layout.fillWidth: true
+                text: parent.parent.valueText
+                font.pixelSize: 14
+                font.bold: true
+                color: "#0f172a"
+                wrapMode: parent.parent.wrapValue ? Text.WordWrap : Text.NoWrap
+                elide: parent.parent.wrapValue ? Text.ElideNone : Text.ElideRight
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: parent.parent.subtitleText.length > 0
+                text: parent.parent.subtitleText
+                font.pixelSize: 11
+                color: "#64748b"
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 
     component ProtocolPathModeButton: Button {
@@ -351,6 +459,57 @@ Item {
         }
     }
 
+    component ThreeColumnHeader: Rectangle {
+        required property string firstTitle
+        required property string secondTitle
+        required property string thirdTitle
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int tableWidth
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableHeaderHeight
+        radius: 4
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.secondTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
+            }
+        }
+    }
+
     ScrollView {
         id: statisticsScroll
         readonly property real verticalScrollbarGutter: statisticsVerticalScrollBar.visible
@@ -383,6 +542,7 @@ Item {
 
             ColumnLayout {
                 id: statisticsColumn
+                objectName: "statisticsColumn"
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -398,6 +558,58 @@ Item {
                     originalBytes: root.originalBytes
                     originalBytesText: root.originalBytesText
                     hasCapture: root.hasCapture
+                }
+
+                SectionFrame {
+                    id: captureTimeSection
+                    objectName: "captureTimeSection"
+                    Layout.fillWidth: true
+
+                    Rectangle {
+                        objectName: "statisticsPartialOpenWarning"
+                        Layout.fillWidth: true
+                        visible: root.statisticsPartialOpenWarningText.length > 0
+                        radius: 6
+                        color: "#fffbeb"
+                        border.color: "#f59e0b"
+                        implicitHeight: partialOpenWarningLabel.implicitHeight + 12
+
+                        Label {
+                            id: partialOpenWarningLabel
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            text: root.statisticsPartialOpenWarningText
+                            color: "#92400e"
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 980 ? 3 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Capture Start"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "captureStartText")
+                            valueObjectName: "captureStartValue"
+                            wrapValue: true
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Capture End"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "captureEndText")
+                            valueObjectName: "captureEndValue"
+                            wrapValue: true
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Duration"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "durationText")
+                            valueObjectName: "captureDurationValue"
+                        }
+                    }
                 }
 
                 ProtocolStatsPane {
@@ -570,80 +782,146 @@ Item {
                         root.statisticsSectionExpandedChanged(root.sectionPacketSizeDistribution, expanded)
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        visible: root.hasCapture
-                        text: "Captured packet lengths for all packets imported from the capture, including unrecognized packets."
-                        color: "#64748b"
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Label {
-                        visible: root.packetSizeDistributionState === root.requestStateLoading ||
-                            root.packetSizeDistributionState === root.requestStateUnavailable ||
-                            root.packetSizeDistributionState === root.requestStateError
-                        text: root.packetSizeDistributionStatusText
-                        color: "#64748b"
-                    }
-
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        visible: root.packetSizeDistributionState === root.requestStateReady
                         spacing: 8
 
-                        Repeater {
-                            model: root.packetSizeDistributionRows
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.hasCapture
+                            spacing: 8
 
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                spacing: 10
+                            Label {
+                                text: "Mode"
+                                color: "#64748b"
+                            }
 
-                                Label {
-                                    Layout.preferredWidth: 90
-                                    Layout.minimumWidth: 60
-                                    text: modelData.label
-                                    color: "#0f172a"
-                                    elide: Text.ElideRight
-                                }
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: packetSizeDistributionModeLayout.implicitHeight + 4
+                                implicitWidth: packetSizeDistributionModeLayout.implicitWidth + 8
 
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: 0
-                                    Layout.preferredHeight: 18
-                                    radius: 9
-                                    color: "#f1f5f9"
-                                    border.color: "#e2e8f0"
+                                RowLayout {
+                                    id: packetSizeDistributionModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
 
-                                    Rectangle {
-                                        width: Math.max(0, (parent.width - 2) * Number(modelData.normalizedFraction))
-                                        height: parent.height - 2
-                                        radius: 8
-                                        x: 1
-                                        y: 1
-                                        color: "#34d399"
+                                    ButtonGroup {
+                                        id: packetSizeDistributionModeGroup
                                     }
-                                }
 
-                                Label {
-                                    Layout.preferredWidth: 90
-                                    Layout.minimumWidth: 0
-                                    horizontalAlignment: Text.AlignRight
-                                    text: root.groupInteger(modelData.packetCount)
-                                    color: "#334155"
-                                    elide: Text.ElideLeft
+                                    HistogramModeButton {
+                                        objectName: "packetSizeDistributionModeCapturedButton"
+                                        text: "Captured"
+                                        checked: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                        ButtonGroup.group: packetSizeDistributionModeGroup
+                                        onClicked: root.packetSizeDistributionDisplayMode = root.packetSizeDistributionModeCaptured
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeDistributionModeOriginalButton"
+                                        text: "Original"
+                                        checked: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeOriginal
+                                        ButtonGroup.group: packetSizeDistributionModeGroup
+                                        onClicked: root.packetSizeDistributionDisplayMode = root.packetSizeDistributionModeOriginal
+                                    }
                                 }
                             }
                         }
 
                         Label {
-                            objectName: "packetSizeDistributionMaximumCapturedPacketLengthValue"
                             Layout.fillWidth: true
-                            text: "Maximum captured packet size: " + root.packetSizeDistributionMaximumCapturedPacketLengthText
-                            color: "#0f172a"
+                            visible: root.hasCapture
+                            text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                ? "Captured packet lengths for all packets imported from the capture, including unrecognized packets."
+                                : "Original packet lengths for all packets imported from the capture, including unrecognized packets."
+                            color: "#64748b"
                             wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            visible: root.packetSizeDistributionState === root.requestStateLoading ||
+                                root.packetSizeDistributionState === root.requestStateUnavailable ||
+                                root.packetSizeDistributionState === root.requestStateError
+                            text: root.packetSizeDistributionStatusText
+                            color: "#64748b"
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.packetSizeDistributionState === root.requestStateReady
+                            spacing: 8
+
+                            Repeater {
+                                model: root.packetSizeDistributionRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.preferredWidth: 90
+                                        Layout.minimumWidth: 60
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredHeight: 18
+                                        radius: 9
+                                        color: "#f1f5f9"
+                                        border.color: "#e2e8f0"
+
+                                        Rectangle {
+                                            width: Math.max(
+                                                0,
+                                                (parent.width - 2) * Number(
+                                                    root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                                        ? modelData.capturedNormalizedFraction
+                                                        : modelData.originalNormalizedFraction
+                                                )
+                                            )
+                                            height: parent.height - 2
+                                            radius: 8
+                                            x: 1
+                                            y: 1
+                                            color: "#34d399"
+                                        }
+                                    }
+
+                                    Label {
+                                        Layout.preferredWidth: 90
+                                        Layout.minimumWidth: 0
+                                        horizontalAlignment: Text.AlignRight
+                                        text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                            ? modelData.capturedPacketCountText
+                                            : modelData.originalPacketCountText
+                                        color: "#334155"
+                                        elide: Text.ElideLeft
+                                    }
+                                }
+                            }
+
+                            Label {
+                                objectName: "packetSizeDistributionMaximumPacketLengthValue"
+                                Layout.fillWidth: true
+                                text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                    ? "Maximum captured packet size: " + root.packetSizeDistributionMaximumCapturedPacketLengthText
+                                    : "Maximum original packet size: " + root.packetSizeDistributionMaximumOriginalPacketLengthText
+                                color: "#0f172a"
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
                 }
@@ -698,6 +976,18 @@ Item {
                                     ToolTip.timeout: 8000
                                     ToolTip.text: "Number of flows in each packet-count range."
                                     onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeFlows
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowPacketHistogramModeCapturedBytesButton"
+                                    text: "Captured bytes"
+                                    checked: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                    ButtonGroup.group: flowPacketHistogramModeGroup
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 250
+                                    ToolTip.timeout: 8000
+                                    ToolTip.text: "Sum of captured bytes for flows in each packet-count range."
+                                    onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeCapturedBytes
                                 }
 
                                 HistogramModeButton {
@@ -760,7 +1050,9 @@ Item {
                                             (parent.width - 2) * Number(
                                                 root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
                                                     ? modelData.normalizedFlowFraction
-                                                    : modelData.normalizedOriginalByteFraction
+                                                    : (root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                                        ? modelData.normalizedCapturedByteFraction
+                                                        : modelData.normalizedOriginalByteFraction)
                                             )
                                         )
                                         height: parent.height - 2
@@ -777,7 +1069,9 @@ Item {
                                     horizontalAlignment: Text.AlignRight
                                     text: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
                                         ? root.groupInteger(modelData.flowCount)
-                                        : modelData.originalByteCountText
+                                        : (root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                            ? modelData.capturedByteCountText
+                                            : modelData.originalByteCountText)
                                     color: "#334155"
                                     elide: Text.ElideLeft
                                 }
@@ -1152,6 +1446,387 @@ Item {
                 }
 
                 CollapsibleStatisticsSection {
+                    id: captureMetricsSection
+                    objectName: "captureMetricsSection"
+                    title: "Capture Metrics"
+                    toggleObjectName: "captureMetricsToggleButton"
+                    expanded: root.captureMetricsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.captureMetricsExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 860 ? 2 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Average Captured Packet Size"
+                            valueText: root.statisticsText(root.captureMetrics, "averageCapturedPacketSizeText")
+                            valueObjectName: "averageCapturedPacketSizeValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Original Packet Size"
+                            valueText: root.statisticsText(root.captureMetrics, "averageOriginalPacketSizeText")
+                            valueObjectName: "averageOriginalPacketSizeValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Packet Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averagePacketRateText")
+                            valueObjectName: "averagePacketRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Captured Data Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averageCapturedDataRateText")
+                            valueObjectName: "averageCapturedDataRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Original Data Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averageOriginalDataRateText")
+                            valueObjectName: "averageOriginalDataRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Truncated Packets"
+                            valueText: root.statisticsText(root.captureMetrics, "truncatedPacketsText")
+                            valueObjectName: "truncatedPacketsValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Not Captured Bytes"
+                            valueText: root.statisticsText(root.captureMetrics, "notCapturedBytesText")
+                            valueObjectName: "notCapturedBytesValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Capture Completeness"
+                            valueText: root.statisticsText(root.captureMetrics, "captureCompletenessText")
+                            valueObjectName: "captureCompletenessValue"
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: flowCharacteristicsSection
+                    objectName: "flowCharacteristicsSection"
+                    title: "Flow Characteristics"
+                    toggleObjectName: "flowCharacteristicsToggleButton"
+                    expanded: root.flowCharacteristicsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.flowCharacteristicsExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 720 ? 2 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Only A -> B Flows"
+                            valueText: root.statisticsText(root.flowCharacteristics, "onlyAToBFlowsText")
+                            valueObjectName: "onlyAToBFlowsValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Service Recognized"
+                            valueText: root.statisticsText(root.flowCharacteristics, "serviceRecognizedFlowsText")
+                            valueObjectName: "serviceRecognizedFlowsValue"
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: directionDistributionSection
+                    objectName: "directionDistributionSection"
+                    title: "Direction Distribution"
+                    toggleObjectName: "directionDistributionToggleButton"
+                    expanded: root.directionDistributionExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.directionDistributionExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= (root.directionTableWidth * 2) + 24 ? 2 : 1
+                        rowSpacing: 10
+                        columnSpacing: 10
+
+                        SectionFrame {
+                            objectName: "packetDirectionDistributionSection"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.alignment: Qt.AlignTop
+
+                            Label {
+                                text: "Packet Direction"
+                                font.bold: true
+                                font.pixelSize: 14
+                                color: "#0f172a"
+                            }
+
+                            ThreeColumnHeader {
+                                firstTitle: "Group"
+                                secondTitle: "Flows"
+                                thirdTitle: "Percent"
+                                firstWidth: root.directionLabelColumnWidth
+                                secondWidth: root.directionFlowColumnWidth
+                                thirdWidth: root.directionPercentColumnWidth
+                                tableWidth: root.directionTableWidth
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Repeater {
+                                    model: root.statisticsRows(root.packetDirectionDistribution)
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: packetDirectionRowLayout.implicitHeight + 8
+                                        radius: 4
+                                        color: "transparent"
+
+                                        RowLayout {
+                                            id: packetDirectionRowLayout
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionLabelColumnWidth
+                                                Layout.minimumWidth: root.directionLabelColumnWidth
+                                                text: modelData.label
+                                                color: "#0f172a"
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionFlowColumnWidth
+                                                Layout.minimumWidth: root.directionFlowColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.flowCountText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionPercentColumnWidth
+                                                Layout.minimumWidth: root.directionPercentColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.percentText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        SectionFrame {
+                            objectName: "dataDirectionDistributionSection"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.alignment: Qt.AlignTop
+
+                            Label {
+                                text: "Data Direction (Original Bytes)"
+                                font.bold: true
+                                font.pixelSize: 14
+                                color: "#0f172a"
+                            }
+
+                            Label {
+                                objectName: "dataDirectionDistributionHelpText"
+                                readonly property string helpTextValue: root.statisticsText(root.dataDirectionDistribution, "helpText")
+                                visible: helpTextValue.length > 0
+                                text: helpTextValue
+                                color: "#64748b"
+                                wrapMode: Text.WordWrap
+                            }
+
+                            ThreeColumnHeader {
+                                firstTitle: "Group"
+                                secondTitle: "Flows"
+                                thirdTitle: "Percent"
+                                firstWidth: root.directionLabelColumnWidth
+                                secondWidth: root.directionFlowColumnWidth
+                                thirdWidth: root.directionPercentColumnWidth
+                                tableWidth: root.directionTableWidth
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Repeater {
+                                    model: root.statisticsRows(root.dataDirectionDistribution)
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: dataDirectionRowLayout.implicitHeight + 8
+                                        radius: 4
+                                        color: "transparent"
+
+                                        RowLayout {
+                                            id: dataDirectionRowLayout
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionLabelColumnWidth
+                                                Layout.minimumWidth: root.directionLabelColumnWidth
+                                                text: modelData.label
+                                                color: "#0f172a"
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionFlowColumnWidth
+                                                Layout.minimumWidth: root.directionFlowColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.flowCountText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionPercentColumnWidth
+                                                Layout.minimumWidth: root.directionPercentColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.percentText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: tcpFlagsSection
+                    objectName: "tcpFlagsSection"
+                    title: "TCP Flags"
+                    toggleObjectName: "tcpFlagsToggleButton"
+                    expanded: root.tcpFlagsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.tcpFlagsExpanded = expanded
+                    }
+
+                    SectionFrame {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+
+                        Label {
+                            objectName: "tcpFlagsHelpText"
+                            readonly property string helpTextValue: (
+                                root.tcpFlagStatistics &&
+                                root.tcpFlagStatistics.helpText !== undefined &&
+                                root.tcpFlagStatistics.helpText !== null
+                            ) ? String(root.tcpFlagStatistics.helpText) : ""
+                            visible: helpTextValue.length > 0
+                            text: helpTextValue
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        ThreeColumnHeader {
+                            firstTitle: "Flag"
+                            secondTitle: "Packets"
+                            thirdTitle: "Percent"
+                            firstWidth: root.tcpFlagLabelColumnWidth
+                            secondWidth: root.tcpFlagPacketColumnWidth
+                            thirdWidth: root.tcpFlagPercentColumnWidth
+                            tableWidth: root.tcpFlagTableWidth
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Repeater {
+                                id: tcpFlagsRowsRepeater
+                                objectName: "tcpFlagsRowsRepeater"
+                                model: root.statisticsRows(root.tcpFlagStatistics)
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: tcpFlagRowLayout.implicitHeight + 8
+                                    radius: 4
+                                    color: "transparent"
+                                    objectName: "tcpFlagRow"
+
+                                    RowLayout {
+                                        id: tcpFlagRowLayout
+                                        anchors.fill: parent
+                                        anchors.leftMargin: root.tablePadding
+                                        anchors.rightMargin: root.tablePadding
+                                        spacing: root.tableColumnSpacing
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagLabelColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagLabelColumnWidth
+                                            text: modelData.label
+                                            color: "#0f172a"
+                                            elide: Text.ElideRight
+                                            objectName: "tcpFlagLabel"
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagPacketColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagPacketColumnWidth
+                                            horizontalAlignment: Text.AlignRight
+                                            text: modelData.packetCountText
+                                            color: "#334155"
+                                            elide: Text.ElideLeft
+                                            objectName: "tcpFlagPacketValue"
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagPercentColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagPercentColumnWidth
+                                            horizontalAlignment: Text.AlignRight
+                                            text: modelData.percentText
+                                            color: "#334155"
+                                            elide: Text.ElideLeft
+                                            objectName: "tcpFlagPercentValue"
+                                        }
+
+                                        Item {
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
                     id: quicTlsSection
                     objectName: "quicTlsSection"
                     title: "QUIC and TLS"
@@ -1207,6 +1882,125 @@ Item {
                             CompactMetricLabel { text: "TLS 1.2: " + root.groupInteger(root.tlsVersion12) }
                             CompactMetricLabel { text: "TLS 1.3: " + root.groupInteger(root.tlsVersion13) }
                             CompactMetricLabel { text: "Version unavailable: " + root.groupInteger(root.tlsVersionUnknown) }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: topFlowsSection
+                    objectName: "topFlowsSection"
+                    title: "Top Flows by Original Bytes"
+                    toggleObjectName: "topFlowStatisticsToggleButton"
+                    expanded: root.topFlowsExpanded
+                    visible: root.showTopTalkers
+                    onExpandedChangedByUser: function(expanded) {
+                        root.topFlowsExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionTopFlows, expanded)
+                    }
+
+                    Label {
+                        visible: root.topFlowSectionState === root.requestStateLoading ||
+                            root.topFlowSectionState === root.requestStateUnavailable ||
+                            root.topFlowSectionState === root.requestStateError
+                        text: root.topFlowSectionStatusText
+                        color: "#64748b"
+                    }
+
+                    Flickable {
+                        id: topFlowTableFlickable
+                        objectName: "topFlowTableFlickable"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredHeight: topFlowTableContent.implicitHeight
+                            + (root.topFlowTableWidth > width ? topFlowHorizontalScrollBar.implicitHeight + 4 : 0)
+                        implicitHeight: Layout.preferredHeight
+                        visible: root.topFlowSectionState === root.requestStateReady
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.HorizontalFlick
+                        interactive: contentWidth > width
+                        contentWidth: topFlowTableContent.width
+                        contentHeight: topFlowTableContent.implicitHeight
+
+                        ScrollBar.horizontal: AppScrollBar {
+                            id: topFlowHorizontalScrollBar
+                            policy: topFlowTableFlickable.contentWidth > topFlowTableFlickable.width
+                                ? ScrollBar.AlwaysOn
+                                : ScrollBar.AlwaysOff
+                        }
+
+                        Column {
+                            id: topFlowTableContent
+                            objectName: "topFlowTableContent"
+                            width: Math.max(topFlowTableFlickable.width, root.topFlowTableWidth)
+                            spacing: 8
+
+                            Rectangle {
+                                id: topFlowHeader
+                                objectName: "topFlowTableHeader"
+                                width: parent.width
+                                height: root.tableHeaderHeight + 2
+                                radius: 4
+                                color: "#f8fafc"
+                                border.color: "#e2e8f0"
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: root.tablePadding
+                                    anchors.rightMargin: root.tablePadding
+                                    spacing: root.tableColumnSpacing
+
+                                    Label { Layout.preferredWidth: root.topFlowColumnFlowWidth; text: "Flow"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: "Endpoint A"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: "Endpoint B"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnProtocolWidth; text: "Protocol"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnDetectedWidth; text: "Detected Protocol"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnServiceWidth; text: "Service"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnPathWidth; text: "Protocol Path"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnPacketsWidth; horizontalAlignment: Text.AlignRight; text: "Packets"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: "Captured"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: "Original"; font.bold: true; color: "#334155" }
+                                }
+                            }
+
+                            Column {
+                                id: topFlowRowsColumn
+                                width: parent.width
+                                spacing: 4
+
+                                Repeater {
+                                    id: topFlowRowsRepeater
+                                    objectName: "topFlowRowsRepeater"
+                                    model: root.topFlowRows
+
+                                    delegate: Rectangle {
+                                        required property int index
+                                        required property var modelData
+                                        width: topFlowRowsColumn.width
+                                        height: 34
+                                        radius: 4
+                                        color: index % 2 === 0 ? "transparent" : "#f8fafc"
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label { Layout.preferredWidth: root.topFlowColumnFlowWidth; text: modelData.flowIndexText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: modelData.endpointA; elide: Text.ElideMiddle; color: "#0f172a"; ToolTip.visible: endpointAHover.hovered; ToolTip.text: modelData.endpointA; HoverHandler { id: endpointAHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: modelData.endpointB; elide: Text.ElideMiddle; color: "#0f172a"; ToolTip.visible: endpointBHover.hovered; ToolTip.text: modelData.endpointB; HoverHandler { id: endpointBHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnProtocolWidth; text: modelData.protocolText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnDetectedWidth; text: modelData.detectedProtocolText; color: "#0f172a"; elide: Text.ElideRight }
+                                            Label { Layout.preferredWidth: root.topFlowColumnServiceWidth; text: modelData.serviceText; color: "#0f172a"; elide: Text.ElideRight; ToolTip.visible: serviceHover.hovered; ToolTip.text: modelData.serviceText; HoverHandler { id: serviceHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnPathWidth; text: modelData.protocolPathCompactText; color: "#0f172a"; elide: Text.ElideRight; ToolTip.visible: pathHover.hovered; ToolTip.text: modelData.protocolPathCompactText; HoverHandler { id: pathHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnPacketsWidth; horizontalAlignment: Text.AlignRight; text: modelData.packetCountText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: modelData.capturedBytesText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: modelData.originalBytesText; color: "#0f172a" }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

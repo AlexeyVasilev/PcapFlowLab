@@ -182,13 +182,24 @@ Current shared statistics coverage includes:
 
 - overview summary;
 - whole-capture totals;
+- capture-time DTO fields and shared UTC/duration formatting;
+- capture-metrics DTO fields derived from `CapturePacketStatistics`;
+- flow-characteristics DTO fields derived from `CaptureGeneralStatistics`;
+- packet-direction and original-byte-direction distribution DTO rows;
+- partial-open Statistics warning text;
 - transport/family summary values;
-- packet-size distribution;
-- flows-by-packet-count histogram;
+- packet-size distribution DTO rows carrying both captured and original
+  packet-length bucket values so Qt/Tauri can switch modes locally after one
+  lazy load;
+- flows-by-packet-count histogram DTO rows carrying flow counts plus captured
+  and original byte aggregates for the same bucket membership;
 - protocol-hint statistics;
 - Protocol Path statistics;
 - QUIC/TLS statistics;
-- top endpoints and ports.
+- top endpoints and ports with shared flow-count, packet-count, and original-
+  byte presentation values;
+- top-flow rows with shared flow numbering, endpoint/protocol/detected/service
+  text, compact Protocol Path text, and packet/captured/original totals.
 
 Qt and Tauri still differ in layout and local drill-down interaction, but the
 main data model is already shared.
@@ -209,6 +220,27 @@ Current shared selected-flow analysis DTOs already cover a substantial slice:
 - histogram rows;
 - sequence preview rows;
 - sequence export API.
+
+Stage 3A and Stage 3B extend that shared analysis DTO contract and now drive
+the visible desktop Analysis controls directly:
+
+- packet-size histogram data now carries both `original` and `captured`
+  dimensions for `all`, `A->B`, and `B->A`;
+- rate points now carry explicit `original_data_per_second` and
+  `packets_per_second`, with Stage 3B removing the temporary
+  `data_per_second` compatibility alias from the selected-flow Analysis DTO;
+- analysis timing now carries raw absolute start/end timestamps plus shared
+  frontend-formatted full UTC start/end text and millisecond-precision
+  duration text, with Stage 3B removing the older time-of-day-only selected-
+  flow presentation aliases;
+- packet-size histogram data now uses the explicit
+  `packet_size_histogram_dimension_rows` matrix as the shared selected-flow
+  Analysis contract for `Original` and `Captured` across `All`, `A->B`, and
+  `B->A`;
+- the selected-flow Analysis DTO also carries exact packet-size maximums and
+  shared formatted text for the same `Original` / `Captured` x `All` / `A->B`
+  / `B->A` matrix so frontends do not derive exact values from histogram
+  bucket labels.
 
 Qt still exposes the richer reference workspace. Tauri now consumes a meaningful
 shared selected-flow analysis slice rather than a fake placeholder.
@@ -281,7 +313,8 @@ authoritative product contract.
 - attach source;
 - save index;
 - current flow export / selected-flow export / Smart Export backend APIs;
-- Statistics DTOs;
+- Statistics DTOs, including overview-backed TCP flag rows with shared percent
+  text;
 - selected-flow analysis DTOs.
 
 ### Shared semantics with frontend-local composition

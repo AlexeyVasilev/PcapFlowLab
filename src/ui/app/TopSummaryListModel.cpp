@@ -23,6 +23,8 @@ QVariant TopSummaryListModel::data(const QModelIndex& index, const int role) con
     switch (role) {
     case ItemRole:
         return item.label;
+    case FlowsRole:
+        return item.flows;
     case PacketsRole:
         return item.packets;
     case BytesRole:
@@ -35,6 +37,7 @@ QVariant TopSummaryListModel::data(const QModelIndex& index, const int role) con
 QHash<int, QByteArray> TopSummaryListModel::roleNames() const {
     return {
         {ItemRole, "itemLabel"},
+        {FlowsRole, "flows"},
         {PacketsRole, "packets"},
         {BytesRole, "bytes"},
     };
@@ -47,6 +50,7 @@ void TopSummaryListModel::refreshEndpoints(const std::vector<TopEndpointRow>& ro
     for (const auto& row : rows) {
         items.push_back(Item {
             .label = QString::fromStdString(row.endpoint),
+            .flows = static_cast<qulonglong>(row.flow_count),
             .packets = static_cast<qulonglong>(row.packet_count),
             .bytes = static_cast<qulonglong>(row.total_bytes),
         });
@@ -62,6 +66,7 @@ void TopSummaryListModel::refreshPorts(const std::vector<TopPortRow>& rows) {
     for (const auto& row : rows) {
         items.push_back(Item {
             .label = QString::number(row.port),
+            .flows = static_cast<qulonglong>(row.flow_count),
             .packets = static_cast<qulonglong>(row.packet_count),
             .bytes = static_cast<qulonglong>(row.total_bytes),
         });

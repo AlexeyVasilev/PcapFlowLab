@@ -1258,8 +1258,12 @@ std::string top_endpoint_json(const pfl::FrontendTopEndpointDto& row) {
     std::ostringstream out {};
     out << '{'
         << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
         << "\"packet_count\":" << row.packet_count << ','
-        << "\"total_bytes\":" << row.total_bytes
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"total_bytes\":" << row.total_bytes << ','
+        << "\"total_bytes_text\":" << json_string(row.total_bytes_text)
         << '}';
     return out.str();
 }
@@ -1268,8 +1272,34 @@ std::string top_port_json(const pfl::FrontendTopPortDto& row) {
     std::ostringstream out {};
     out << '{'
         << "\"port\":" << row.port << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
         << "\"packet_count\":" << row.packet_count << ','
-        << "\"total_bytes\":" << row.total_bytes
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"total_bytes\":" << row.total_bytes << ','
+        << "\"total_bytes_text\":" << json_string(row.total_bytes_text)
+        << '}';
+    return out.str();
+}
+
+std::string top_flow_json(const pfl::FrontendTopFlowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"flow_index\":" << row.flow_index << ','
+        << "\"flow_index_text\":" << json_string(row.flow_index_text) << ','
+        << "\"endpoint_a\":" << json_string(row.endpoint_a) << ','
+        << "\"endpoint_b\":" << json_string(row.endpoint_b) << ','
+        << "\"protocol_text\":" << json_string(row.protocol_text) << ','
+        << "\"detected_protocol_text\":" << json_string(row.detected_protocol_text) << ','
+        << "\"service_text\":" << json_string(row.service_text) << ','
+        << "\"protocol_path_id\":" << row.protocol_path_id << ','
+        << "\"protocol_path_compact_text\":" << json_string(row.protocol_path_compact_text) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"captured_bytes\":" << row.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(row.captured_bytes_text) << ','
+        << "\"original_bytes\":" << row.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(row.original_bytes_text)
         << '}';
     return out.str();
 }
@@ -1314,11 +1344,16 @@ std::string capture_packet_size_statistics_bucket_json(const pfl::FrontendCaptur
         out << "null";
     }
     out << ','
-        << "\"packet_count\":" << bucket.packet_count << ','
-        << "\"packet_count_text\":" << json_string(bucket.packet_count_text) << ','
-        << "\"total_fraction\":" << bucket.total_fraction << ','
-        << "\"total_percent_text\":" << json_string(bucket.total_percent_text) << ','
-        << "\"normalized_fraction\":" << bucket.normalized_fraction
+        << "\"captured_packet_count\":" << bucket.captured_packet_count << ','
+        << "\"captured_packet_count_text\":" << json_string(bucket.captured_packet_count_text) << ','
+        << "\"captured_total_fraction\":" << bucket.captured_total_fraction << ','
+        << "\"captured_total_percent_text\":" << json_string(bucket.captured_total_percent_text) << ','
+        << "\"captured_normalized_fraction\":" << bucket.captured_normalized_fraction << ','
+        << "\"original_packet_count\":" << bucket.original_packet_count << ','
+        << "\"original_packet_count_text\":" << json_string(bucket.original_packet_count_text) << ','
+        << "\"original_total_fraction\":" << bucket.original_total_fraction << ','
+        << "\"original_total_percent_text\":" << json_string(bucket.original_total_percent_text) << ','
+        << "\"original_normalized_fraction\":" << bucket.original_normalized_fraction
         << '}';
     return out.str();
 }
@@ -1328,10 +1363,14 @@ std::string capture_packet_size_statistics_json(const pfl::FrontendCapturePacket
     out << '{'
         << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
         << "\"total_packet_count\":" << statistics.total_packet_count << ','
-        << "\"maximum_bucket_packet_count\":" << statistics.maximum_bucket_packet_count << ','
+        << "\"maximum_captured_bucket_packet_count\":" << statistics.maximum_captured_bucket_packet_count << ','
+        << "\"maximum_original_bucket_packet_count\":" << statistics.maximum_original_bucket_packet_count << ','
         << "\"maximum_captured_packet_length\":" << statistics.maximum_captured_packet_length << ','
         << "\"maximum_captured_packet_length_text\":"
         << json_string(statistics.maximum_captured_packet_length_text) << ','
+        << "\"maximum_original_packet_length\":" << statistics.maximum_original_packet_length << ','
+        << "\"maximum_original_packet_length_text\":"
+        << json_string(statistics.maximum_original_packet_length_text) << ','
         << "\"buckets\":[";
 
     for (std::size_t index = 0; index < statistics.buckets.size(); ++index) {
@@ -1361,13 +1400,19 @@ std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacke
         << "\"flow_count\":" << bucket.flow_count << ','
         << "\"flow_count_with_total_percent_text\":"
         << json_string(bucket.flow_count_with_total_percent_text) << ','
+        << "\"captured_byte_count\":" << bucket.captured_byte_count << ','
+        << "\"captured_byte_count_text\":" << json_string(bucket.captured_byte_count_text) << ','
+        << "\"captured_byte_count_with_total_percent_text\":"
+        << json_string(bucket.captured_byte_count_with_total_percent_text) << ','
         << "\"original_byte_count\":" << bucket.original_byte_count << ','
         << "\"original_byte_count_text\":" << json_string(bucket.original_byte_count_text) << ','
         << "\"original_byte_count_with_total_percent_text\":"
         << json_string(bucket.original_byte_count_with_total_percent_text) << ','
         << "\"total_flow_fraction\":" << bucket.total_flow_fraction << ','
+        << "\"total_captured_byte_fraction\":" << bucket.total_captured_byte_fraction << ','
         << "\"total_original_byte_fraction\":" << bucket.total_original_byte_fraction << ','
         << "\"normalized_flow_fraction\":" << bucket.normalized_flow_fraction << ','
+        << "\"normalized_captured_byte_fraction\":" << bucket.normalized_captured_byte_fraction << ','
         << "\"normalized_original_byte_fraction\":" << bucket.normalized_original_byte_fraction
         << '}';
     return out.str();
@@ -1392,10 +1437,13 @@ std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountH
     out << '{'
         << "\"has_capture\":" << bool_json(histogram.has_capture) << ','
         << "\"total_flow_count\":" << histogram.total_flow_count << ','
+        << "\"total_captured_byte_count\":" << histogram.total_captured_byte_count << ','
         << "\"total_original_byte_count\":" << histogram.total_original_byte_count << ','
         << "\"maximum_bucket_flow_count\":" << histogram.maximum_bucket_flow_count << ','
+        << "\"maximum_bucket_captured_byte_count\":" << histogram.maximum_bucket_captured_byte_count << ','
         << "\"maximum_bucket_original_byte_count\":" << histogram.maximum_bucket_original_byte_count << ','
         << "\"excluded_zero_packet_flow_count\":" << histogram.excluded_zero_packet_flow_count << ','
+        << "\"excluded_zero_packet_captured_byte_count\":" << histogram.excluded_zero_packet_captured_byte_count << ','
         << "\"excluded_zero_packet_original_byte_count\":" << histogram.excluded_zero_packet_original_byte_count << ','
         << "\"buckets\":[";
 
@@ -1461,6 +1509,185 @@ std::string top_endpoint_port_statistics_json(const pfl::FrontendTopEndpointPort
         out << top_port_json(statistics.top_ports[index]);
     }
 
+    out << "],"
+        << "\"top_flows\":[";
+
+    for (std::size_t index = 0; index < statistics.top_flows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_flow_json(statistics.top_flows[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string capture_time_statistics_json(const pfl::FrontendCaptureTimeStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"available\":" << bool_json(statistics.available) << ','
+        << "\"capture_start_timestamp_us\":";
+    if (statistics.capture_start_timestamp_us.has_value()) {
+        out << *statistics.capture_start_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"capture_start_text\":" << json_string(statistics.capture_start_text) << ','
+        << "\"capture_end_timestamp_us\":";
+    if (statistics.capture_end_timestamp_us.has_value()) {
+        out << *statistics.capture_end_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"capture_end_text\":" << json_string(statistics.capture_end_text) << ','
+        << "\"duration_us\":";
+    if (statistics.duration_us.has_value()) {
+        out << *statistics.duration_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"duration_text\":" << json_string(statistics.duration_text)
+        << '}';
+    return out.str();
+}
+
+std::string capture_metrics_json(const pfl::FrontendCaptureMetricsDto& metrics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"average_captured_packet_size\":";
+    if (metrics.average_captured_packet_size.has_value()) {
+        out << *metrics.average_captured_packet_size;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_captured_packet_size_text\":" << json_string(metrics.average_captured_packet_size_text) << ','
+        << "\"average_original_packet_size\":";
+    if (metrics.average_original_packet_size.has_value()) {
+        out << *metrics.average_original_packet_size;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_original_packet_size_text\":" << json_string(metrics.average_original_packet_size_text) << ','
+        << "\"average_packet_rate\":";
+    if (metrics.average_packet_rate.has_value()) {
+        out << *metrics.average_packet_rate;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_packet_rate_text\":" << json_string(metrics.average_packet_rate_text) << ','
+        << "\"average_captured_data_rate\":";
+    if (metrics.average_captured_data_rate.has_value()) {
+        out << *metrics.average_captured_data_rate;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_captured_data_rate_text\":" << json_string(metrics.average_captured_data_rate_text) << ','
+        << "\"average_original_data_rate\":";
+    if (metrics.average_original_data_rate.has_value()) {
+        out << *metrics.average_original_data_rate;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_original_data_rate_text\":" << json_string(metrics.average_original_data_rate_text) << ','
+        << "\"truncated_packet_count\":" << metrics.truncated_packet_count << ','
+        << "\"truncated_packet_fraction\":" << metrics.truncated_packet_fraction << ','
+        << "\"truncated_packets_text\":" << json_string(metrics.truncated_packets_text) << ','
+        << "\"not_captured_bytes\":" << metrics.not_captured_bytes << ','
+        << "\"not_captured_bytes_text\":" << json_string(metrics.not_captured_bytes_text) << ','
+        << "\"capture_completeness\":";
+    if (metrics.capture_completeness.has_value()) {
+        out << *metrics.capture_completeness;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"capture_completeness_text\":" << json_string(metrics.capture_completeness_text)
+        << '}';
+    return out.str();
+}
+
+std::string flow_characteristics_json(const pfl::FrontendFlowCharacteristicsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flow_count\":" << statistics.total_flow_count << ','
+        << "\"only_a_to_b_flow_count\":" << statistics.only_a_to_b_flow_count << ','
+        << "\"only_a_to_b_flow_fraction\":" << statistics.only_a_to_b_flow_fraction << ','
+        << "\"only_a_to_b_flows_text\":" << json_string(statistics.only_a_to_b_flows_text) << ','
+        << "\"service_recognized_flow_count\":" << statistics.service_recognized_flow_count << ','
+        << "\"service_recognized_flow_fraction\":" << statistics.service_recognized_flow_fraction << ','
+        << "\"service_recognized_flows_text\":" << json_string(statistics.service_recognized_flows_text)
+        << '}';
+    return out.str();
+}
+
+std::string direction_distribution_row_json(const pfl::FrontendDirectionDistributionRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(row.stable_id) << ','
+        << "\"label\":" << json_string(row.label) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_fraction\":" << row.flow_fraction << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
+        << "\"percent_text\":" << json_string(row.percent_text)
+        << '}';
+    return out.str();
+}
+
+std::string direction_distribution_json(const pfl::FrontendDirectionDistributionDto& distribution) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flow_count\":" << distribution.total_flow_count << ','
+        << "\"help_text\":" << json_string(distribution.help_text) << ','
+        << "\"rows\":[";
+
+    for (std::size_t index = 0; index < distribution.rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << direction_distribution_row_json(distribution.rows[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string tcp_flag_statistics_row_json(const pfl::FrontendTcpFlagStatisticsRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(row.stable_id) << ','
+        << "\"label\":" << json_string(row.label) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_fraction\":" << row.packet_fraction << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"percent_text\":" << json_string(row.percent_text)
+        << '}';
+    return out.str();
+}
+
+std::string tcp_flag_statistics_json(const pfl::FrontendTcpFlagStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_tcp_packets\":" << bool_json(statistics.has_tcp_packets) << ','
+        << "\"total_tcp_packet_count\":" << statistics.total_tcp_packet_count << ','
+        << "\"help_text\":" << json_string(statistics.help_text) << ','
+        << "\"rows\":[";
+
+    for (std::size_t index = 0; index < statistics.rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << tcp_flag_statistics_row_json(statistics.rows[index]);
+    }
+
     out << "]}";
     return out.str();
 }
@@ -1475,7 +1702,9 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         out << '{'
             << "\"packet_count\":" << overview.unrecognized_packets->packet_count << ','
             << "\"captured_bytes\":" << overview.unrecognized_packets->captured_bytes << ','
-            << "\"original_bytes\":" << overview.unrecognized_packets->original_bytes
+            << "\"captured_bytes_text\":" << json_string(overview.unrecognized_packets->captured_bytes_text) << ','
+            << "\"original_bytes\":" << overview.unrecognized_packets->original_bytes << ','
+            << "\"original_bytes_text\":" << json_string(overview.unrecognized_packets->original_bytes_text)
             << "},";
     } else {
         out << "null,";
@@ -1510,6 +1739,14 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     out << ','
         << "\"source_capture_accessible\":" << bool_json(overview.input_metadata.source_capture_accessible)
         << "},"
+        << "\"capture_time\":" << capture_time_statistics_json(overview.capture_time) << ','
+        << "\"capture_metrics\":" << capture_metrics_json(overview.capture_metrics) << ','
+        << "\"flow_characteristics\":" << flow_characteristics_json(overview.flow_characteristics) << ','
+        << "\"packet_direction_distribution\":" << direction_distribution_json(overview.packet_direction_distribution) << ','
+        << "\"original_byte_direction_distribution\":" << direction_distribution_json(overview.original_byte_direction_distribution) << ','
+        << "\"tcp_flag_statistics\":" << tcp_flag_statistics_json(overview.tcp_flag_statistics) << ','
+        << "\"statistics_partial_open_warning_text\":"
+        << json_string(overview.statistics_partial_open_warning_text) << ','
         << "\"protocol_summary\":{"
         << "\"tcp\":" << protocol_stats_json(overview.protocol_summary.tcp) << ','
         << "\"udp\":" << protocol_stats_json(overview.protocol_summary.udp) << ','
@@ -1834,6 +2071,28 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         return rows_out.str();
     };
 
+    auto packet_size_dimension_rows_json = [](const std::vector<pfl::FrontendAnalysisPacketSizeHistogramDimensionRowDto>& rows) {
+        std::ostringstream rows_out {};
+        rows_out << '[';
+        for (std::size_t index = 0; index < rows.size(); ++index) {
+            if (index != 0U) {
+                rows_out << ',';
+            }
+            const auto& row = rows[index];
+            rows_out << '{'
+                << "\"bucket_label\":" << json_string(row.bucket_label) << ','
+                << "\"original_count_all\":" << row.original_count_all << ','
+                << "\"original_count_a_to_b\":" << row.original_count_a_to_b << ','
+                << "\"original_count_b_to_a\":" << row.original_count_b_to_a << ','
+                << "\"captured_count_all\":" << row.captured_count_all << ','
+                << "\"captured_count_a_to_b\":" << row.captured_count_a_to_b << ','
+                << "\"captured_count_b_to_a\":" << row.captured_count_b_to_a
+                << '}';
+        }
+        rows_out << ']';
+        return rows_out.str();
+    };
+
     auto rate_points_json = [](const std::vector<pfl::FrontendAnalysisRatePointDto>& points) {
         std::ostringstream out {};
         out << '[';
@@ -1844,7 +2103,7 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
             const auto& point = points[index];
             out << '{'
                 << "\"relative_time_us\":" << point.relative_time_us << ','
-                << "\"data_per_second\":" << point.data_per_second << ','
+                << "\"original_data_per_second\":" << point.original_data_per_second << ','
                 << "\"packets_per_second\":" << point.packets_per_second
                 << '}';
         }
@@ -1903,9 +2162,30 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"protocol_version_text\":" << json_string(analysis.protocol_version_text) << ','
         << "\"protocol_service_text\":" << json_string(analysis.protocol_service_text) << ','
         << "\"protocol_fallback_text\":" << json_string(analysis.protocol_fallback_text) << ','
-        << "\"first_packet_time_text\":" << json_string(analysis.first_packet_time_text) << ','
-        << "\"last_packet_time_text\":" << json_string(analysis.last_packet_time_text) << ','
-        << "\"duration_text\":" << json_string(analysis.duration_text) << ','
+        << "\"start_timestamp_us\":";
+    if (analysis.start_timestamp_us.has_value()) {
+        out << *analysis.start_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"start_time_full_utc_text\":" << json_string(analysis.start_time_full_utc_text) << ','
+        << "\"end_timestamp_us\":";
+    if (analysis.end_timestamp_us.has_value()) {
+        out << *analysis.end_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"end_time_full_utc_text\":" << json_string(analysis.end_time_full_utc_text) << ','
+        << "\"duration_us\":";
+    if (analysis.duration_us.has_value()) {
+        out << *analysis.duration_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"duration_text_milliseconds\":" << json_string(analysis.duration_text_milliseconds) << ','
         << "\"largest_gap_text\":" << json_string(analysis.largest_gap_text) << ','
         << "\"packets_considered_text\":" << json_string(analysis.packets_considered_text) << ','
         << "\"total_packets_text\":" << json_string(analysis.total_packets_text) << ','
@@ -1936,6 +2216,60 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"max_captured_packet_size_text\":" << json_string(analysis.max_captured_packet_size_text) << ','
         << "\"max_packet_size_a_to_b_text\":" << json_string(analysis.max_packet_size_a_to_b_text) << ','
         << "\"max_packet_size_b_to_a_text\":" << json_string(analysis.max_packet_size_b_to_a_text) << ','
+        << "\"packet_size_histogram_original_maximum_all\":";
+    if (analysis.packet_size_histogram_original_maximum_all.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_all;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_all_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_all_text) << ','
+        << "\"packet_size_histogram_original_maximum_a_to_b\":";
+    if (analysis.packet_size_histogram_original_maximum_a_to_b.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_a_to_b;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_a_to_b_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_a_to_b_text) << ','
+        << "\"packet_size_histogram_original_maximum_b_to_a\":";
+    if (analysis.packet_size_histogram_original_maximum_b_to_a.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_b_to_a;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_b_to_a_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_b_to_a_text) << ','
+        << "\"packet_size_histogram_captured_maximum_all\":";
+    if (analysis.packet_size_histogram_captured_maximum_all.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_all;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_all_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_all_text) << ','
+        << "\"packet_size_histogram_captured_maximum_a_to_b\":";
+    if (analysis.packet_size_histogram_captured_maximum_a_to_b.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_a_to_b;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_a_to_b_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_a_to_b_text) << ','
+        << "\"packet_size_histogram_captured_maximum_b_to_a\":";
+    if (analysis.packet_size_histogram_captured_maximum_b_to_a.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_b_to_a;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_b_to_a_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_b_to_a_text) << ','
         << "\"tcp_syn_packets_text\":" << json_string(analysis.tcp_syn_packets_text) << ','
         << "\"tcp_fin_packets_text\":" << json_string(analysis.tcp_fin_packets_text) << ','
         << "\"tcp_rst_packets_text\":" << json_string(analysis.tcp_rst_packets_text) << ','
@@ -1952,7 +2286,8 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"unavailable_text\":" << json_string(analysis.unavailable_text) << ','
         << "\"error_text\":" << json_string(analysis.error_text) << ','
         << "\"inter_arrival_histogram_rows\":" << histogram_rows_json(analysis.inter_arrival_histogram_rows) << ','
-        << "\"packet_size_histogram_rows\":" << histogram_rows_json(analysis.packet_size_histogram_rows) << ','
+        << "\"packet_size_histogram_dimension_rows\":"
+        << packet_size_dimension_rows_json(analysis.packet_size_histogram_dimension_rows) << ','
         << "\"sequence_preview_rows\":" << sequence_preview_rows_json()
         << '}';
     return out.str();

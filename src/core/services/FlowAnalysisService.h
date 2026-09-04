@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -29,10 +30,18 @@ struct FlowAnalysisInterArrivalHistogramRow {
     std::uint64_t packet_count {0};
 };
 
-struct FlowAnalysisPacketSizeHistogramSet {
+struct FlowAnalysisPacketSizeHistogramDimension {
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_all {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_a_to_b {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_b_to_a {};
+    std::optional<std::uint32_t> maximum_packet_length_all {};
+    std::optional<std::uint32_t> maximum_packet_length_a_to_b {};
+    std::optional<std::uint32_t> maximum_packet_length_b_to_a {};
+};
+
+struct FlowAnalysisPacketSizeHistogramSet {
+    FlowAnalysisPacketSizeHistogramDimension original {};
+    FlowAnalysisPacketSizeHistogramDimension captured {};
 };
 
 struct FlowAnalysisInterArrivalHistogramSet {
@@ -43,7 +52,7 @@ struct FlowAnalysisInterArrivalHistogramSet {
 
 struct FlowAnalysisRatePoint {
     std::uint64_t relative_time_us {0};
-    double data_per_second {0.0};
+    double original_data_per_second {0.0};
     double packets_per_second {0.0};
 };
 
@@ -81,6 +90,9 @@ struct FlowAnalysisResult {
     std::uint32_t max_packet_size_a_to_b_bytes {0};
     std::uint32_t min_packet_size_b_to_a_bytes {0};
     std::uint32_t max_packet_size_b_to_a_bytes {0};
+    std::optional<std::uint64_t> first_packet_timestamp_us {};
+    std::optional<std::uint64_t> last_packet_timestamp_us {};
+    // Compatibility projection for current visible Analysis Start/End fields.
     std::string first_packet_timestamp_text {};
     std::string last_packet_timestamp_text {};
     std::string protocol_hint {};
@@ -106,8 +118,26 @@ struct FlowAnalysisResult {
     std::vector<PacketRef> sequence_preview_packets {};
 };
 
+struct FlowAnalysisInput {
+    ProtocolId protocol {ProtocolId::unknown};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
+    ConnectionAggregateStats aggregate_stats {};
+    std::uint64_t total_packets {0};
+    std::uint64_t total_bytes {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::span<const PacketRef> packets_for_a_to_b {};
+    std::span<const PacketRef> packets_for_b_to_a {};
+};
+
 class FlowAnalysisService {
 public:
+    [[nodiscard]] FlowAnalysisResult analyze(const FlowAnalysisInput& input) const;
     [[nodiscard]] FlowAnalysisResult analyze(const ConnectionV4& connection) const;
     [[nodiscard]] FlowAnalysisResult analyze(const ConnectionV6& connection) const;
 };

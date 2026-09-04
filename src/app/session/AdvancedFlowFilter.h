@@ -483,6 +483,12 @@ struct AdvancedFlowQueryResult {
     std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt
 );
 
+[[nodiscard]] AdvancedFlowFilterResult evaluate_advanced_flow_filter(
+    std::span<const CanonicalFlowMetadata> flows,
+    const CompiledAdvancedFlowFilter& filter,
+    std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt
+);
+
 [[nodiscard]] AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(
     const AdvancedFlowFilterDocument& document
 );

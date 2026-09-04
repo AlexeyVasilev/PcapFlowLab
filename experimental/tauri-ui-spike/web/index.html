@@ -320,12 +320,31 @@
                   <span id="metricFlows" class="metric-value">-</span>
                 </div>
                 <div class="metric">
+                  <span class="metric-label">Original Bytes</span>
+                  <span id="metricOriginalBytes" class="metric-value">-</span>
+                </div>
+                <div class="metric">
                   <span class="metric-label">Captured Bytes</span>
                   <span id="metricCapturedBytes" class="metric-value">-</span>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Original Bytes</span>
-                  <span id="metricOriginalBytes" class="metric-value">-</span>
+              </div>
+
+              <div id="statisticsPartialOpenWarning" class="statistics-warning-note is-hidden"></div>
+
+              <div class="statistics-section">
+                <div class="statistics-overview-grid compact-overview-grid">
+                  <div class="metric">
+                    <span class="metric-label">Capture Start</span>
+                    <span id="captureStartValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Capture End</span>
+                    <span id="captureEndValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Duration</span>
+                    <span id="captureDurationValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
                 </div>
               </div>
 
@@ -398,7 +417,16 @@
                   <span id="packetSizeDistributionSummaryValue" class="statistics-disclosure-summary-value"></span>
                 </summary>
                 <div class="statistics-disclosure-body">
-                  <p class="panel-subtitle">
+                  <div class="statistics-section-heading">
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Packet size distribution mode">
+                        <button id="packetSizeDistributionModeCaptured" type="button" class="secondary-button">Captured</button>
+                        <button id="packetSizeDistributionModeOriginal" type="button" class="secondary-button">Original</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p id="packetSizeDistributionHelperText" class="panel-subtitle">
                     Captured packet lengths for all packets imported from the capture, including unrecognized packets.
                   </p>
                   <p id="packetSizeDistributionStateText" class="status-text compact-status-text"></p>
@@ -420,6 +448,7 @@
                       <span class="inline-select-label">Mode</span>
                       <div class="statistics-mode-tabs" aria-label="Flow packet histogram mode">
                         <button id="flowPacketHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each packet-count range.">Flows</button>
+                        <button id="flowPacketHistogramModeCapturedBytes" type="button" class="secondary-button" title="Sum of captured bytes for flows in each packet-count range.">Captured bytes</button>
                         <button id="flowPacketHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each packet-count range.">Original bytes</button>
                       </div>
                     </div>
@@ -496,6 +525,148 @@
                 </div>
               </details>
 
+              <details id="captureMetricsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Capture Metrics</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-overview-grid">
+                    <div class="metric">
+                      <span class="metric-label">Average Captured Packet Size</span>
+                      <span id="averageCapturedPacketSizeValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Original Packet Size</span>
+                      <span id="averageOriginalPacketSizeValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Packet Rate</span>
+                      <span id="averagePacketRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Captured Data Rate</span>
+                      <span id="averageCapturedDataRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Original Data Rate</span>
+                      <span id="averageOriginalDataRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Truncated Packets</span>
+                      <span id="truncatedPacketsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Not Captured Bytes</span>
+                      <span id="notCapturedBytesValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Capture Completeness</span>
+                      <span id="captureCompletenessValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details id="flowCharacteristicsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Flow Characteristics</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-overview-grid compact-overview-grid">
+                    <div class="metric">
+                      <span class="metric-label">Only A -&gt; B Flows</span>
+                      <span id="onlyAToBFlowsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Service Recognized</span>
+                      <span id="serviceRecognizedFlowsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details id="directionDistributionDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Direction Distribution</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-direction-distributions">
+                    <div class="statistics-section statistics-direction-section">
+                      <div class="statistics-section-heading">
+                        <h3>Packet Direction</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table statistics-direction-table">
+                          <thead>
+                            <tr>
+                              <th>Group</th>
+                              <th>Flows</th>
+                              <th>Percent</th>
+                            </tr>
+                          </thead>
+                          <tbody id="packetDirectionDistributionBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="statistics-section statistics-direction-section">
+                      <div class="statistics-section-heading">
+                        <div>
+                          <h3>Data Direction (Original Bytes)</h3>
+                          <p id="dataDirectionDistributionHelpText" class="panel-subtitle compact-help-text"></p>
+                        </div>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table statistics-direction-table">
+                          <thead>
+                            <tr>
+                              <th>Group</th>
+                              <th>Flows</th>
+                              <th>Percent</th>
+                            </tr>
+                          </thead>
+                          <tbody id="dataDirectionDistributionBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details id="tcpFlagsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">TCP Flags</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section">
+                    <div class="statistics-section-heading">
+                      <div>
+                        <p id="tcpFlagsHelpText" class="panel-subtitle compact-help-text"></p>
+                      </div>
+                    </div>
+                    <div class="table-wrap">
+                      <table class="data-table compact-stats-table statistics-direction-table">
+                        <thead>
+                          <tr>
+                            <th>Flag</th>
+                            <th>Packets</th>
+                            <th>Percent</th>
+                          </tr>
+                        </thead>
+                        <tbody id="tcpFlagsBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
               <details id="quicTlsDetails" class="statistics-disclosure">
                 <summary class="statistics-disclosure-summary">
                   <span class="statistics-disclosure-title-wrap">
@@ -541,6 +712,38 @@
                 </div>
               </details>
 
+              <details id="topFlowsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Top Flows by Original Bytes</span>
+                  </span>
+                  <span id="topFlowsSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section">
+                    <div class="table-wrap">
+                      <table class="data-table compact-stats-table">
+                        <thead>
+                          <tr>
+                            <th>Flow</th>
+                            <th>Endpoint A</th>
+                            <th>Endpoint B</th>
+                            <th>Protocol</th>
+                            <th>Detected Protocol</th>
+                            <th>Service</th>
+                            <th>Protocol Path</th>
+                            <th>Packets</th>
+                            <th>Captured</th>
+                            <th>Original</th>
+                          </tr>
+                        </thead>
+                        <tbody id="topFlowsBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
               <details id="topEndpointsPortsDetails" class="statistics-disclosure">
                 <summary class="statistics-disclosure-summary">
                   <span class="statistics-disclosure-title-wrap">
@@ -559,8 +762,9 @@
                           <thead>
                             <tr>
                               <th>Endpoint</th>
+                              <th>Flows</th>
                               <th>Packets</th>
-                              <th>Bytes</th>
+                              <th>Original Bytes</th>
                             </tr>
                           </thead>
                           <tbody id="topEndpointsBody"></tbody>
@@ -576,8 +780,9 @@
                           <thead>
                             <tr>
                               <th>Port</th>
+                              <th>Flows</th>
                               <th>Packets</th>
-                              <th>Bytes</th>
+                              <th>Original Bytes</th>
                             </tr>
                           </thead>
                           <tbody id="topPortsBody"></tbody>
@@ -683,7 +888,7 @@
                     <p id="analysisRateGraphContextText" class="analysis-rate-context-text"></p>
                     <div class="analysis-rate-toolbar">
                       <div class="analysis-direction-tabs">
-                        <button id="analysisRateMetricModeData" type="button" class="secondary-button">Data/s</button>
+                        <button id="analysisRateMetricModeOriginalData" type="button" class="secondary-button">Original data/s</button>
                         <button id="analysisRateMetricModePackets" type="button" class="secondary-button">Packets/s</button>
                       </div>
                       <div class="analysis-direction-tabs">
@@ -714,6 +919,10 @@
                       <h3>Packet Size Histogram</h3>
                       <div class="analysis-histogram-toolbar">
                         <span id="analysisPacketSizeHistogramMax" class="analysis-histogram-max"></span>
+                        <div class="analysis-direction-tabs">
+                          <button id="analysisPacketSizeHistogramMetricOriginal" type="button" class="secondary-button">Original</button>
+                          <button id="analysisPacketSizeHistogramMetricCaptured" type="button" class="secondary-button">Captured</button>
+                        </div>
                         <div class="analysis-direction-tabs">
                           <button id="analysisPacketSizeHistogramModeAll" type="button" class="secondary-button">All</button>
                           <button id="analysisPacketSizeHistogramModeAToB" type="button" class="secondary-button">A-&gt;B</button>

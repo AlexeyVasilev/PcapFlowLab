@@ -111,6 +111,86 @@ constexpr char kLegacyIndexRebuildMessage[] =
     "legacy index version 14 is no longer loadable; rebuild the index from the source capture";
 constexpr char kCompactPacketRefRebuildMessage[] =
     "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture";
+constexpr char kPreviousStableV15RebuildMessage[] =
+    "This index uses revision 15 and must be rebuilt with the current version.";
+constexpr char kOutdatedStableIndexRebuildMessage[] =
+    "stable index revision is outdated; rebuild the index from the source capture";
+constexpr char kFutureStableIndexRevisionMessage[] =
+    "stable index revision is newer than this application supports";
+
+[[nodiscard]] const char* outdated_stable_revision_message(const std::uint32_t revision) noexcept {
+    return revision == kCaptureIndexPreviousStableV15Revision
+        ? kPreviousStableV15RebuildMessage
+        : kOutdatedStableIndexRebuildMessage;
+}
+
+[[nodiscard]] const char* v16_complete_read_error_text(const detail::CaptureIndexV16CompleteReadResult& result) noexcept {
+    if (!result.error_detail.empty()) {
+        return result.error_detail.c_str();
+    }
+
+    switch (result.status) {
+    case detail::CaptureIndexV16CompleteReadStatus::ok:
+        return "";
+    case detail::CaptureIndexV16CompleteReadStatus::cancelled:
+        return "v16 index load was cancelled";
+    case detail::CaptureIndexV16CompleteReadStatus::invalid_metadata_tier:
+        return "invalid v16 index metadata tier";
+    case detail::CaptureIndexV16CompleteReadStatus::trailing_data:
+        return "invalid v16 index trailing data";
+    }
+
+    return "invalid v16 index";
+}
+
+[[nodiscard]] const char* v16_fast_statistics_read_error_text(
+    const detail::CaptureIndexV16FastStatisticsTierReadResult& result
+) noexcept {
+    if (!result.error_detail.empty()) {
+        return result.error_detail.c_str();
+    }
+
+    switch (result.status) {
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::ok:
+        return "";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::invalid_header:
+        return "invalid stable index header";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::unsupported_revision:
+        return "unsupported stable index revision";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_statistics_snapshot_section:
+        return "missing v16 capture statistics snapshot section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section:
+        return "duplicate v16 capture statistics snapshot section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section:
+        return "missing v16 protocol path registry section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section:
+        return "duplicate v16 protocol path registry section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section:
+        return "missing v16 protocol path terminal aggregates section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order:
+        return "invalid v16 fast statistics section order";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing:
+        return "invalid v16 fast statistics section framing";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema:
+        return "unsupported v16 fast statistics section schema";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload:
+        return "truncated v16 fast statistics section payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_statistics_snapshot_payload:
+        return "malformed v16 capture statistics snapshot payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::capture_statistics_snapshot_semantic_inconsistency:
+        return "invalid v16 capture statistics snapshot";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload:
+        return "malformed v16 protocol path registry payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_terminal_aggregates_payload:
+        return "malformed v16 protocol path terminal aggregates payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::protocol_path_terminal_aggregates_semantic_inconsistency:
+        return "invalid v16 protocol path terminal aggregates";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency:
+        return "invalid v16 fast statistics tier";
+    }
+
+    return "invalid v16 fast statistics tier";
+}
 
 }  // namespace
 
@@ -279,6 +359,300 @@ bool CaptureIndexReader::inspect(const std::filesystem::path& index_path,
     }
 }
 
+bool CaptureIndexReader::read_v16_complete(
+    const std::filesystem::path& index_path,
+    detail::CaptureIndexV16CompleteReadResult& out_result,
+    OpenContext* ctx
+) const {
+    out_result = {};
+    clear_error();
+
+    if (ctx != nullptr) {
+        ctx->progress = {};
+        ctx->clear_failure();
+        std::error_code error {};
+        const auto file_size = std::filesystem::file_size(index_path, error);
+        if (!error) {
+            ctx->progress.total_bytes = static_cast<std::uint64_t>(file_size);
+        }
+    }
+
+    if (should_cancel(ctx)) {
+        if (ctx != nullptr && ctx->on_progress) {
+            ctx->on_progress(ctx->progress);
+        }
+        return false;
+    }
+
+    std::ifstream stream(index_path, std::ios::binary);
+    if (!stream.is_open()) {
+        set_error_context("file access failed");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+
+    try {
+        report_index_progress(ctx, stream);
+        if (should_cancel(ctx)) {
+            report_index_progress(ctx, stream);
+            return false;
+        }
+
+        std::uint64_t magic {0};
+        if (!detail::read_u64(stream, magic)) {
+            set_error_context(0, "index file is incomplete or was not finalized");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic == kLegacyCaptureIndexMagic) {
+            std::uint16_t legacy_version {0};
+            std::uint16_t legacy_reserved {0};
+            if (!detail::read_u16(stream, legacy_version) ||
+                !detail::read_u16(stream, legacy_reserved)) {
+                set_error_context(current_offset(stream), "index file is incomplete or was not finalized");
+            } else {
+                set_error_context(0, kLegacyIndexRebuildMessage);
+            }
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic != kStableCaptureIndexMagic) {
+            set_error_context(0, "invalid index magic");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        detail::CaptureIndexStableHeader stable_header {};
+        if (!detail::read_capture_index_stable_header(stream, stable_header)) {
+            set_error_context(0, "invalid stable index header");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.container_format_version != kCaptureIndexStableContainerFormatVersion) {
+            set_error_context(0, "unsupported stable index container version");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
+            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision > kCaptureIndexStableIndexRevision) {
+            set_error_context(0, kFutureStableIndexRevisionMessage);
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        const detail::CaptureIndexV16ReadControl read_control {
+            .cancel_requested = [ctx]() {
+                return should_cancel(ctx);
+            },
+            .progress_callback = [ctx](const std::uint64_t processed, const std::uint64_t total) {
+                if (ctx != nullptr) {
+                    ctx->progress.bytes_processed = processed;
+                    ctx->progress.total_bytes = total;
+                    if (ctx->on_progress) {
+                        ctx->on_progress(ctx->progress);
+                    }
+                }
+                return !should_cancel(ctx);
+            },
+            .total_bytes = ctx != nullptr ? ctx->progress.total_bytes : 0U,
+        };
+        out_result = detail::read_capture_index_v16(stream, &read_control);
+        if (!out_result) {
+            if (out_result.status == detail::CaptureIndexV16CompleteReadStatus::cancelled) {
+                report_index_progress(ctx, stream);
+                return false;
+            }
+            set_error_context(0, v16_complete_read_error_text(out_result));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        report_index_progress(ctx, stream);
+        return true;
+    } catch (const std::bad_alloc&) {
+        last_error_ = {};
+        last_error_.reason = "index load exhausted memory while reading v16 metadata";
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    } catch (const std::exception& error) {
+        last_error_ = {};
+        last_error_.reason = std::string("unexpected exception while reading v16 index: ") + error.what();
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+}
+
+bool CaptureIndexReader::read_v16_fast_statistics(
+    const std::filesystem::path& index_path,
+    detail::CaptureIndexV16FastStatisticsTier& out_tier,
+    detail::CaptureIndexV16FastStatisticsTierReadResult& out_result,
+    OpenContext* ctx
+) const {
+    out_tier = {};
+    out_result = {};
+    clear_error();
+
+    if (ctx != nullptr) {
+        ctx->progress = {};
+        ctx->clear_failure();
+        std::error_code error {};
+        const auto file_size = std::filesystem::file_size(index_path, error);
+        if (!error) {
+            ctx->progress.total_bytes = static_cast<std::uint64_t>(file_size);
+        }
+    }
+
+    if (should_cancel(ctx)) {
+        if (ctx != nullptr && ctx->on_progress) {
+            ctx->on_progress(ctx->progress);
+        }
+        return false;
+    }
+
+    std::ifstream stream(index_path, std::ios::binary);
+    if (!stream.is_open()) {
+        set_error_context("file access failed");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+
+    try {
+        report_index_progress(ctx, stream);
+        if (should_cancel(ctx)) {
+            report_index_progress(ctx, stream);
+            return false;
+        }
+
+        std::uint64_t magic {0};
+        if (!detail::read_u64(stream, magic)) {
+            set_error_context(0, "index file is incomplete or was not finalized");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic == kLegacyCaptureIndexMagic) {
+            std::uint16_t legacy_version {0};
+            std::uint16_t legacy_reserved {0};
+            if (!detail::read_u16(stream, legacy_version) ||
+                !detail::read_u16(stream, legacy_reserved)) {
+                set_error_context(current_offset(stream), "index file is incomplete or was not finalized");
+            } else {
+                set_error_context(0, kLegacyIndexRebuildMessage);
+            }
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic != kStableCaptureIndexMagic) {
+            set_error_context(0, "invalid index magic");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        detail::CaptureIndexStableHeader stable_header {};
+        if (!detail::read_capture_index_stable_header(stream, stable_header)) {
+            set_error_context(0, "invalid stable index header");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.container_format_version != kCaptureIndexStableContainerFormatVersion) {
+            set_error_context(0, "unsupported stable index container version");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
+            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision > kCaptureIndexStableIndexRevision) {
+            set_error_context(0, kFutureStableIndexRevisionMessage);
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        out_result = detail::read_v16_fast_statistics_tier(stream, out_tier);
+        if (!out_result) {
+            set_error_context(0, v16_fast_statistics_read_error_text(out_result));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        report_index_progress(ctx, stream);
+        return true;
+    } catch (const std::bad_alloc&) {
+        last_error_ = {};
+        last_error_.reason = "index load exhausted memory while reading v16 fast statistics";
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    } catch (const std::exception& error) {
+        last_error_ = {};
+        last_error_.reason = std::string("unexpected exception while reading v16 fast statistics: ") + error.what();
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+}
+
 bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                               CaptureState& out_state,
                               std::filesystem::path& out_source_capture_path,
@@ -328,7 +702,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 
         CaptureSourceInfo source_info {};
         CaptureState state {};
-        state.packet_size_statistics = {};
+        state.packet_statistics = {};
         bool has_summary {false};
         bool has_protocol_paths {false};
         bool has_ipv4_connections {false};
@@ -389,7 +763,23 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         }
 
         if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
-            set_error_context(0, "unsupported stable index revision");
+            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision > kCaptureIndexStableIndexRevision) {
+            set_error_context(0, kFutureStableIndexRevisionMessage);
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision == kCaptureIndexStableIndexRevision) {
+            set_error_context(0, "legacy eager index reader does not support v16 metadata-backed indexes");
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
             }
@@ -552,7 +942,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_connection_table_chunk(
                         section_stream,
                         state.ipv4_connections,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv4 connection section");
@@ -580,7 +970,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_connection_table_chunk(
                         section_stream,
                         state.ipv6_connections,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv6 connection section");
@@ -608,7 +998,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_unrecognized_packet_records(
                         section_stream,
                         state.unrecognized_packets,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid unrecognized-packets section");

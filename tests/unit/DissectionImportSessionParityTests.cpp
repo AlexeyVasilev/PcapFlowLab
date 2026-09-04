@@ -765,17 +765,6 @@ void expect_classic_pcap_staged_prefix_session_parity() {
     );
 }
 
-const PacketRef& require_single_ingested_ipv4_packet_ref(const CaptureState& state) {
-    PFL_REQUIRE(state.ipv4_connections.size() == 1U);
-    const auto connections = state.ipv4_connections.list();
-    PFL_REQUIRE(connections.size() == 1U);
-    const auto* connection = connections.front();
-    PFL_REQUIRE(connection != nullptr);
-    PFL_REQUIRE(connection->has_flow_a);
-    PFL_REQUIRE(connection->flow_a.packets.size() == 1U);
-    return connection->flow_a.packets.front();
-}
-
 void expect_overlay_terminal_payload_length_regression() {
     struct OverlayPayloadCase {
         std::string_view fixture {};

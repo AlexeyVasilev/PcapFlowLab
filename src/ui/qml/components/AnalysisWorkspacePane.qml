@@ -48,6 +48,12 @@ Item {
     property string analysisMaxCapturedPacketSizeText: ""
     property string analysisMaxPacketSizeAToBText: ""
     property string analysisMaxPacketSizeBToAText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalAToBText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalBToAText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedAToBText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedBToAText: ""
     property string analysisPacketRatioText: ""
     property string analysisByteRatioText: ""
     property string analysisPacketDirectionText: ""
@@ -83,11 +89,12 @@ Item {
     property var analysisInterArrivalHistogramAll: []
     property var analysisInterArrivalHistogramAToB: []
     property var analysisInterArrivalHistogramBToA: []
-    property var analysisInterArrivalHistogram: []
     property var analysisPacketSizeHistogramAll: []
     property var analysisPacketSizeHistogramAToB: []
     property var analysisPacketSizeHistogramBToA: []
-    property var analysisPacketSizeHistogram: []
+    property var analysisCapturedPacketSizeHistogramAll: []
+    property var analysisCapturedPacketSizeHistogramAToB: []
+    property var analysisCapturedPacketSizeHistogramBToA: []
     property var analysisSequencePreview: []
 
     signal flowSelected(int flowIndex)
@@ -321,6 +328,12 @@ Item {
             maxCapturedPacketSizeText: root.analysisMaxCapturedPacketSizeText
             maxPacketSizeAToBText: root.analysisMaxPacketSizeAToBText
             maxPacketSizeBToAText: root.analysisMaxPacketSizeBToAText
+            packetSizeHistogramMaximumOriginalText: root.analysisPacketSizeHistogramMaximumOriginalText
+            packetSizeHistogramMaximumOriginalAToBText: root.analysisPacketSizeHistogramMaximumOriginalAToBText
+            packetSizeHistogramMaximumOriginalBToAText: root.analysisPacketSizeHistogramMaximumOriginalBToAText
+            packetSizeHistogramMaximumCapturedText: root.analysisPacketSizeHistogramMaximumCapturedText
+            packetSizeHistogramMaximumCapturedAToBText: root.analysisPacketSizeHistogramMaximumCapturedAToBText
+            packetSizeHistogramMaximumCapturedBToAText: root.analysisPacketSizeHistogramMaximumCapturedBToAText
             packetRatioText: root.analysisPacketRatioText
             byteRatioText: root.analysisByteRatioText
             packetDirectionText: root.analysisPacketDirectionText
@@ -356,11 +369,13 @@ Item {
             interArrivalHistogramAllModel: root.analysisInterArrivalHistogramAll
             interArrivalHistogramAToBModel: root.analysisInterArrivalHistogramAToB
             interArrivalHistogramBToAModel: root.analysisInterArrivalHistogramBToA
-            interArrivalHistogramModel: root.analysisInterArrivalHistogram
             packetSizeHistogramAllModel: root.analysisPacketSizeHistogramAll
             packetSizeHistogramAToBModel: root.analysisPacketSizeHistogramAToB
             packetSizeHistogramBToAModel: root.analysisPacketSizeHistogramBToA
-            packetSizeHistogramModel: root.analysisPacketSizeHistogram
+            capturedPacketSizeHistogramAllModel: root.analysisCapturedPacketSizeHistogramAll
+            capturedPacketSizeHistogramAToBModel: root.analysisCapturedPacketSizeHistogramAToB
+            capturedPacketSizeHistogramBToAModel: root.analysisCapturedPacketSizeHistogramBToA
+            analysisContextResetToken: root.selectedFlowIndex
             sequencePreviewModel: root.analysisSequencePreview
             onOpenInFlowsRequested: root.openInFlowsRequested()
             onExportFlowSequenceRequested: root.exportFlowSequenceRequested()

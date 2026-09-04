@@ -1,6 +1,6 @@
 # Flow Aggregate Metadata RFC
 
-Status: implemented in the current production/runtime and stable v15 index path.
+Status: implemented in the current production/runtime and stable index path.
 
 This document records the current compact aggregate-metadata foundation used by
 Pcap Flow Lab for connection-level analysis and the final compact persistent
@@ -21,7 +21,7 @@ level.
 The resulting design is:
 
 - canonical aggregate ownership remains on `ConnectionV4` / `ConnectionV6`
-- stable v15 persists compact authoritative connection aggregates
+- stable indexes persist compact authoritative connection aggregates
 - persistent `PacketRef` is now a compact locator/ordering record only
 - packet-level transport payload length, TCP flags, and fragmentation state are
   transient decoded facts rather than persisted packet-ref fields
@@ -146,6 +146,9 @@ including:
 - fragmented-packet count
 - captured/original byte totals
 - protocol/service/TLS/QUIC aggregate hints
+
+Those same aggregate TCP SYN/FIN/RST counts are also the intended authority for
+whole-capture TCP-flag Statistics, rather than any future packet-ref rescan.
 
 ## FlowAnalysis Ownership Boundary
 

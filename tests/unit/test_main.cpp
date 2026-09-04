@@ -45,6 +45,7 @@ void run_ingestor_tests();
 void run_import_tests();
 void run_analysis_settings_tests();
 void run_flow_analysis_tests();
+void run_selected_flow_packet_access_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
 void run_dns_inspection_parser_tests();
@@ -80,6 +81,7 @@ void run_export_tests();
 void run_pcapng_tests();
 void run_index_tests();
 void run_index_format_tests();
+void run_capture_statistics_snapshot_tests();
 void run_protocol_coverage_tests();
 void run_supported_protocol_catalog_tests();
 void run_malformed_packet_handling_tests();
@@ -202,6 +204,7 @@ int main() {
         {"import", pfl::tests::run_import_tests},
         {"analysis_settings", pfl::tests::run_analysis_settings_tests},
         {"flow_analysis", pfl::tests::run_flow_analysis_tests},
+        {"selected_flow_packet_access", pfl::tests::run_selected_flow_packet_access_tests},
         {"packet_access", pfl::tests::run_packet_access_tests},
         {"packet_details", pfl::tests::run_packet_details_tests},
         {"dns_inspection_parser", pfl::tests::run_dns_inspection_parser_tests},
@@ -237,6 +240,7 @@ int main() {
         {"pcapng", pfl::tests::run_pcapng_tests},
         {"index", pfl::tests::run_index_tests},
         {"index_format", pfl::tests::run_index_format_tests},
+        {"capture_statistics_snapshot", pfl::tests::run_capture_statistics_snapshot_tests},
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
         {"supported_protocol_catalog", pfl::tests::run_supported_protocol_catalog_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},

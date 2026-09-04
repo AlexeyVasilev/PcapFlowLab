@@ -15,6 +15,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "PcapTestUtils.h"
@@ -372,6 +373,42 @@ void expect_no_protocol_path_stats_row(
     const std::string& path_text
 ) {
     PFL_EXPECT(find_protocol_path_stats_row(summary, path_text) == nullptr);
+}
+
+void expect_matching_protocol_path_summary_projection(
+    const CaptureProtocolPathSummary& expected,
+    const CaptureProtocolPathSummary& projected
+) {
+    PFL_EXPECT(projected.mode == expected.mode);
+    PFL_EXPECT(projected.total_flow_count == expected.total_flow_count);
+    PFL_EXPECT(projected.total_packet_count == expected.total_packet_count);
+    PFL_EXPECT(projected.total_original_byte_count == expected.total_original_byte_count);
+    PFL_EXPECT(projected.rows.size() == expected.rows.size());
+
+    for (std::size_t index = 0U; index < expected.rows.size(); ++index) {
+        const auto& expected_row = expected.rows[index];
+        const auto& projected_row = projected.rows[index];
+        PFL_EXPECT(projected_row.node_id == expected_row.node_id);
+        PFL_EXPECT(projected_row.parent_node_id == expected_row.parent_node_id);
+        PFL_EXPECT(projected_row.depth == expected_row.depth);
+        PFL_EXPECT(projected_row.layer == expected_row.layer);
+        PFL_EXPECT(projected_row.path == expected_row.path);
+        PFL_EXPECT(projected_row.layer_text == expected_row.layer_text);
+        PFL_EXPECT(projected_row.path_text == expected_row.path_text);
+        PFL_EXPECT(projected_row.compact_text == expected_row.compact_text);
+        PFL_EXPECT(projected_row.has_children == expected_row.has_children);
+        PFL_EXPECT(projected_row.is_terminal == expected_row.is_terminal);
+        PFL_EXPECT(projected_row.flow_count == expected_row.flow_count);
+        PFL_EXPECT(projected_row.packet_count == expected_row.packet_count);
+        PFL_EXPECT(projected_row.original_byte_count == expected_row.original_byte_count);
+        PFL_EXPECT(projected_row.flow_percent == expected_row.flow_percent);
+        PFL_EXPECT(projected_row.packet_percent == expected_row.packet_percent);
+        PFL_EXPECT(projected_row.original_byte_percent == expected_row.original_byte_percent);
+        PFL_EXPECT(projected_row.flow_count_text == expected_row.flow_count_text);
+        PFL_EXPECT(projected_row.packet_count_text == expected_row.packet_count_text);
+        PFL_EXPECT(projected_row.original_byte_count_text == expected_row.original_byte_count_text);
+        PFL_EXPECT(badge_short_labels(projected_row.badges) == badge_short_labels(expected_row.badges));
+    }
 }
 
 std::string format_fixture_flow_diagnostics(
@@ -1915,6 +1952,38 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
     }
 }
 
+void expect_protocol_path_statistics_projection_does_not_require_membership() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+
+    const auto connections = session_detail::list_connections(session.state());
+    const auto display_statistics = session_detail::build_protocol_path_display_statistics(
+        session.state(),
+        connections
+    );
+    PFL_EXPECT(display_statistics.terminal_path_aggregates.size() == 2U);
+
+    for (const auto mode : {
+             ProtocolPathStatisticsMode::kind_overview,
+             ProtocolPathStatisticsMode::identity_tree,
+             ProtocolPathStatisticsMode::terminal_paths,
+         }) {
+        const auto runtime_summary = session.protocol_path_summary(mode);
+        const auto projected_summary = session_detail::build_protocol_path_summary_from_display_statistics(
+            session.state().protocol_path_registry,
+            display_statistics,
+            runtime_summary.total_flow_count,
+            runtime_summary.total_packet_count,
+            runtime_summary.total_original_byte_count,
+            mode
+        );
+
+        PFL_EXPECT(projected_summary.flow_index_pool.empty());
+        PFL_EXPECT(projected_summary.node_membership_ranges.empty());
+        expect_matching_protocol_path_summary_projection(runtime_summary, projected_summary);
+    }
+}
+
 void expect_protocol_path_statistics_flow_membership_lookup() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
@@ -2715,7 +2784,7 @@ void expect_gtpu_teid_agnostic_index_roundtrip_keeps_stored_grouping_without_rea
         .ignore_gtpu_teids_when_grouping_inner_flows = false,
     });
     PFL_REQUIRE(loaded_gtpu_teid_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 15U);
+    PFL_EXPECT(kCaptureIndexVersion == 16U);
     PFL_EXPECT(loaded_gtpu_teid_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(!loaded_gtpu_teid_agnostic.flow_grouping_ignores_gtpu_teids());
     PFL_EXPECT(protocol_path_text_or_invalid(
@@ -2997,7 +3066,7 @@ void expect_vlan_and_mpls_agnostic_index_roundtrip_keeps_stored_grouping_without
 
     CaptureSession loaded_vlan_and_mpls_agnostic {};
     PFL_REQUIRE(loaded_vlan_and_mpls_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 15U);
+    PFL_EXPECT(kCaptureIndexVersion == 16U);
     PFL_EXPECT(loaded_vlan_and_mpls_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(!loaded_vlan_and_mpls_agnostic.flow_grouping_ignores_vlan_and_mpls_layers());
     PFL_EXPECT(protocol_path_text_or_invalid(
@@ -3160,6 +3229,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_statistics_terminal_metadata_is_flat();
     expect_protocol_path_statistics_flow_membership_lookup();
     expect_protocol_path_statistics_survive_index_roundtrip();
+    expect_protocol_path_statistics_projection_does_not_require_membership();
     expect_storage_summary_counts_recognized_packets_and_protocol_paths();
     expect_frontend_protocol_path_statistics_are_loaded_by_mode();
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();

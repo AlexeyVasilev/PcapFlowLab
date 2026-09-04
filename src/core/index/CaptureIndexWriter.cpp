@@ -1,11 +1,13 @@
 #include "core/index/CaptureIndexWriter.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <limits>
 #include <optional>
+#include <span>
 #include <streambuf>
 #include <string>
 #include <system_error>
@@ -17,12 +19,12 @@
 
 #include "core/index/CaptureIndex.h"
 #include "core/index/Serialization.h"
+#include "app/session/SessionFlowHelpers.h"
 
 namespace pfl {
 
 namespace {
 
-constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 4U;
 constexpr std::uint64_t kMinimumConnectionSectionPayloadBytes = 8U;
 
 [[nodiscard]] std::string writer_application_version() {
@@ -311,7 +313,7 @@ template <typename Connection>
            serialized_u32_size();
 }
 
-[[nodiscard]] std::optional<std::uint64_t> serialized_string_size(const std::string& value) noexcept {
+[[nodiscard, maybe_unused]] std::optional<std::uint64_t> serialized_string_size(const std::string& value) noexcept {
     if (value.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
         return std::nullopt;
     }
@@ -417,6 +419,45 @@ struct ConnectionChunkPlan {
     return options.max_connection_section_payload_bytes < kMinimumConnectionSectionPayloadBytes
         ? kMinimumConnectionSectionPayloadBytes
         : options.max_connection_section_payload_bytes;
+}
+
+[[nodiscard]] CaptureIndexV16PacketRefDetailLayoutOptions v16_layout_options(
+    const CaptureIndexWriteOptions& options
+) {
+    const auto target_payload_bytes = normalized_connection_section_payload_limit(options);
+    return CaptureIndexV16PacketRefDetailLayoutOptions {
+        .target_section_payload_bytes = target_payload_bytes,
+        .target_unrecognized_directory_section_payload_bytes = target_payload_bytes,
+        .target_unrecognized_reason_blob_section_payload_bytes = target_payload_bytes,
+        .target_packet_locator_section_payload_bytes = target_payload_bytes,
+    };
+}
+
+[[nodiscard]] std::string v16_write_plan_error_text(const CaptureIndexV16WritePlanBuildResult& result) {
+    if (!result.error_detail.empty()) {
+        return result.error_detail;
+    }
+
+    switch (result.status) {
+    case CaptureIndexV16WritePlanBuildStatus::ok:
+        return {};
+    case CaptureIndexV16WritePlanBuildStatus::invalid_protocol_path_id:
+        return "Failed to prepare v16 index: invalid Protocol Path reference.";
+    case CaptureIndexV16WritePlanBuildStatus::invalid_directional_packet_count:
+        return "Failed to prepare v16 index: invalid directional packet count.";
+    case CaptureIndexV16WritePlanBuildStatus::invalid_directional_packet_order:
+        return "Failed to prepare v16 index: invalid directional packet order.";
+    case CaptureIndexV16WritePlanBuildStatus::invalid_first_observed_orientation:
+        return "Failed to prepare v16 index: invalid first-observed flow orientation.";
+    case CaptureIndexV16WritePlanBuildStatus::invalid_unrecognized_packet_order:
+        return "Failed to prepare v16 index: invalid unrecognized packet order.";
+    case CaptureIndexV16WritePlanBuildStatus::invalid_packet_locator_order:
+        return "Failed to prepare v16 index: invalid packet locator order.";
+    case CaptureIndexV16WritePlanBuildStatus::numeric_overflow:
+        return "Failed to prepare v16 index: numeric overflow.";
+    }
+
+    return "Failed to prepare v16 index.";
 }
 
 template <typename Table, typename ConnectionPtr>
@@ -715,6 +756,345 @@ bool write_chunked_connection_sections(
     return true;
 }
 
+template <typename Writer>
+bool write_v16_section_with_progress(
+    std::ofstream& stream,
+    const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
+    const std::string& label,
+    std::uint64_t& completed_sections,
+    const std::uint64_t total_sections,
+    const std::uint64_t phase_items_total,
+    Writer&& writer,
+    std::string* out_error_text
+) {
+    progress_reporter.report(
+        CaptureIndexWritePhase::writing,
+        "Writing " + label,
+        completed_sections,
+        total_sections,
+        0U,
+        phase_items_total,
+        stream_offset(stream),
+        true
+    );
+    if (should_cancel(options)) {
+        set_error_text(out_error_text, "Index save cancelled by user.");
+        return false;
+    }
+
+    if (!writer(stream)) {
+        set_error_text(out_error_text, "Failed to write " + label + ".");
+        return false;
+    }
+
+    ++completed_sections;
+    progress_reporter.report(
+        CaptureIndexWritePhase::writing,
+        "Writing " + label,
+        completed_sections,
+        total_sections,
+        phase_items_total,
+        phase_items_total,
+        stream_offset(stream),
+        true
+    );
+    return true;
+}
+
+bool write_v16_packetref_detail_sections_with_progress(
+    std::ofstream& stream,
+    const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
+    std::uint64_t& completed_sections,
+    const std::uint64_t total_sections,
+    const CaptureIndexV16WritePlan& plan,
+    std::string* out_error_text
+) {
+    std::uint64_t processed_packets {0U};
+    for (std::size_t section_index = 0U; section_index < plan.packetref_detail_sections.size(); ++section_index) {
+        const auto& section = plan.packetref_detail_sections[section_index];
+        const auto label = "PacketRef detail section " + std::to_string(section_index + 1U) +
+            "/" + std::to_string(plan.packetref_detail_sections.size());
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_packets,
+            plan.total_packetref_count,
+            stream_offset(stream),
+            true
+        );
+        if (should_cancel(options)) {
+            set_error_text(out_error_text, "Index save cancelled by user.");
+            return false;
+        }
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index)) {
+            set_error_text(out_error_text, "Failed to write " + label + ".");
+            return false;
+        }
+
+        std::uint64_t expected_payload_size {0};
+        for (const auto& extent : section.extents) {
+            const auto expected_length =
+                extent.packet_count * kCaptureIndexV16PacketRefEncodedStrideBytes;
+            if (extent.encoded_byte_length != expected_length ||
+                extent.detail_section_occurrence_index != section.section_occurrence_index ||
+                static_cast<std::uint64_t>(extent.packet_refs.size()) != extent.packet_count ||
+                extent.payload_offset != expected_payload_size) {
+                set_error_text(out_error_text, "Failed to write " + label + ".");
+                return false;
+            }
+            expected_payload_size += extent.encoded_byte_length;
+        }
+
+        if (expected_payload_size != section.payload_size ||
+            !detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+                .section_schema_version = detail::kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion,
+                .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            })) {
+            set_error_text(out_error_text, "Failed to write " + label + ".");
+            return false;
+        }
+
+        for (const auto& extent : section.extents) {
+            for (const auto& packet : extent.packet_refs) {
+                if (!detail::write_packet_ref(stream, packet)) {
+                    set_error_text(out_error_text, "Failed to write " + label + ".");
+                    return false;
+                }
+                ++processed_packets;
+                if ((processed_packets == plan.total_packetref_count || (processed_packets % 4096U) == 0U)) {
+                    progress_reporter.report(
+                        CaptureIndexWritePhase::writing,
+                        "Writing " + label,
+                        completed_sections,
+                        total_sections,
+                        processed_packets,
+                        plan.total_packetref_count,
+                        stream_offset(stream)
+                    );
+                    if (should_cancel(options)) {
+                        set_error_text(out_error_text, "Index save cancelled by user.");
+                        return false;
+                    }
+                }
+            }
+        }
+
+        ++completed_sections;
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_packets,
+            plan.total_packetref_count,
+            stream_offset(stream),
+            true
+        );
+    }
+
+    return true;
+}
+
+bool write_v16_unrecognized_reason_sections_with_progress(
+    std::ofstream& stream,
+    const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
+    std::uint64_t& completed_sections,
+    const std::uint64_t total_sections,
+    std::span<const CaptureIndexV16UnrecognizedReasonSectionWritePlan> sections,
+    std::string* out_error_text
+) {
+    const auto total_extents = [&]() {
+        std::uint64_t count {0U};
+        for (const auto& section : sections) {
+            count += static_cast<std::uint64_t>(section.extents.size());
+        }
+        return count;
+    }();
+    std::uint64_t processed_extents {0U};
+
+    for (std::size_t section_index = 0U; section_index < sections.size(); ++section_index) {
+        const auto& section = sections[section_index];
+        const auto label = "unrecognized reason section " + std::to_string(section_index + 1U) +
+            "/" + std::to_string(sections.size());
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_extents,
+            total_extents,
+            stream_offset(stream),
+            true
+        );
+        if (should_cancel(options)) {
+            set_error_text(out_error_text, "Index save cancelled by user.");
+            return false;
+        }
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index) ||
+            !detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_reason_blobs),
+                .section_schema_version = detail::kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion,
+                .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            })) {
+            set_error_text(out_error_text, "Failed to write " + label + ".");
+            return false;
+        }
+
+        std::uint64_t expected_payload_size {0U};
+        for (const auto& extent : section.extents) {
+            if (extent.payload_offset != expected_payload_size) {
+                set_error_text(out_error_text, "Failed to write " + label + ".");
+                return false;
+            }
+            expected_payload_size += static_cast<std::uint64_t>(extent.reason_text.size());
+            if (!extent.reason_text.empty() &&
+                !detail::write_bytes(
+                    stream,
+                    std::span<const std::uint8_t>(
+                        reinterpret_cast<const std::uint8_t*>(extent.reason_text.data()),
+                        extent.reason_text.size()
+                    ))) {
+                set_error_text(out_error_text, "Failed to write " + label + ".");
+                return false;
+            }
+            ++processed_extents;
+            progress_reporter.report(
+                CaptureIndexWritePhase::writing,
+                "Writing " + label,
+                completed_sections,
+                total_sections,
+                processed_extents,
+                total_extents,
+                stream_offset(stream)
+            );
+            if (should_cancel(options)) {
+                set_error_text(out_error_text, "Index save cancelled by user.");
+                return false;
+            }
+        }
+        if (expected_payload_size != section.payload_size) {
+            set_error_text(out_error_text, "Failed to write " + label + ".");
+            return false;
+        }
+
+        ++completed_sections;
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_extents,
+            total_extents,
+            stream_offset(stream),
+            true
+        );
+    }
+
+    return true;
+}
+
+bool write_v16_packet_locator_sections_with_progress(
+    std::ofstream& stream,
+    const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
+    std::uint64_t& completed_sections,
+    const std::uint64_t total_sections,
+    std::span<const CaptureIndexV16PacketLocatorSectionWritePlan> sections,
+    std::span<const CapturePacketLocatorEntry> entries,
+    std::string* out_error_text
+) {
+    std::optional<std::uint64_t> prior_packet_index {};
+    std::optional<std::uint64_t> prior_file_offset {};
+    std::uint64_t processed_entries {0U};
+
+    for (std::size_t section_index = 0U; section_index < sections.size(); ++section_index) {
+        const auto& section = sections[section_index];
+        const auto label = "packet locator section " + std::to_string(section_index + 1U) +
+            "/" + std::to_string(sections.size());
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_entries,
+            static_cast<std::uint64_t>(entries.size()),
+            stream_offset(stream),
+            true
+        );
+        if (should_cancel(options)) {
+            set_error_text(out_error_text, "Index save cancelled by user.");
+            return false;
+        }
+        const auto begin = static_cast<std::size_t>(section.logical_entry_start);
+        const auto end = begin + static_cast<std::size_t>(section.entry_count);
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index) ||
+            section.logical_entry_start > static_cast<std::uint64_t>(entries.size()) ||
+            section.entry_count > static_cast<std::uint64_t>(entries.size()) ||
+            end > entries.size() ||
+            !detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16),
+                .section_schema_version = detail::kCaptureIndexStablePacketLocatorV16SectionSchemaVersion,
+                .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            }) ||
+            !detail::write_u64(stream, section.entry_count)) {
+            set_error_text(out_error_text, "Failed to write " + label + ".");
+            return false;
+        }
+
+        for (std::size_t index = begin; index < end; ++index) {
+            const auto& entry = entries[index];
+            if ((prior_packet_index.has_value() && entry.packet_index <= *prior_packet_index) ||
+                (prior_file_offset.has_value() && entry.file_offset <= *prior_file_offset) ||
+                !detail::write_u64(stream, entry.packet_index) ||
+                !detail::write_u64(stream, entry.file_offset)) {
+                set_error_text(out_error_text, "Failed to write " + label + ".");
+                return false;
+            }
+            prior_packet_index = entry.packet_index;
+            prior_file_offset = entry.file_offset;
+            ++processed_entries;
+            if (processed_entries == static_cast<std::uint64_t>(entries.size()) || (processed_entries % 4096U) == 0U) {
+                progress_reporter.report(
+                    CaptureIndexWritePhase::writing,
+                    "Writing " + label,
+                    completed_sections,
+                    total_sections,
+                    processed_entries,
+                    static_cast<std::uint64_t>(entries.size()),
+                    stream_offset(stream)
+                );
+                if (should_cancel(options)) {
+                    set_error_text(out_error_text, "Index save cancelled by user.");
+                    return false;
+                }
+            }
+        }
+
+        ++completed_sections;
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing " + label,
+            completed_sections,
+            total_sections,
+            processed_entries,
+            static_cast<std::uint64_t>(entries.size()),
+            stream_offset(stream),
+            true
+        );
+    }
+
+    return true;
+}
+
 }  // namespace
 
 bool CaptureIndexWriter::write(
@@ -733,7 +1113,6 @@ bool CaptureIndexWriter::write(
     std::string* out_error_text
 ) const {
     set_error_text(out_error_text, std::string {});
-    ThrottledProgressReporter progress_reporter {options};
 
     CaptureSourceInfo source_info {};
     if (!read_capture_source_info(source_capture_path, source_info)) {
@@ -741,43 +1120,47 @@ bool CaptureIndexWriter::write(
         return false;
     }
 
-    const auto ipv4_chunk_plan = build_connection_chunk_plan<ConnectionTableV4, const ConnectionV4*>(
-        state.ipv4_connections,
-        options,
-        progress_reporter,
-        "IPv4 connection section",
-        0U,
-        0U
-    );
-    if (!ipv4_chunk_plan.has_value()) {
-        if (should_cancel(options)) {
-            set_error_text(out_error_text, "Index save cancelled by user.");
-        } else {
-            set_error_text(out_error_text, "Failed to prepare IPv4 connection section.");
-        }
+    const auto connections = session_detail::list_connections(state);
+    const auto general_statistics = session_detail::build_capture_general_statistics(connections);
+    const auto protocol_path_display_statistics =
+        session_detail::build_protocol_path_display_statistics(state, connections);
+    const detail::CaptureIndexV16FastStatisticsTier fast_tier {
+        .capture_statistics_snapshot = session_detail::make_capture_statistics_snapshot(
+            state.packet_statistics,
+            general_statistics,
+            CaptureStatisticsScope::complete
+        ),
+        .protocol_path_registry = state.protocol_path_registry,
+        .protocol_path_display_statistics = protocol_path_display_statistics,
+    };
+
+    auto plan_result = session_detail::build_capture_index_v16_write_plan(state, v16_layout_options(options));
+    if (!plan_result) {
+        set_error_text(out_error_text, v16_write_plan_error_text(plan_result));
         return false;
     }
 
-    const auto ipv6_chunk_plan = build_connection_chunk_plan<ConnectionTableV6, const ConnectionV6*>(
-        state.ipv6_connections,
-        options,
-        progress_reporter,
-        "IPv6 connection section",
-        0U,
-        0U
-    );
-    if (!ipv6_chunk_plan.has_value()) {
-        if (should_cancel(options)) {
-            set_error_text(out_error_text, "Index save cancelled by user.");
-        } else {
-            set_error_text(out_error_text, "Failed to prepare IPv6 connection section.");
-        }
-        return false;
-    }
+    return write_v16(index_path, source_info, fast_tier, plan_result.plan, options, out_error_text);
+}
 
-    const auto total_sections = kFixedIndexSectionCountExcludingConnections +
-        static_cast<std::uint64_t>(ipv4_chunk_plan->chunks.size()) +
-        static_cast<std::uint64_t>(ipv6_chunk_plan->chunks.size());
+bool CaptureIndexWriter::write_v16(
+    const std::filesystem::path& index_path,
+    const CaptureSourceInfo& source_info,
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16WritePlan& plan,
+    const CaptureIndexWriteOptions& options,
+    std::string* out_error_text
+) const {
+    set_error_text(out_error_text, std::string {});
+    ThrottledProgressReporter progress_reporter {options};
+
+    const auto total_sections =
+        3U +
+        4U +
+        static_cast<std::uint64_t>(plan.unrecognized_directory_sections.size()) +
+        static_cast<std::uint64_t>(plan.packetref_detail_sections.size()) +
+        static_cast<std::uint64_t>(plan.unrecognized_reason_sections.size()) +
+        static_cast<std::uint64_t>(plan.packet_locator_sections.size());
 
     const auto temp_path = temp_index_path_for(index_path);
     remove_file_if_exists(temp_path);
@@ -793,10 +1176,20 @@ bool CaptureIndexWriter::write(
         remove_file_if_exists(temp_path);
     };
 
-    progress_reporter.report(CaptureIndexWritePhase::preparing, "Preparing index save", 0U, total_sections, 0U, 0U, 0U, true);
+    progress_reporter.report(CaptureIndexWritePhase::preparing, "Preparing v16 index save", 0U, total_sections, 0U, 0U, 0U, true);
     if (should_cancel(options)) {
         cleanup_temp();
         set_error_text(out_error_text, "Index save cancelled by user.");
+        return false;
+    }
+
+    if (!validate_capture_statistics_snapshot(fast_tier.capture_statistics_snapshot).ok ||
+        !validate_protocol_path_display_statistics(
+            fast_tier.protocol_path_registry,
+            fast_tier.protocol_path_display_statistics
+        ).ok) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Failed to prepare v16 index Statistics tier.");
         return false;
     }
 
@@ -821,16 +1214,16 @@ bool CaptureIndexWriter::write(
     std::uint64_t completed_sections {0U};
     if (!write_marshaled_section(
             stream,
-            detail::CaptureIndexSectionId::summary,
-            detail::kCaptureIndexStableSummarySectionSchemaVersion,
+            detail::CaptureIndexSectionId::capture_statistics_snapshot,
+            detail::kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion,
             options,
             progress_reporter,
-            "summary section",
+            "capture Statistics snapshot section",
             completed_sections,
             total_sections,
             1U,
             [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
-                return detail::write_capture_summary(payload, state.summary);
+                return detail::write_capture_statistics_snapshot(payload, fast_tier.capture_statistics_snapshot);
             },
             out_error_text)) {
         cleanup_temp();
@@ -840,65 +1233,16 @@ bool CaptureIndexWriter::write(
 
     if (!write_marshaled_section(
             stream,
-            detail::CaptureIndexSectionId::protocol_paths,
-            detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion,
+            detail::CaptureIndexSectionId::protocol_path_registry_early,
+            detail::kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion,
             options,
             progress_reporter,
-            "protocol path registry section",
+            "early Protocol Path registry section",
             completed_sections,
             total_sections,
-            static_cast<std::uint64_t>(state.protocol_path_registry.size()),
+            static_cast<std::uint64_t>(fast_tier.protocol_path_registry.size()),
             [&](std::ostream& payload, const detail::SerializationProgressCallback& callback) {
-                return detail::write_protocol_path_registry(payload, state.protocol_path_registry, callback);
-            },
-            out_error_text)) {
-        cleanup_temp();
-        return false;
-    }
-    ++completed_sections;
-
-    if (!write_chunked_connection_sections(
-            stream,
-            detail::CaptureIndexSectionId::ipv4_connections,
-            detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion,
-            "IPv4 connection section",
-            *ipv4_chunk_plan,
-            options,
-            progress_reporter,
-            completed_sections,
-            total_sections,
-            out_error_text)) {
-        cleanup_temp();
-        return false;
-    }
-
-    if (!write_chunked_connection_sections(
-            stream,
-            detail::CaptureIndexSectionId::ipv6_connections,
-            detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion,
-            "IPv6 connection section",
-            *ipv6_chunk_plan,
-            options,
-            progress_reporter,
-            completed_sections,
-            total_sections,
-            out_error_text)) {
-        cleanup_temp();
-        return false;
-    }
-
-    if (!write_marshaled_section(
-            stream,
-            detail::CaptureIndexSectionId::unrecognized_packets,
-            detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion,
-            options,
-            progress_reporter,
-            "unrecognized packet section",
-            completed_sections,
-            total_sections,
-            static_cast<std::uint64_t>(state.unrecognized_packets.size()),
-            [&](std::ostream& payload, const detail::SerializationProgressCallback& callback) {
-                return detail::write_unrecognized_packet_records(payload, state.unrecognized_packets, callback);
+                return detail::write_protocol_path_registry(payload, fast_tier.protocol_path_registry, callback);
             },
             out_error_text)) {
         cleanup_temp();
@@ -908,22 +1252,131 @@ bool CaptureIndexWriter::write(
 
     if (!write_marshaled_section(
             stream,
-            detail::CaptureIndexSectionId::packet_locator,
-            detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion,
+            detail::CaptureIndexSectionId::protocol_path_terminal_aggregates,
+            detail::kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion,
             options,
             progress_reporter,
-            "packet locator section",
+            "Protocol Path terminal aggregates section",
             completed_sections,
             total_sections,
-            static_cast<std::uint64_t>(state.packet_locator.size()),
+            static_cast<std::uint64_t>(
+                fast_tier.protocol_path_display_statistics.terminal_path_aggregates.size()),
             [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
-                return detail::write_capture_packet_locator(payload, state.packet_locator);
+                return detail::write_protocol_path_display_statistics(
+                    payload,
+                    fast_tier.protocol_path_display_statistics
+                );
             },
             out_error_text)) {
         cleanup_temp();
         return false;
     }
     ++completed_sections;
+
+    if (!write_v16_section_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            "IPv4 flow metadata section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(plan.metadata.ipv4_connections.size()),
+            [&](std::ostream& out) {
+                return detail::write_v16_ipv4_flow_metadata_section(out, plan.metadata.ipv4_connections);
+            },
+            out_error_text) ||
+        !write_v16_section_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            "IPv6 flow metadata section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(plan.metadata.ipv6_connections.size()),
+            [&](std::ostream& out) {
+                return detail::write_v16_ipv6_flow_metadata_section(out, plan.metadata.ipv6_connections);
+            },
+            out_error_text) ||
+        !write_v16_section_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            "Protocol Path membership section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(plan.metadata.protocol_path_membership.size()),
+            [&](std::ostream& out) {
+                return detail::write_v16_protocol_path_membership_section(
+                    out,
+                    plan.metadata.protocol_path_membership
+                );
+            },
+            out_error_text) ||
+        !write_v16_section_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            "PacketRef directory section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(plan.metadata.packetref_directory.size()),
+            [&](std::ostream& out) {
+                return detail::write_v16_packetref_directory_section(out, plan.metadata.packetref_directory);
+            },
+            out_error_text)) {
+        cleanup_temp();
+        return false;
+    }
+
+    for (std::size_t section_index = 0U; section_index < plan.unrecognized_directory_sections.size(); ++section_index) {
+        const auto& section = plan.unrecognized_directory_sections[section_index];
+        const auto label = "unrecognized directory section " + std::to_string(section_index + 1U) +
+            "/" + std::to_string(plan.unrecognized_directory_sections.size());
+        if (!write_v16_section_with_progress(
+                stream,
+                options,
+                progress_reporter,
+                label,
+                completed_sections,
+                total_sections,
+                static_cast<std::uint64_t>(section.rows.size()),
+                [&](std::ostream& out) {
+                    return detail::write_v16_unrecognized_directory_section(out, section);
+                },
+                out_error_text)) {
+            cleanup_temp();
+            return false;
+        }
+    }
+
+    if (!write_v16_packetref_detail_sections_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            completed_sections,
+            total_sections,
+            plan,
+            out_error_text) ||
+        !write_v16_unrecognized_reason_sections_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            completed_sections,
+            total_sections,
+            plan.unrecognized_reason_sections,
+            out_error_text) ||
+        !write_v16_packet_locator_sections_with_progress(
+            stream,
+            options,
+            progress_reporter,
+            completed_sections,
+            total_sections,
+            plan.packet_locator_sections,
+            plan.packet_locator_entries,
+            out_error_text)) {
+        cleanup_temp();
+        return false;
+    }
 
     progress_reporter.report(
         CaptureIndexWritePhase::finalizing,
@@ -964,6 +1417,190 @@ bool CaptureIndexWriter::write(
         total_sections,
         completed_sections,
         total_sections,
+        temp_size_error ? 0U : static_cast<std::uint64_t>(temp_size),
+        true
+    );
+    if (should_cancel(options)) {
+        remove_file_if_exists(temp_path);
+        set_error_text(out_error_text, "Index save cancelled by user.");
+        return false;
+    }
+
+    if (!replace_file_atomically(temp_path, index_path)) {
+        remove_file_if_exists(temp_path);
+        set_error_text(out_error_text, "Failed to replace target index file.");
+        return false;
+    }
+
+    return true;
+}
+
+bool CaptureIndexWriter::rewrite_v16_with_source_header(
+    const std::filesystem::path& index_path,
+    const std::filesystem::path& existing_index_path,
+    const CaptureSourceInfo& source_info,
+    const CaptureIndexWriteOptions& options,
+    std::string* out_error_text
+) const {
+    set_error_text(out_error_text, std::string {});
+    ThrottledProgressReporter progress_reporter {options};
+
+    std::ifstream input(existing_index_path, std::ios::binary);
+    if (!input.is_open()) {
+        set_error_text(out_error_text, "Failed to open existing v16 index file.");
+        return false;
+    }
+
+    detail::CaptureIndexStableHeader existing_header {};
+    if (!detail::read_capture_index_stable_header(input, existing_header) ||
+        existing_header.magic != kStableCaptureIndexMagic ||
+        existing_header.container_format_version != kCaptureIndexStableContainerFormatVersion ||
+        existing_header.index_revision != kCaptureIndexVersion) {
+        set_error_text(out_error_text, "Existing index is not a current v16 index.");
+        return false;
+    }
+
+    const auto temp_path = temp_index_path_for(index_path);
+    remove_file_if_exists(temp_path);
+
+    std::ofstream stream(temp_path, std::ios::binary | std::ios::trunc);
+    if (!stream.is_open()) {
+        set_error_text(out_error_text, "Failed to create temporary index file.");
+        return false;
+    }
+
+    auto cleanup_temp = [&]() {
+        stream.close();
+        remove_file_if_exists(temp_path);
+    };
+
+    progress_reporter.report(CaptureIndexWritePhase::preparing, "Preparing v16 index rewrite", 0U, 1U, 0U, 0U, 0U, true);
+    if (should_cancel(options)) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Index save cancelled by user.");
+        return false;
+    }
+
+    if (!detail::write_capture_index_stable_header(stream, detail::CaptureIndexStableHeader {
+            .magic = kStableCaptureIndexMagic,
+            .container_format_version = kCaptureIndexStableContainerFormatVersion,
+            .header_flags = 0U,
+            .header_size = 0U,
+            .index_revision = kCaptureIndexVersion,
+            .writer_application_version = writer_application_version(),
+            .source_format = source_info.format,
+            .source_file_size = source_info.file_size,
+            .source_last_write_time = source_info.last_write_time,
+            .source_content_fingerprint = source_info.content_fingerprint,
+            .source_capture_path_utf8 = detail::filesystem_path_to_generic_utf8(source_info.capture_path),
+        })) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Failed to write index header.");
+        return false;
+    }
+
+    std::error_code file_size_error {};
+    const auto existing_size = std::filesystem::file_size(existing_index_path, file_size_error);
+    const auto total_bytes = file_size_error ? 0U : static_cast<std::uint64_t>(existing_size);
+    std::uint64_t copied_bytes = stream_offset(stream);
+    std::array<char, 64U * 1024U> buffer {};
+
+    progress_reporter.report(
+        CaptureIndexWritePhase::writing,
+        "Writing v16 index sections",
+        0U,
+        1U,
+        copied_bytes,
+        total_bytes,
+        stream_offset(stream),
+        true
+    );
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const auto byte_count = input.gcount();
+        if (byte_count <= 0) {
+            break;
+        }
+        stream.write(buffer.data(), byte_count);
+        if (!stream) {
+            cleanup_temp();
+            set_error_text(out_error_text, "Failed to write v16 index sections.");
+            return false;
+        }
+
+        copied_bytes += static_cast<std::uint64_t>(byte_count);
+        progress_reporter.report(
+            CaptureIndexWritePhase::writing,
+            "Writing v16 index sections",
+            0U,
+            1U,
+            copied_bytes,
+            total_bytes,
+            stream_offset(stream)
+        );
+        if (should_cancel(options)) {
+            cleanup_temp();
+            set_error_text(out_error_text, "Index save cancelled by user.");
+            return false;
+        }
+    }
+
+    if (input.bad()) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Failed to read existing v16 index sections.");
+        return false;
+    }
+
+    progress_reporter.report(
+        CaptureIndexWritePhase::writing,
+        "Writing v16 index sections",
+        1U,
+        1U,
+        copied_bytes,
+        total_bytes,
+        stream_offset(stream),
+        true
+    );
+
+    progress_reporter.report(
+        CaptureIndexWritePhase::finalizing,
+        "Finalizing temporary index file",
+        1U,
+        1U,
+        1U,
+        1U,
+        stream_offset(stream),
+        true
+    );
+    if (should_cancel(options)) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Index save cancelled by user.");
+        return false;
+    }
+
+    stream.flush();
+    if (!stream) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Failed to flush temporary index file.");
+        return false;
+    }
+
+    stream.close();
+    if (!stream) {
+        cleanup_temp();
+        set_error_text(out_error_text, "Failed to finalize temporary index file.");
+        return false;
+    }
+
+    std::error_code temp_size_error {};
+    const auto temp_size = std::filesystem::file_size(temp_path, temp_size_error);
+    progress_reporter.report(
+        CaptureIndexWritePhase::replacing_target,
+        "Replacing target index file",
+        1U,
+        1U,
+        1U,
+        1U,
         temp_size_error ? 0U : static_cast<std::uint64_t>(temp_size),
         true
     );

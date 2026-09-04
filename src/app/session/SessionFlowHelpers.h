@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/domain/CaptureState.h"
+#include "core/index/CaptureIndexV16.h"
 #include "core/services/AnalysisSettings.h"
 
 namespace pfl::session_detail {
@@ -16,6 +18,31 @@ struct ListedConnectionRef {
     FlowAddressFamily family {FlowAddressFamily::ipv4};
     const ConnectionV4* ipv4 {nullptr};
     const ConnectionV6* ipv6 {nullptr};
+};
+
+struct CanonicalFlowMetadata {
+    std::size_t canonical_index {0};
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    FlowConnectionKey key {ConnectionKeyV4 {}};
+    FlowEndpointIdentity endpoint_a {EndpointKeyV4 {}};
+    FlowEndpointIdentity endpoint_b {EndpointKeyV4 {}};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    ProtocolId protocol {ProtocolId::unknown};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
+    bool has_fragmented_packets {false};
+    std::uint64_t fragmented_packet_count {0};
+    ConnectionAggregateStats aggregate_stats {};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+    bool has_flow_a {false};
+    bool has_flow_b {false};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t original_bytes_a_to_b {0};
+    std::uint64_t original_bytes_b_to_a {0};
 };
 
 struct ProtocolHintStatisticsRow {
@@ -76,8 +103,34 @@ std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept;
 std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept;
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept;
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept;
+ProtocolId protocol_id(const CanonicalFlowMetadata& flow) noexcept;
+std::string format_flow_protocol_text(ProtocolId protocol);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    std::size_t canonical_index,
+    const ListedConnectionRef& connection
+);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV4& row
+);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV6& row
+);
+FlowProtocolHint effective_protocol_hint(
+    FlowProtocolHint confirmed_hint,
+    ProtocolId protocol,
+    std::uint16_t first_port,
+    std::uint16_t second_port,
+    const AnalysisSettings& settings
+) noexcept;
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept;
+FlowProtocolHint effective_protocol_hint(const CanonicalFlowMetadata& flow, const AnalysisSettings& settings) noexcept;
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept;
+void add_protocol_stats(ProtocolStats& stats, const CanonicalFlowMetadata& flow) noexcept;
+CaptureProtocolSummary project_protocol_summary(
+    const CaptureGeneralStatistics& statistics,
+    bool use_possible_tls_quic
+) noexcept;
+CaptureTopSummary slice_top_summary(const CaptureTopSummary& summary, std::size_t limit);
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 std::optional<FlowRow> make_flow_row(
@@ -85,10 +138,19 @@ std::optional<FlowRow> make_flow_row(
     const ListedConnectionRef& connection,
     const AnalysisSettings& settings
 );
+std::optional<FlowRow> make_flow_row(
+    const CanonicalFlowMetadata& flow,
+    const AnalysisSettings& settings
+);
 std::string format_flow_protocol_hint_display(std::string_view value);
 [[nodiscard]] bool flow_row_matches_text_filter(const FlowRow& row, std::string_view filter) noexcept;
 [[nodiscard]] FlowQueryResult query_flow_indices(
     std::span<const ListedConnectionRef> connections,
+    const AnalysisSettings& settings,
+    const FlowQuery& query
+);
+[[nodiscard]] FlowQueryResult query_flow_indices(
+    std::span<const CanonicalFlowMetadata> flows,
     const AnalysisSettings& settings,
     const FlowQuery& query
 );
@@ -104,7 +166,42 @@ std::string format_statistics_count_with_percent_text(std::uint64_t count, doubl
 std::string format_statistics_size_with_percent_text(std::uint64_t size, double percent);
 std::string format_statistics_size_value(std::uint64_t value);
 std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary);
+CaptureStatisticsSnapshot make_capture_statistics_snapshot(
+    const CapturePacketStatistics& packet_statistics,
+    const CaptureGeneralStatistics& general_statistics,
+    CaptureStatisticsScope scope
+);
+CaptureTopSummary project_top_summary_from_snapshot(const CaptureStatisticsSnapshot& snapshot);
+FlowPacketCountHistogram project_flow_packet_count_histogram(
+    const CaptureStatisticsFlowPacketCountHistogram& source
+);
+CaptureGeneralStatistics project_general_statistics_from_snapshot(const CaptureStatisticsSnapshot& snapshot);
+CapturePacketStatistics project_packet_statistics_from_snapshot(const CaptureStatisticsSnapshot& snapshot) noexcept;
+CaptureGeneralStatistics build_capture_general_statistics(
+    std::span<const ListedConnectionRef> connections,
+    std::size_t top_summary_capacity = 20U
+);
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections);
+ProtocolPathDisplayStatistics build_protocol_path_display_statistics(
+    const CaptureState& state,
+    const std::vector<ListedConnectionRef>& connections
+);
+CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
+    const CaptureState& state,
+    const CaptureIndexV16PacketRefDetailLayoutOptions& options = {}
+);
+CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
+    const CaptureState&& state,
+    const CaptureIndexV16PacketRefDetailLayoutOptions& options = {}
+) = delete;
+CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathDisplayStatistics& statistics,
+    std::uint64_t total_flow_count,
+    std::uint64_t total_packet_count,
+    std::uint64_t total_original_byte_count,
+    ProtocolPathStatisticsMode mode
+);
 CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,
     const std::vector<ListedConnectionRef>& connections,

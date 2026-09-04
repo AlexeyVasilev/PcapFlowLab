@@ -21,23 +21,25 @@ This is the key distinction from `Analysis`:
 
 You do not need to select a flow first.
 
-The upper summary blocks are always visible. The heavier detailed sections are
-collapsible and are loaded when you expand them. That keeps the workspace fast
-to open while still exposing deeper capture-wide summaries when you need them.
+The top summary blocks and capture-time values are always visible. The heavier
+detailed sections are collapsible and are loaded when you expand them. That
+keeps the workspace fast to open while still exposing deeper capture-wide
+summaries when you need them.
 
 ## Capture overview
 
 ![Statistics overview](images/statistics/statistics-overview.png)
 
-*Whole-capture totals, transport summary, IP family summary, and unrecognized-
-packet totals.*
+*Whole-capture totals, capture-time values, transport/family summaries, and
+unrecognized-packet totals, with deeper capture-wide metrics in collapsible
+sections below.*
 
 At the top of `Statistics`, the application shows capture-wide totals:
 
 - `Packets`
 - `Flows`
-- `Captured Bytes`
 - `Original Bytes`
+- `Captured Bytes`
 
 Current semantics:
 
@@ -52,6 +54,138 @@ Current semantics:
 The whole-capture packet and byte totals can therefore be larger than the
 recognized-flow-only summary if some imported packets could not be assigned to
 canonical flows.
+
+When the active capture was opened only partially, `Statistics` shows a
+warning that the values cover successfully imported packets only. The page must
+not silently imply that a partial import represents the complete nominal
+source file.
+
+The always-visible capture-time row shows:
+
+- `Capture Start`
+- `Capture End`
+- `Duration`
+
+Current semantics:
+
+- `Capture Start` is the earliest timestamp among successfully surfaced
+  imported packets;
+- `Capture End` is the latest timestamp among successfully surfaced imported
+  packets;
+- recognized and unrecognized packets both participate;
+- `Duration` is the non-negative difference between end and start;
+- a one-packet capture can therefore show identical start and end with a zero
+  duration;
+- an unavailable time range remains visually distinct from a real zero
+  duration.
+
+The UI presents absolute timestamps in UTC and does not silently switch to the
+local machine timezone. Current visible formatting uses millisecond precision,
+for example:
+
+- `2026-03-22 12:26:40.000 UTC`
+- `2026-03-22 12:28:34.023 UTC`
+- `00:01:54.023`
+
+### Capture Metrics
+
+`Capture Metrics` is a collapsible section that summarizes packet-level
+properties derived from the whole surfaced capture:
+
+- `Average Captured Packet Size`
+- `Average Original Packet Size`
+- `Average Packet Rate`
+- `Average Captured Data Rate`
+- `Average Original Data Rate`
+- `Truncated Packets`
+- `Not Captured Bytes`
+- `Capture Completeness`
+
+Current semantics:
+
+- average packet sizes divide captured/original byte totals by surfaced packet
+  count when at least one packet is present;
+- packet and data rates use capture duration, so a valid zero-duration
+  one-packet capture still shows rate fields as unavailable rather than
+  `inf`/`NaN`;
+- data rates are byte-based values per second, not bits per second;
+- `Truncated Packets` shows both count and share of surfaced packets;
+- `Not Captured Bytes` is `Original Bytes - Captured Bytes` clamped at zero;
+- `Capture Completeness` is the captured/original byte ratio when original-byte
+  totals are non-zero.
+
+`Not Captured Bytes` reflects truncation or capture-incompleteness semantics in
+the imported data. It is not a network packet-loss measurement.
+
+### Flow Characteristics
+
+`Flow Characteristics` is a collapsible section that currently reports:
+
+- `Only A -> B Flows`
+- `Service Recognized`
+
+Current semantics:
+
+- `Only A -> B Flows` means flows whose first-observed `A -> B` direction has
+  packets while the reverse `B -> A` direction has none;
+- `Service Recognized` means the stored canonical flow has a non-empty service
+  hint;
+- both values are shown as count plus percentage of recognized canonical
+  flows.
+
+### Direction Distribution
+
+`Direction Distribution` is one collapsible section containing two separate
+tables:
+
+- `Packet Direction`
+- `Data Direction (Original Bytes)`
+
+Both tables use the same three direction groups:
+
+- `Mostly A -> B`
+- `Balanced`
+- `Mostly B -> A`
+
+Each row shows:
+
+- `Flows`
+- `Percent`
+
+Percentages use the recognized canonical flow total as the denominator.
+
+`Data Direction (Original Bytes)` is based on ORIGINAL bytes, not captured
+bytes. Its helper text explains that flows are grouped by directional
+original-byte balance.
+
+### TCP Flags
+
+`TCP Flags` is a separate collapsible whole-capture section that summarizes
+TCP packets by control-flag presence.
+
+Current rows:
+
+- `SYN`
+- `FIN`
+- `RST`
+
+Each row shows:
+
+- `Packets`
+- `Percent`
+
+Current semantics:
+
+- counts come from the imported capture/index session's authoritative
+  connection aggregates rather than by rescanning packet details;
+- percentages use the whole-capture TCP packet total as the denominator, not
+  all packets in the file;
+- `SYN` includes `SYN+ACK`;
+- one packet can contribute to more than one row when multiple TCP flags are
+  set.
+
+This section is a compact control-flag summary only. It does not by itself
+interpret full handshake success/failure or connection state transitions.
 
 ### Transport summary
 
@@ -123,16 +257,15 @@ the packet-level workflow.
 
 ![Packet Size Distribution](images/statistics/statistics-packet-size-distribution.png)
 
-*Captured packet-length distribution for the active capture or index.*
-
-`Packet Size Distribution` uses captured packet length, not original packet
-length.
+*Captured/original packet-length distribution for the active capture or index.*
 
 Current production contract:
 
 - it counts all surfaced imported packets;
 - recognized and unrecognized packets both contribute;
-- the buckets are based on captured lengths.
+- the buckets are shared across both modes;
+- `Captured` uses the packet lengths actually present in the capture;
+- `Original` uses the original packet lengths recorded by capture metadata.
 
 Current bucket boundaries:
 
@@ -150,17 +283,21 @@ Current bucket boundaries:
 12. `16001-25000`
 13. `25001+`
 
-The separate line:
+The mode buttons are:
 
-`Maximum captured packet size`
+- `Captured`
+- `Original`
 
-shows the largest captured packet length seen anywhere in the active capture or
-index.
+The separate maximum line follows the selected mode:
+
+- `Maximum captured packet size`
+- `Maximum original packet size`
 
 This intentionally differs from the selected-flow Analysis packet-size
 histogram. In current production:
 
-- `Statistics -> Packet Size Distribution` uses captured packet length;
+- `Statistics -> Packet Size Distribution` can show captured or original packet
+  length across the whole capture;
 - `Analysis -> Packet Size Histogram` uses original packet length.
 
 That difference matters whenever truncation or snaplen causes captured length
@@ -197,6 +334,12 @@ Current bucket boundaries:
 Bucket membership is based on flow packet count. Changing display mode does not
 move flows into different buckets.
 
+The mode buttons are:
+
+- `Flows`
+- `Captured bytes`
+- `Original bytes`
+
 ### Flows mode
 
 In `Flows` mode, each bucket value is:
@@ -205,6 +348,16 @@ In `Flows` mode, each bucket value is:
   bucket.
 
 The bar height/length is normalized against the largest bucket flow count.
+
+### Captured bytes mode
+
+In `Captured bytes` mode, each bucket value is:
+
+- the sum of captured bytes for recognized canonical flows whose packet count
+  falls inside that same bucket.
+
+The bucket membership still comes from packet count. Only the aggregated value
+displayed for each bucket changes.
 
 ### Original bytes mode
 
@@ -426,8 +579,8 @@ section:
 
 ![QUIC, TLS, and Top Endpoints/Ports](images/statistics/statistics-quic-tls-top.png)
 
-*Recognition-quality statistics for QUIC and TLS, followed by top endpoints and
-ports.*
+*Recognition-quality statistics for QUIC and TLS, followed by the whole-capture
+top-flow, top-endpoint, and top-port summaries.*
 
 The upper half of this view summarizes recognition-quality and metadata-coverage
 statistics for QUIC and TLS flows.
@@ -467,17 +620,60 @@ Current semantics:
 - `With SNI` and `Without SNI` are percentages of total TLS flows;
 - version rows count TLS flows by recognized version classification.
 
+## Top Flows by Original Bytes
+
+`Top Flows by Original Bytes` is a separate collapsible whole-capture section
+shown near the bottom of `Statistics`, immediately before `Top Endpoints and
+Ports`.
+
+Current columns:
+
+- `Flow`
+- `Endpoint A`
+- `Endpoint B`
+- `Protocol`
+- `Detected Protocol`
+- `Service`
+- `Protocol Path`
+- `Packets`
+- `Captured`
+- `Original`
+
+Current ranking semantics:
+
+- rows are ranked by `Original` bytes descending;
+- packet count is the secondary tie-breaker;
+- canonical flow order is the final deterministic tie-breaker.
+
+Current row semantics:
+
+- `Flow` uses the same one-based visible numbering as the normal `Flows` list;
+- `Endpoint A` / `Endpoint B` preserve the canonical first-observed
+  orientation;
+- `Protocol` matches the flow-list transport/protocol column;
+- `Detected Protocol` reuses the current shared `Possible TLS` / `Possible
+  QUIC` presentation policy;
+- `Service` shows the canonical stored service hint and uses `—` when the flow
+  has no stored service hint;
+- `Protocol Path` shows the same compact path representation used by the normal
+  `Flows` list;
+- `Captured` and `Original` are metadata-backed flow totals, but ranking still
+  follows `Original`.
+
+This section keeps at most `10` rows.
+
 ## Top Endpoints and Ports
 
-The lower half of the same screenshot shows:
+The following section shows:
 
 - `Top Endpoints`
 - `Top Ports`
 
 Current columns:
 
+- `Flows`
 - `Packets`
-- `Bytes`
+- `Original Bytes`
 
 Current ranking semantics:
 
@@ -487,6 +683,7 @@ Current ranking semantics:
 
 Current endpoint semantics:
 
+- each row counts distinct canonical flows involving that endpoint;
 - each recognized canonical flow contributes its full packet count and original-
   byte total to both of its endpoints;
 - endpoint packet totals therefore count packets involving that endpoint across
@@ -494,8 +691,11 @@ Current endpoint semantics:
 
 Current port semantics:
 
+- each row counts distinct canonical flows involving that non-zero port number;
 - each recognized canonical flow contributes its full packet count and original-
   byte total to both non-zero endpoint ports;
+- one canonical flow contributes once per DISTINCT non-zero port number, so a
+  `4500 -> 4500` flow counts once for port `4500`, not twice;
 - protocols without ports do not add port rows.
 
 Current UI shape:

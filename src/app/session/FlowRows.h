@@ -10,6 +10,7 @@
 
 #include "core/domain/DnsInspection.h"
 #include "core/domain/Direction.h"
+#include "core/domain/FlowHints.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
@@ -25,6 +26,7 @@ enum class FlowAddressFamily : std::uint8_t {
 };
 
 using FlowConnectionKey = std::variant<ConnectionKeyV4, ConnectionKeyV6>;
+using FlowEndpointIdentity = std::variant<EndpointKeyV4, EndpointKeyV6>;
 
 struct ProtocolPathBadgeRow {
     std::string short_label {};
@@ -241,14 +243,34 @@ struct CaptureProtocolSummary {
 };
 
 struct TopEndpointRow {
+    FlowEndpointIdentity identity {EndpointKeyV4 {}};
     std::string endpoint {};
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
 struct TopPortRow {
     std::uint16_t port {0};
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct TopFlowRow {
+    std::size_t flow_index {0};
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    FlowConnectionKey key {ConnectionKeyV4 {}};
+    FlowEndpointIdentity endpoint_a_key {EndpointKeyV4 {}};
+    FlowEndpointIdentity endpoint_b_key {EndpointKeyV4 {}};
+    ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
@@ -289,6 +311,7 @@ inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
+    std::vector<TopFlowRow> flows_by_original_bytes {};
 };
 
 struct FlowPacketCountHistogramBucket {
@@ -296,17 +319,75 @@ struct FlowPacketCountHistogramBucket {
     std::uint64_t lower_bound_inclusive {0};
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
+    std::uint64_t captured_byte_count {0};
     std::uint64_t original_byte_count {0};
 };
 
 struct FlowPacketCountHistogram {
     std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
     std::uint64_t total_original_byte_count {0};
     std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
     std::uint64_t maximum_bucket_original_byte_count {0};
     std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_captured_byte_count {0};
     std::uint64_t excluded_zero_packet_original_byte_count {0};
     std::vector<FlowPacketCountHistogramBucket> buckets {};
+};
+
+struct CaptureFlowCharacteristicsStatistics {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t only_a_to_b_flow_count {0};
+    std::uint64_t service_recognized_flow_count {0};
+};
+
+struct FlowDirectionDistributionStatistics {
+    std::uint64_t mostly_a_to_b_flow_count {0};
+    std::uint64_t balanced_flow_count {0};
+    std::uint64_t mostly_b_to_a_flow_count {0};
+};
+
+struct CaptureTcpFlagStatistics {
+    std::uint64_t syn_packet_count {0};
+    std::uint64_t fin_packet_count {0};
+    std::uint64_t rst_packet_count {0};
+};
+
+struct CaptureGeneralProtocolStatistics {
+    ProtocolStats tcp {};
+    ProtocolStats udp {};
+    ProtocolStats sctp {};
+    ProtocolStats other {};
+    ProtocolStats ipv4 {};
+    ProtocolStats ipv6 {};
+    ProtocolStats hint_http {};
+    ProtocolStats hint_tls {};
+    ProtocolStats hint_dns {};
+    ProtocolStats hint_quic {};
+    ProtocolStats hint_ssh {};
+    ProtocolStats hint_stun {};
+    ProtocolStats hint_bittorrent {};
+    ProtocolStats hint_dhcp {};
+    ProtocolStats hint_mdns {};
+    ProtocolStats hint_smtp {};
+    ProtocolStats hint_pop3 {};
+    ProtocolStats hint_imap {};
+    ProtocolStats hint_mail_protocols {};
+    ProtocolStats hint_possible_tls_candidate {};
+    ProtocolStats hint_possible_quic_candidate {};
+    ProtocolStats hint_unknown_without_possible {};
+};
+
+struct CaptureGeneralStatistics {
+    CaptureGeneralProtocolStatistics protocol {};
+    FlowPacketCountHistogram flow_packet_count_histogram {};
+    CaptureQuicTlsSummary quic_tls_summary {};
+    CaptureTopSummary top_summary {};
+    CaptureFlowCharacteristicsStatistics flow_characteristics {};
+    FlowDirectionDistributionStatistics packet_direction_distribution {};
+    FlowDirectionDistributionStatistics original_byte_direction_distribution {};
+    CaptureTcpFlagStatistics tcp_flags {};
 };
 
 struct ProtocolPathStatisticsRow {

@@ -1,5 +1,6 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -194,68 +195,7 @@ FrontendProtocolStatsDto make_frontend_protocol_stats(const ProtocolStats& stats
     };
 }
 
-std::vector<FrontendProtocolHintStatsDto> build_protocol_hint_stats(const CaptureProtocolSummary& summary) {
-    const auto shared_rows = session_detail::build_protocol_hint_statistics_rows(summary);
-    std::vector<FrontendProtocolHintStatsDto> rows {};
-    rows.reserve(shared_rows.size());
-
-    for (const auto& row : shared_rows) {
-        rows.push_back(FrontendProtocolHintStatsDto {
-            .group = row.group,
-            .protocol_label = row.protocol_label,
-            .flow_count = row.flow_count,
-            .flow_count_text = row.flow_count_text,
-            .packet_count = row.packet_count,
-            .packet_count_text = row.packet_count_text,
-            .captured_bytes = row.captured_bytes,
-            .captured_bytes_text = row.captured_bytes_text,
-            .original_bytes = row.original_bytes,
-            .original_bytes_text = row.original_bytes_text,
-        });
-    }
-
-    return rows;
-}
-
-std::vector<FrontendTopEndpointDto> build_top_endpoints(const CaptureTopSummary& summary) {
-    std::vector<FrontendTopEndpointDto> rows {};
-    rows.reserve(summary.endpoints_by_bytes.size());
-
-    for (const auto& endpoint : summary.endpoints_by_bytes) {
-        rows.push_back(FrontendTopEndpointDto {
-            .endpoint_label = endpoint.endpoint,
-            .packet_count = endpoint.packet_count,
-            .total_bytes = endpoint.total_bytes,
-        });
-    }
-
-    return rows;
-}
-
-std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary) {
-    std::vector<FrontendTopPortDto> rows {};
-    rows.reserve(summary.ports_by_bytes.size());
-
-    for (const auto& port : summary.ports_by_bytes) {
-        rows.push_back(FrontendTopPortDto {
-            .port = port.port,
-            .packet_count = port.packet_count,
-            .total_bytes = port.total_bytes,
-        });
-    }
-
-    return rows;
-}
-
 std::string format_size_value(const std::uint64_t value);
-
-double safe_percent(const std::uint64_t numerator, const std::uint64_t denominator) {
-    if (denominator == 0U) {
-        return 0.0;
-    }
-
-    return (static_cast<double>(numerator) * 100.0) / static_cast<double>(denominator);
-}
 
 FrontendInputKind frontend_input_kind_for_session(const CaptureSession& session) {
     if (session.opened_from_index()) {
@@ -285,147 +225,6 @@ FrontendInputMetadataDto build_frontend_input_metadata(const CaptureSession& ses
     }
 
     return metadata;
-}
-
-FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
-    const CapturePacketSizeStatistics& statistics
-) {
-    FrontendCapturePacketSizeStatisticsDto dto {};
-    dto.has_capture = true;
-    dto.total_packet_count = statistics.total_packet_count;
-    dto.maximum_bucket_packet_count = statistics.maximum_bucket_packet_count;
-    dto.maximum_captured_packet_length = statistics.maximum_captured_packet_length;
-    dto.maximum_captured_packet_length_text = session_detail::format_statistics_size_value(
-        statistics.maximum_captured_packet_length
-    );
-    dto.buckets.reserve(statistics.buckets.size());
-
-    for (const auto& bucket : statistics.buckets) {
-        dto.buckets.push_back(FrontendCapturePacketSizeStatisticsBucketDto {
-            .bucket_id = std::string(bucket.stable_id),
-            .label = session_detail::capture_packet_size_bucket_label(bucket),
-            .lower_bound_inclusive = bucket.lower_bound_inclusive,
-            .upper_bound_inclusive = bucket.upper_bound_inclusive,
-            .packet_count = bucket.packet_count,
-            .packet_count_text = session_detail::format_statistics_count_value(bucket.packet_count),
-            .total_fraction = statistics.total_packet_count > 0U
-                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
-                : 0.0,
-            .total_percent_text = session_detail::format_statistics_percent_text(
-                safe_percent(bucket.packet_count, statistics.total_packet_count)
-            ),
-            .normalized_fraction = statistics.maximum_bucket_packet_count > 0U
-                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
-                : 0.0,
-        });
-    }
-
-    return dto;
-}
-
-FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
-    const FlowPacketCountHistogram& histogram
-) {
-    FrontendFlowPacketCountHistogramDto dto {};
-    dto.has_capture = true;
-    dto.total_flow_count = histogram.total_flow_count;
-    dto.total_original_byte_count = histogram.total_original_byte_count;
-    dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
-    dto.maximum_bucket_original_byte_count = histogram.maximum_bucket_original_byte_count;
-    dto.excluded_zero_packet_flow_count = histogram.excluded_zero_packet_flow_count;
-    dto.excluded_zero_packet_original_byte_count = histogram.excluded_zero_packet_original_byte_count;
-    dto.buckets.reserve(histogram.buckets.size());
-
-    for (const auto& bucket : histogram.buckets) {
-        dto.buckets.push_back(FrontendFlowPacketCountHistogramBucketDto {
-            .bucket_id = bucket.stable_id,
-            .label = session_detail::format_statistics_bucket_label(
-                bucket.lower_bound_inclusive,
-                bucket.upper_bound_inclusive
-            ),
-            .lower_bound_inclusive = bucket.lower_bound_inclusive,
-            .upper_bound_inclusive = bucket.upper_bound_inclusive,
-            .flow_count = bucket.flow_count,
-            .flow_count_with_total_percent_text = session_detail::format_statistics_count_with_percent_text(
-                bucket.flow_count,
-                safe_percent(bucket.flow_count, histogram.total_flow_count)
-            ),
-            .original_byte_count = bucket.original_byte_count,
-            .original_byte_count_text = format_size_value(bucket.original_byte_count),
-            .original_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
-                bucket.original_byte_count,
-                safe_percent(bucket.original_byte_count, histogram.total_original_byte_count)
-            ),
-            .total_flow_fraction = histogram.total_flow_count > 0U
-                ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.total_flow_count)
-                : 0.0,
-            .total_original_byte_fraction = histogram.total_original_byte_count > 0U
-                ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(histogram.total_original_byte_count)
-                : 0.0,
-            .normalized_flow_fraction = histogram.maximum_bucket_flow_count > 0U
-                ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.maximum_bucket_flow_count)
-                : 0.0,
-            .normalized_original_byte_fraction = histogram.maximum_bucket_original_byte_count > 0U
-                ? static_cast<double>(bucket.original_byte_count)
-                    / static_cast<double>(histogram.maximum_bucket_original_byte_count)
-                : 0.0,
-        });
-    }
-
-    return dto;
-}
-
-std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const CaptureProtocolPathSummary& summary) {
-    std::vector<FrontendProtocolPathStatsDto> rows {};
-    rows.reserve(summary.rows.size());
-
-    for (const auto& row : summary.rows) {
-        session_detail::AdvancedFlowFilterProtocolPathPredicate predicate {
-            .match_kind = ProtocolPathStatisticsMode::terminal_paths == summary.mode
-                ? session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path
-                : session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
-        };
-        predicate.layers.reserve(row.path.layers().size());
-        for (const auto& layer : row.path.layers()) {
-            predicate.layers.push_back(session_detail::AdvancedFlowFilterProtocolLayerPredicate {
-                .kind = layer.kind,
-                .identifier = layer.identifier.kind != ProtocolLayerIdentifierKind::none
-                    ? std::optional {layer.identifier}
-                    : std::nullopt,
-            });
-        }
-        if (summary.mode == ProtocolPathStatisticsMode::kind_overview) {
-            for (auto& layer : predicate.layers) {
-                layer.identifier.reset();
-            }
-        }
-
-        const auto predicate_text =
-            format_advanced_flow_filter_protocol_path_predicate_text(predicate).value_or(std::string {});
-        rows.push_back(FrontendProtocolPathStatsDto {
-            .node_id = row.node_id,
-            .parent_node_id = row.parent_node_id,
-            .depth = row.depth,
-            .layer_text = row.layer_text,
-            .path_text = row.path_text,
-            .compact_text = row.compact_text,
-            .advanced_filter_predicate_text = std::move(predicate_text),
-            .badges = row.badges,
-            .has_children = row.has_children,
-            .is_terminal = row.is_terminal,
-            .flow_count = row.flow_count,
-            .packet_count = row.packet_count,
-            .original_byte_count = row.original_byte_count,
-            .flow_percent = row.flow_percent,
-            .packet_percent = row.packet_percent,
-            .original_byte_percent = row.original_byte_percent,
-            .flow_count_text = row.flow_count_text,
-            .packet_count_text = row.packet_count_text,
-            .original_byte_count_text = row.original_byte_count_text,
-        });
-    }
-
-    return rows;
 }
 
 bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
@@ -1878,6 +1677,45 @@ std::vector<FrontendAnalysisHistogramRowDto> build_analysis_histogram_rows(
     return rows;
 }
 
+std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> build_analysis_packet_size_histogram_dimension_rows(
+    const FlowAnalysisPacketSizeHistogramSet& histograms
+) {
+    std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> rows {};
+    std::map<std::string, std::size_t, std::less<>> row_index_by_bucket {};
+
+    auto ensure_row = [&](const std::string& bucket_label) -> FrontendAnalysisPacketSizeHistogramDimensionRowDto& {
+        const auto existing = row_index_by_bucket.find(bucket_label);
+        if (existing != row_index_by_bucket.end()) {
+            return rows[existing->second];
+        }
+
+        row_index_by_bucket.emplace(bucket_label, rows.size());
+        rows.push_back(FrontendAnalysisPacketSizeHistogramDimensionRowDto {.bucket_label = bucket_label});
+        return rows.back();
+    };
+
+    for (const auto& row : histograms.original.histogram_all) {
+        ensure_row(row.bucket_label).original_count_all = row.packet_count;
+    }
+    for (const auto& row : histograms.original.histogram_a_to_b) {
+        ensure_row(row.bucket_label).original_count_a_to_b = row.packet_count;
+    }
+    for (const auto& row : histograms.original.histogram_b_to_a) {
+        ensure_row(row.bucket_label).original_count_b_to_a = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_all) {
+        ensure_row(row.bucket_label).captured_count_all = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_a_to_b) {
+        ensure_row(row.bucket_label).captured_count_a_to_b = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_b_to_a) {
+        ensure_row(row.bucket_label).captured_count_b_to_a = row.packet_count;
+    }
+
+    return rows;
+}
+
 std::string group_integer_part(std::string text) {
     const auto decimal_index = text.find('.');
     const auto fraction = decimal_index == std::string::npos ? std::string {} : text.substr(decimal_index);
@@ -1973,6 +1811,10 @@ std::string format_size_value(const std::uint32_t value) {
 
 std::string format_size_value(const std::uint64_t value) {
     return format_human_readable_bytes(static_cast<double>(value));
+}
+
+std::string format_optional_exact_packet_size_text(const std::optional<std::uint32_t>& value) {
+    return value.has_value() ? session_detail::format_statistics_size_value(*value) : std::string {};
 }
 
 std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const std::size_t flow_index) {
@@ -2622,13 +2464,11 @@ FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_packet_byt
             return unavailable_byte_export_result("The selected packet is unavailable.");
         }
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             return unavailable_byte_export_result("The selected packet is unavailable.");
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return unavailable_byte_export_result("The selected packet is unavailable.");
-        }
+        packet = context->packet;
     }
 
     static_cast<void>(loaded_packet_window_count);
@@ -2638,6 +2478,7 @@ FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_packet_byt
             *parsed_view_id,
             *parsed_format,
             output_path,
+            selected_flow_index_,
             &error_text)) {
         return unavailable_byte_export_result(
             error_text.empty() ? "Failed to export the selected packet byte view." : error_text
@@ -2679,14 +2520,7 @@ FrontendByteExportResult FrontendSessionAdapter::export_unrecognized_packet_byte
         return unavailable_byte_export_result("The selected packet is unavailable.");
     }
 
-    const auto matches_unrecognized = std::any_of(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        [packet_index](const UnrecognizedPacketRecord& record) {
-            return record.packet.packet_index == packet_index;
-        }
-    );
-    if (!matches_unrecognized) {
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
         return unavailable_byte_export_result("The selected packet is unavailable in the unrecognized packet context.");
     }
 
@@ -2953,17 +2787,37 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
-    const auto packet_size_statistics = session_.packet_size_statistics();
+    const auto& packet_statistics = session_.packet_statistics();
+    const auto flow_characteristics_statistics = session_.flow_characteristics_statistics();
+    const auto packet_direction_distribution_statistics = session_.packet_direction_distribution_statistics();
+    const auto original_byte_direction_distribution_statistics =
+        session_.original_byte_direction_distribution_statistics();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto input_metadata = build_frontend_input_metadata(session_);
+    const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
+    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
+    const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
+    const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
+        flow_characteristics_statistics,
+        packet_direction_distribution_statistics
+    );
+    const auto original_byte_direction_distribution =
+        build_frontend_original_byte_direction_distribution(
+            flow_characteristics_statistics,
+            original_byte_direction_distribution_statistics
+        );
+    const auto tcp_flag_statistics = build_frontend_tcp_flag_statistics(
+        session_.tcp_flag_statistics(),
+        protocol_summary.tcp.packet_count
+    );
     const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
         protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
-    const auto whole_capture_packet_count = packet_size_statistics.total_packet_count;
-    const auto whole_capture_captured_bytes = packet_size_statistics.total_captured_bytes;
-    const auto whole_capture_original_bytes = session_.summary().total_bytes + unrecognized_packets.original_bytes;
+    const auto whole_capture_packet_count = packet_statistics.total_packet_count;
+    const auto whole_capture_captured_bytes = packet_statistics.total_captured_bytes;
+    const auto whole_capture_original_bytes = packet_statistics.total_original_bytes;
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = FrontendOverviewSummaryDto {
@@ -2983,11 +2837,29 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             .original_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_original_bytes),
         },
         .input_metadata = std::move(input_metadata),
+        .capture_time = std::move(capture_time),
+        .capture_metrics = std::move(capture_metrics),
+        .flow_characteristics = std::move(flow_characteristics),
+        .packet_direction_distribution = std::move(packet_direction_distribution),
+        .original_byte_direction_distribution = std::move(original_byte_direction_distribution),
+        .tcp_flag_statistics = std::move(tcp_flag_statistics),
+        .statistics_partial_open_warning_text =
+            build_frontend_statistics_partial_open_warning_text(session_.is_partial_open()),
         .captured_bytes = captured_bytes,
         .original_bytes = original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
         .unrecognized_packets = unrecognized_packets.packet_count > 0U
-            ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
+            ? std::optional<FrontendUnrecognizedPacketStatisticsDto> {
+                FrontendUnrecognizedPacketStatisticsDto {
+                    .packet_count = unrecognized_packets.packet_count,
+                    .captured_bytes = unrecognized_packets.captured_bytes,
+                    .captured_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.captured_bytes),
+                    .original_bytes = unrecognized_packets.original_bytes,
+                    .original_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.original_bytes),
+                }
+            }
             : std::nullopt,
         .protocol_summary = FrontendOverviewProtocolSummaryDto {
             .tcp = make_frontend_protocol_stats(protocol_summary.tcp),
@@ -3007,7 +2879,7 @@ FrontendCapturePacketSizeStatisticsDto FrontendSessionAdapter::get_capture_packe
         return {};
     }
 
-    return build_capture_packet_size_statistics_dto(session_.packet_size_statistics());
+    return build_frontend_capture_packet_size_statistics(session_.packet_statistics());
 }
 
 FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_count_histogram() const {
@@ -3015,7 +2887,7 @@ FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_coun
         return {};
     }
 
-    return build_flow_packet_count_histogram_dto(session_.flow_packet_count_histogram());
+    return build_frontend_flow_packet_count_histogram(session_.flow_packet_count_histogram());
 }
 
 FrontendProtocolHintStatisticsDto FrontendSessionAdapter::get_protocol_hint_statistics() const {
@@ -3023,10 +2895,7 @@ FrontendProtocolHintStatisticsDto FrontendSessionAdapter::get_protocol_hint_stat
         return {};
     }
 
-    FrontendProtocolHintStatisticsDto dto {};
-    dto.has_capture = true;
-    dto.protocol_hints = build_protocol_hint_stats(session_.protocol_summary());
-    return dto;
+    return build_frontend_protocol_hint_statistics(session_.protocol_summary());
 }
 
 FrontendQuicTlsStatisticsDto FrontendSessionAdapter::get_quic_tls_statistics() const {
@@ -3048,11 +2917,17 @@ FrontendTopEndpointPortStatisticsDto FrontendSessionAdapter::get_top_endpoint_po
     }
 
     const auto summary = session_.top_summary(limit);
+    const auto analysis_settings = to_analysis_settings(settings_);
     return FrontendTopEndpointPortStatisticsDto {
         .has_capture = true,
         .limit = limit,
-        .top_endpoints = build_top_endpoints(summary),
-        .top_ports = build_top_ports(summary),
+        .top_endpoints = build_frontend_top_endpoints(summary),
+        .top_ports = build_frontend_top_ports(summary),
+        .top_flows = build_frontend_top_flows(
+            std::span<const TopFlowRow>(summary.flows_by_original_bytes.data(), summary.flows_by_original_bytes.size()),
+            session_.state().protocol_path_registry,
+            analysis_settings
+        ),
     };
 }
 
@@ -3202,7 +3077,7 @@ std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_p
         return {};
     }
 
-    return build_protocol_path_statistics(session_.protocol_path_summary(mode));
+    return build_frontend_protocol_path_statistics(session_.protocol_path_summary(mode));
 }
 
 std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_protocol_path_predicate_applicability(
@@ -3636,9 +3511,18 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         result.protocol_service_text = !row->service_hint.empty() ? row->service_hint : "unknown";
     }
     result.protocol_fallback_text = analysis->protocol_panel_fallback_text;
-    result.first_packet_time_text = analysis->first_packet_timestamp_text;
-    result.last_packet_time_text = analysis->last_packet_timestamp_text;
-    result.duration_text = format_duration_us(analysis->duration_us);
+    result.start_timestamp_us = analysis->first_packet_timestamp_us;
+    result.start_time_full_utc_text =
+        format_frontend_absolute_utc_timestamp_or_unavailable(result.start_timestamp_us);
+    result.end_timestamp_us = analysis->last_packet_timestamp_us;
+    result.end_time_full_utc_text =
+        format_frontend_absolute_utc_timestamp_or_unavailable(result.end_timestamp_us);
+    if (result.start_timestamp_us.has_value() && result.end_timestamp_us.has_value()) {
+        result.duration_us = analysis->duration_us;
+        result.duration_text_milliseconds = format_frontend_duration_milliseconds(analysis->duration_us);
+    } else {
+        result.duration_text_milliseconds = format_frontend_duration_milliseconds_or_unavailable(std::nullopt);
+    }
     result.largest_gap_text = format_duration_us(analysis->largest_gap_us);
     result.packets_considered_text = format_grouped_integer(analysis->timeline_packet_count_considered);
     result.total_packets_text = format_grouped_integer(analysis->total_packets);
@@ -3682,6 +3566,36 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     if (analysis->packets_b_to_a > 0U) {
         result.max_packet_size_b_to_a_text = format_size_value(analysis->max_packet_size_b_to_a_bytes);
     }
+    result.packet_size_histogram_original_maximum_all =
+        analysis->packet_size_histograms.original.maximum_packet_length_all;
+    result.packet_size_histogram_original_maximum_all_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_all
+    );
+    result.packet_size_histogram_original_maximum_a_to_b =
+        analysis->packet_size_histograms.original.maximum_packet_length_a_to_b;
+    result.packet_size_histogram_original_maximum_a_to_b_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_a_to_b
+    );
+    result.packet_size_histogram_original_maximum_b_to_a =
+        analysis->packet_size_histograms.original.maximum_packet_length_b_to_a;
+    result.packet_size_histogram_original_maximum_b_to_a_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_b_to_a
+    );
+    result.packet_size_histogram_captured_maximum_all =
+        analysis->packet_size_histograms.captured.maximum_packet_length_all;
+    result.packet_size_histogram_captured_maximum_all_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_all
+    );
+    result.packet_size_histogram_captured_maximum_a_to_b =
+        analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b;
+    result.packet_size_histogram_captured_maximum_a_to_b_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_a_to_b
+    );
+    result.packet_size_histogram_captured_maximum_b_to_a =
+        analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a;
+    result.packet_size_histogram_captured_maximum_b_to_a_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_b_to_a
+    );
     result.tcp_syn_packets_text = format_grouped_integer(analysis->tcp_syn_packets);
     result.tcp_fin_packets_text = format_grouped_integer(analysis->tcp_fin_packets);
     result.tcp_rst_packets_text = format_grouped_integer(analysis->tcp_rst_packets);
@@ -3697,7 +3611,7 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     for (const auto& point : analysis->rate_graph.points_a_to_b) {
         result.rate_graph_points_a_to_b.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
-            .data_per_second = point.data_per_second,
+            .original_data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3705,7 +3619,7 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     for (const auto& point : analysis->rate_graph.points_b_to_a) {
         result.rate_graph_points_b_to_a.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
-            .data_per_second = point.data_per_second,
+            .original_data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3714,11 +3628,8 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         analysis->inter_arrival_histograms.histogram_a_to_b,
         analysis->inter_arrival_histograms.histogram_b_to_a
     );
-    result.packet_size_histogram_rows = build_analysis_histogram_rows(
-        analysis->packet_size_histograms.histogram_all,
-        analysis->packet_size_histograms.histogram_a_to_b,
-        analysis->packet_size_histograms.histogram_b_to_a
-    );
+    result.packet_size_histogram_dimension_rows =
+        build_analysis_packet_size_histogram_dimension_rows(analysis->packet_size_histograms);
     result.sequence_preview_rows.reserve(analysis->sequence_preview_rows.size());
     for (const auto& row_preview : analysis->sequence_preview_rows) {
         result.sequence_preview_rows.push_back(FrontendAnalysisSequencePreviewRowDto {
@@ -3809,9 +3720,9 @@ FrontendFlowInfoDto FrontendSessionAdapter::get_flow_info(const std::size_t flow
     result.packet_direction_text = analysis->packet_direction_text;
     result.data_direction_text = analysis->data_direction_text;
     result.packet_size_histogram_rows = build_analysis_histogram_rows(
-        analysis->packet_size_histograms.histogram_all,
-        analysis->packet_size_histograms.histogram_a_to_b,
-        analysis->packet_size_histograms.histogram_b_to_a
+        analysis->packet_size_histograms.original.histogram_all,
+        analysis->packet_size_histograms.original.histogram_a_to_b,
+        analysis->packet_size_histograms.original.histogram_b_to_a
     );
     return result;
 }
@@ -3885,28 +3796,28 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
 
     std::optional<PacketRef> packet {};
+    std::optional<std::uint64_t> resolved_flow_packet_index {};
     if (flow_packet_index != 0U) {
         packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
         if (!packet.has_value() || packet->packet_index != packet_index) {
             result.error_text = "The selected packet is unavailable.";
             return result;
         }
+        resolved_flow_packet_index = flow_packet_index;
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             result.error_text = "The selected packet is unavailable.";
             return result;
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            result.error_text = "The selected packet is unavailable.";
-            return result;
-        }
+        packet = context->packet;
+        resolved_flow_packet_index = context->flow_packet_index;
     }
 
     auto details = build_frontend_packet_details(
         *packet,
         selected_flow_index_,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        resolved_flow_packet_index,
         loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
     return details;
@@ -3932,6 +3843,7 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
     }
 
     std::optional<PacketRef> packet {};
+    std::optional<std::uint64_t> resolved_flow_packet_index {};
     if (flow_packet_index != 0U) {
         packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
         if (!packet.has_value() || packet->packet_index != packet_index) {
@@ -3940,26 +3852,23 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
                 .unavailable_text = "The selected packet is unavailable.",
             };
         }
+        resolved_flow_packet_index = flow_packet_index;
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             return FrontendPacketDetailsDto::PacketByteViewContent {
                 .available = false,
                 .unavailable_text = "The selected packet is unavailable.",
             };
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return FrontendPacketDetailsDto::PacketByteViewContent {
-                .available = false,
-                .unavailable_text = "The selected packet is unavailable.",
-            };
-        }
+        packet = context->packet;
+        resolved_flow_packet_index = context->flow_packet_index;
     }
 
     return build_frontend_packet_byte_view_content(
         *packet,
         stable_id,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        resolved_flow_packet_index,
         loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
 }
@@ -3984,14 +3893,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details
         return result;
     }
 
-    const auto matches_unrecognized = std::any_of(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        [packet_index](const UnrecognizedPacketRecord& record) {
-            return record.packet.packet_index == packet_index;
-        }
-    );
-    if (!matches_unrecognized) {
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
         result.error_text = "The selected packet is unavailable in the unrecognized packet context.";
         return result;
     }
@@ -4015,6 +3917,13 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_unre
         return FrontendPacketDetailsDto::PacketByteViewContent {
             .available = false,
             .unavailable_text = "The selected packet is unavailable.",
+        };
+    }
+
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The selected packet is unavailable in the unrecognized packet context.",
         };
     }
 
@@ -4238,18 +4147,8 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(
         false
     );
 
-    const auto unrecognized_packet = std::lower_bound(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        packet_index,
-        [](const UnrecognizedPacketRecord& record, const std::uint64_t target_packet_index) {
-            return record.packet.packet_index < target_packet_index;
-        }
-    );
-
     result.packet_available = true;
-    result.recognized_flow = unrecognized_packet == session_.state().unrecognized_packets.end() ||
-        unrecognized_packet->packet.packet_index != packet_index;
+    result.recognized_flow = !session_.is_unrecognized_packet_index(packet_index);
     result.details_available = details.details_available;
     result.packet_index = packet.packet_index;
     result.packet_in_file = packet.packet_index + 1U;

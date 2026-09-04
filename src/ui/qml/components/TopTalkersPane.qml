@@ -92,6 +92,14 @@ Frame {
                     }
 
                     Label {
+                        Layout.preferredWidth: 72
+                        horizontalAlignment: Text.AlignRight
+                        text: "Flows"
+                        font.bold: true
+                        color: "#334155"
+                    }
+
+                    Label {
                         Layout.preferredWidth: 92
                         horizontalAlignment: Text.AlignRight
                         text: "Packets"
@@ -100,9 +108,9 @@ Frame {
                     }
 
                     Label {
-                        Layout.preferredWidth: 104
+                        Layout.preferredWidth: 116
                         horizontalAlignment: Text.AlignRight
-                        text: "Bytes"
+                        text: "Original Bytes"
                         font.bold: true
                         color: "#334155"
                     }
@@ -123,6 +131,7 @@ Frame {
 
                 delegate: Rectangle {
                     required property string itemLabel
+                    required property var flows
                     required property var packets
                     required property var bytes
 
@@ -149,6 +158,13 @@ Frame {
                         }
 
                         Label {
+                            Layout.preferredWidth: 72
+                            horizontalAlignment: Text.AlignRight
+                            text: root.groupInteger(flows)
+                            color: "#0f172a"
+                        }
+
+                        Label {
                             Layout.preferredWidth: 92
                             horizontalAlignment: Text.AlignRight
                             text: root.groupInteger(packets)
@@ -156,7 +172,7 @@ Frame {
                         }
 
                         Label {
-                            Layout.preferredWidth: 104
+                            Layout.preferredWidth: 116
                             horizontalAlignment: Text.AlignRight
                             text: root.formatBytes(bytes)
                             color: "#0f172a"

@@ -2,7 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
+#include <span>
 #include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include "core/domain/Connection.h"
 
@@ -297,10 +302,18 @@ ProtocolPathId connection_protocol_path_id(const ListedConnectionRef& connection
         : connection.ipv6->key.protocol_path_id;
 }
 
+ProtocolPathId connection_protocol_path_id(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.protocol_path_id;
+}
+
 const ConnectionAggregateStats& aggregate_stats(const ListedConnectionRef& connection) noexcept {
     return connection.family == FlowAddressFamily::ipv4
         ? connection.ipv4->aggregate_stats
         : connection.ipv6->aggregate_stats;
+}
+
+const ConnectionAggregateStats& aggregate_stats(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.aggregate_stats;
 }
 
 std::uint64_t fragmented_packet_count_value(const ListedConnectionRef& connection) noexcept {
@@ -309,10 +322,18 @@ std::uint64_t fragmented_packet_count_value(const ListedConnectionRef& connectio
         : connection.ipv6->fragmented_packet_count;
 }
 
+std::uint64_t fragmented_packet_count_value(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.fragmented_packet_count;
+}
+
 std::string_view service_hint_value(const ListedConnectionRef& connection) noexcept {
     return connection.family == FlowAddressFamily::ipv4
         ? std::string_view(connection.ipv4->service_hint)
         : std::string_view(connection.ipv6->service_hint);
+}
+
+std::string_view service_hint_value(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.service_hint;
 }
 
 FlowProtocolHint stored_protocol_hint(const ListedConnectionRef& connection) noexcept {
@@ -321,16 +342,28 @@ FlowProtocolHint stored_protocol_hint(const ListedConnectionRef& connection) noe
         : connection.ipv6->protocol_hint;
 }
 
+FlowProtocolHint stored_protocol_hint(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.protocol_hint;
+}
+
 TlsVersionHint tls_version_hint_value(const ListedConnectionRef& connection) noexcept {
     return connection.family == FlowAddressFamily::ipv4
         ? connection.ipv4->tls_version
         : connection.ipv6->tls_version;
 }
 
+TlsVersionHint tls_version_hint_value(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.tls_version;
+}
+
 QuicVersionHint quic_version_hint_value(const ListedConnectionRef& connection) noexcept {
     return connection.family == FlowAddressFamily::ipv4
         ? connection.ipv4->quic_version
         : connection.ipv6->quic_version;
+}
+
+QuicVersionHint quic_version_hint_value(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.quic_version;
 }
 
 std::pair<std::uint16_t, std::uint16_t> oriented_ports(const ConnectionV4& connection) noexcept {
@@ -359,6 +392,13 @@ std::pair<std::uint16_t, std::uint16_t> oriented_ports(const ListedConnectionRef
         : oriented_ports(*connection.ipv6);
 }
 
+std::pair<std::uint16_t, std::uint16_t> oriented_ports(const CanonicalFlowMetadata& flow) noexcept {
+    return {
+        std::visit([](const auto& endpoint) { return endpoint.port; }, flow.endpoint_a),
+        std::visit([](const auto& endpoint) { return endpoint.port; }, flow.endpoint_b),
+    };
+}
+
 std::pair<std::uint32_t, std::uint32_t> oriented_ipv4_addrs(const ConnectionV4& connection) noexcept {
     if (const auto endpoint_a = first_observed_endpoint_a(connection),
         endpoint_b = first_observed_endpoint_b(connection);
@@ -383,6 +423,38 @@ std::pair<std::array<std::uint8_t, 16>, std::array<std::uint8_t, 16>> oriented_i
     return {connection.key.first.addr, connection.key.second.addr};
 }
 
+std::pair<std::uint32_t, std::uint32_t> oriented_ipv4_addrs(const ListedConnectionRef& connection) noexcept {
+    return connection.ipv4 != nullptr ? oriented_ipv4_addrs(*connection.ipv4) : std::pair<std::uint32_t, std::uint32_t> {};
+}
+
+std::pair<std::array<std::uint8_t, 16>, std::array<std::uint8_t, 16>> oriented_ipv6_addrs(
+    const ListedConnectionRef& connection
+) noexcept {
+    return connection.ipv6 != nullptr
+        ? oriented_ipv6_addrs(*connection.ipv6)
+        : std::pair<std::array<std::uint8_t, 16>, std::array<std::uint8_t, 16>> {};
+}
+
+std::pair<std::uint32_t, std::uint32_t> oriented_ipv4_addrs(const CanonicalFlowMetadata& flow) noexcept {
+    const auto* endpoint_a = std::get_if<EndpointKeyV4>(&flow.endpoint_a);
+    const auto* endpoint_b = std::get_if<EndpointKeyV4>(&flow.endpoint_b);
+    if (endpoint_a == nullptr || endpoint_b == nullptr) {
+        return {};
+    }
+    return {endpoint_a->addr, endpoint_b->addr};
+}
+
+std::pair<std::array<std::uint8_t, 16>, std::array<std::uint8_t, 16>> oriented_ipv6_addrs(
+    const CanonicalFlowMetadata& flow
+) noexcept {
+    const auto* endpoint_a = std::get_if<EndpointKeyV6>(&flow.endpoint_a);
+    const auto* endpoint_b = std::get_if<EndpointKeyV6>(&flow.endpoint_b);
+    if (endpoint_a == nullptr || endpoint_b == nullptr) {
+        return {};
+    }
+    return {endpoint_a->addr, endpoint_b->addr};
+}
+
 std::pair<std::uint64_t, std::uint64_t> directional_packet_counts(const ListedConnectionRef& connection) noexcept {
     if (connection.family == FlowAddressFamily::ipv4) {
         return {
@@ -395,6 +467,10 @@ std::pair<std::uint64_t, std::uint64_t> directional_packet_counts(const ListedCo
         connection.ipv6->has_flow_a ? connection.ipv6->flow_a.packet_count : 0U,
         connection.ipv6->has_flow_b ? connection.ipv6->flow_b.packet_count : 0U,
     };
+}
+
+std::pair<std::uint64_t, std::uint64_t> directional_packet_counts(const CanonicalFlowMetadata& flow) noexcept {
+    return {flow.packets_a_to_b, flow.packets_b_to_a};
 }
 
 std::pair<std::uint64_t, std::uint64_t> directional_original_bytes(const ListedConnectionRef& connection) noexcept {
@@ -411,11 +487,60 @@ std::pair<std::uint64_t, std::uint64_t> directional_original_bytes(const ListedC
     };
 }
 
+std::pair<std::uint64_t, std::uint64_t> directional_original_bytes(const CanonicalFlowMetadata& flow) noexcept {
+    return {flow.original_bytes_a_to_b, flow.original_bytes_b_to_a};
+}
+
+std::uint64_t packet_count(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.packet_count;
+}
+
+std::uint64_t total_bytes(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.total_bytes;
+}
+
+ProtocolId flow_protocol_id(const ListedConnectionRef& connection) noexcept {
+    return protocol_id(connection);
+}
+
+ProtocolId flow_protocol_id(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.protocol;
+}
+
+FlowProtocolHint flow_effective_protocol_hint(
+    const ListedConnectionRef& connection,
+    const AnalysisSettings& settings
+) noexcept {
+    return effective_protocol_hint(connection, settings);
+}
+
+FlowProtocolHint flow_effective_protocol_hint(
+    const CanonicalFlowMetadata& flow,
+    const AnalysisSettings& settings
+) noexcept {
+    return effective_protocol_hint(flow, settings);
+}
+
 bool matches_directionality_value(
     const AdvancedFlowFilterDirectionality value,
     const ListedConnectionRef& connection
 ) noexcept {
     const auto [a_to_b_packets, b_to_a_packets] = directional_packet_counts(connection);
+    switch (value) {
+    case AdvancedFlowFilterDirectionality::unidirectional:
+        return a_to_b_packets > 0U && b_to_a_packets == 0U;
+    case AdvancedFlowFilterDirectionality::bidirectional:
+        return a_to_b_packets > 0U && b_to_a_packets > 0U;
+    default:
+        return false;
+    }
+}
+
+bool matches_directionality_value(
+    const AdvancedFlowFilterDirectionality value,
+    const CanonicalFlowMetadata& flow
+) noexcept {
+    const auto [a_to_b_packets, b_to_a_packets] = directional_packet_counts(flow);
     switch (value) {
     case AdvancedFlowFilterDirectionality::unidirectional:
         return a_to_b_packets > 0U && b_to_a_packets == 0U;
@@ -552,9 +677,10 @@ bool matches_port_criteria(
     return !exclude_match;
 }
 
+template <typename FlowLike>
 bool matches_aggregate_criteria(
     const CompiledAdvancedFlowFilterAggregateCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     const auto& stats = aggregate_stats(connection);
     const auto [a_to_b_packets, b_to_a_packets] = directional_packet_counts(connection);
@@ -626,9 +752,10 @@ bool matches_time_overlap_range(
     return true;
 }
 
+template <typename FlowLike>
 bool matches_time_criteria(
     const CompiledAdvancedFlowFilterTimeCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     const auto& stats = aggregate_stats(connection);
     const auto duration_us = stats.last_timestamp_us >= stats.first_timestamp_us
@@ -641,9 +768,10 @@ bool matches_time_criteria(
         matches_range(criteria.ranges.duration_us, duration_us);
 }
 
+template <typename FlowLike>
 bool matches_directionality_criteria(
     const CompiledAdvancedFlowFilterDirectionalityCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     bool include_match = !criteria.has_include_predicates;
     if (!include_match) {
@@ -676,9 +804,10 @@ bool matches_directionality_criteria(
     return true;
 }
 
+template <typename FlowLike>
 bool matches_tls_version_criteria(
     const CompiledAdvancedFlowFilterTlsVersionCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     if (!criteria.has_include_predicates && !criteria.has_exclude_predicates) {
         return true;
@@ -691,9 +820,10 @@ bool matches_tls_version_criteria(
     return matches_tls_version_membership(criteria, tls_version_hint_value(connection));
 }
 
+template <typename FlowLike>
 bool matches_quic_version_criteria(
     const CompiledAdvancedFlowFilterQuicVersionCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     if (!criteria.has_include_predicates && !criteria.has_exclude_predicates) {
         return true;
@@ -770,16 +900,17 @@ bool matches_ipv6_cidr_predicate(
     }
 }
 
+template <typename FlowLike>
 bool matches_address_criteria(
     const CompiledAdvancedFlowFilterAddressCriteria& criteria,
-    const ListedConnectionRef& connection
+    const FlowLike& connection
 ) noexcept {
     if (!criteria.has_include_predicates() && !criteria.has_exclude_predicates()) {
         return true;
     }
 
     if (connection.family == FlowAddressFamily::ipv4) {
-        const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv4_addrs(*connection.ipv4);
+        const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv4_addrs(connection);
 
         bool include_match = !criteria.has_include_predicates();
         if (!include_match) {
@@ -804,7 +935,7 @@ bool matches_address_criteria(
         return true;
     }
 
-    const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv6_addrs(*connection.ipv6);
+    const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv6_addrs(connection);
 
     bool include_match = !criteria.has_include_predicates();
     if (!include_match) {
@@ -1553,6 +1684,109 @@ std::size_t count_time_atomic_rules(const AdvancedFlowFilterTimeCriteria& time) 
         count_range_atomic_rules(time.duration_us);
 }
 
+template <typename FlowLike>
+bool matches_compiled_advanced_flow_filter(
+    const FlowLike& flow,
+    const CompiledAdvancedFlowFilter& filter
+) noexcept {
+    if (!matches_address_family_criteria(filter.address_family, flow.family)) {
+        return false;
+    }
+
+    if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(flow))) {
+        return false;
+    }
+
+    if (!matches_protocol_membership(filter.flow_protocol, flow_protocol_id(flow))) {
+        return false;
+    }
+
+    AnalysisSettings hint_settings {};
+    hint_settings.use_possible_tls_quic = filter.detected_protocol.use_possible_tls_quic;
+    if (!matches_detected_protocol_membership(
+            filter.detected_protocol,
+            flow_effective_protocol_hint(flow, hint_settings))) {
+        return false;
+    }
+
+    if (!matches_tls_version_criteria(filter.tls_version, flow)) {
+        return false;
+    }
+
+    if (!matches_quic_version_criteria(filter.quic_version, flow)) {
+        return false;
+    }
+
+    const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(flow);
+    if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
+        return false;
+    }
+
+    if (!matches_aggregate_criteria(filter.aggregate, flow)) {
+        return false;
+    }
+
+    if (!matches_directionality_criteria(filter.directionality, flow)) {
+        return false;
+    }
+
+    if (!matches_address_criteria(filter.addresses, flow)) {
+        return false;
+    }
+
+    if (!matches_time_criteria(filter.time, flow)) {
+        return false;
+    }
+
+    return matches_service_criteria(filter.service, service_hint_value(flow));
+}
+
+template <typename FlowLike>
+AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
+    std::span<const FlowLike> flows,
+    const CompiledAdvancedFlowFilter& filter,
+    const std::optional<std::span<const std::size_t>> candidate_flow_indices
+) {
+    AdvancedFlowFilterResult result {};
+
+    if (candidate_flow_indices.has_value()) {
+        for (const auto index : *candidate_flow_indices) {
+            if (index >= flows.size()) {
+                result.status = AdvancedFlowFilterEvaluationStatus::invalid_candidate_index;
+                result.invalid_candidate_index = index;
+                result.matching_flow_indices.clear();
+                return result;
+            }
+        }
+
+        if (candidate_flow_indices->empty()) {
+            return result;
+        }
+
+        std::vector<std::size_t> candidate_indices(candidate_flow_indices->begin(), candidate_flow_indices->end());
+        std::sort(candidate_indices.begin(), candidate_indices.end());
+        candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+        result.matching_flow_indices.reserve(candidate_indices.size());
+
+        for (const auto index : candidate_indices) {
+            if (matches_compiled_advanced_flow_filter(flows[index], filter)) {
+                result.matching_flow_indices.push_back(index);
+            }
+        }
+
+        return result;
+    }
+
+    result.matching_flow_indices.reserve(flows.size());
+    for (std::size_t index = 0; index < flows.size(); ++index) {
+        if (matches_compiled_advanced_flow_filter(flows[index], filter)) {
+            result.matching_flow_indices.push_back(index);
+        }
+    }
+
+    return result;
+}
+
 }  // namespace
 
 void AdvancedFlowFilterPortBitmap::set_range(const std::uint16_t first, const std::uint16_t last) {
@@ -1642,151 +1876,15 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     const CompiledAdvancedFlowFilter& filter,
     const std::optional<std::span<const std::size_t>> candidate_flow_indices
 ) {
-    AdvancedFlowFilterResult result {};
+    return evaluate_advanced_flow_filter_impl(connections, filter, candidate_flow_indices);
+}
 
-    if (candidate_flow_indices.has_value()) {
-        for (const auto index : *candidate_flow_indices) {
-            if (index >= connections.size()) {
-                result.status = AdvancedFlowFilterEvaluationStatus::invalid_candidate_index;
-                result.invalid_candidate_index = index;
-                result.matching_flow_indices.clear();
-                return result;
-            }
-        }
-
-        if (candidate_flow_indices->empty()) {
-            return result;
-        }
-
-        std::vector<std::size_t> candidate_indices(candidate_flow_indices->begin(), candidate_flow_indices->end());
-        std::sort(candidate_indices.begin(), candidate_indices.end());
-        candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
-        result.matching_flow_indices.reserve(candidate_indices.size());
-
-        for (const auto index : candidate_indices) {
-            const auto& connection = connections[index];
-
-            if (!matches_address_family_criteria(filter.address_family, connection.family)) {
-                continue;
-            }
-
-            if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(connection))) {
-                continue;
-            }
-
-            if (!matches_protocol_membership(filter.flow_protocol, protocol_id(connection))) {
-                continue;
-            }
-
-            AnalysisSettings hint_settings {};
-            hint_settings.use_possible_tls_quic = filter.detected_protocol.use_possible_tls_quic;
-            if (!matches_detected_protocol_membership(
-                    filter.detected_protocol,
-                    effective_protocol_hint(connection, hint_settings))) {
-                continue;
-            }
-
-            if (!matches_tls_version_criteria(filter.tls_version, connection)) {
-                continue;
-            }
-
-            if (!matches_quic_version_criteria(filter.quic_version, connection)) {
-                continue;
-            }
-
-            const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(connection);
-            if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
-                continue;
-            }
-
-            if (!matches_aggregate_criteria(filter.aggregate, connection)) {
-                continue;
-            }
-
-            if (!matches_directionality_criteria(filter.directionality, connection)) {
-                continue;
-            }
-
-            if (!matches_address_criteria(filter.addresses, connection)) {
-                continue;
-            }
-
-            if (!matches_time_criteria(filter.time, connection)) {
-                continue;
-            }
-
-            if (!matches_service_criteria(filter.service, service_hint_value(connection))) {
-                continue;
-            }
-
-            result.matching_flow_indices.push_back(index);
-        }
-
-        return result;
-    }
-
-    result.matching_flow_indices.reserve(connections.size());
-
-    for (std::size_t index = 0; index < connections.size(); ++index) {
-        const auto& connection = connections[index];
-
-        if (!matches_address_family_criteria(filter.address_family, connection.family)) {
-            continue;
-        }
-
-        if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(connection))) {
-            continue;
-        }
-
-        if (!matches_protocol_membership(filter.flow_protocol, protocol_id(connection))) {
-            continue;
-        }
-
-        AnalysisSettings hint_settings {};
-        hint_settings.use_possible_tls_quic = filter.detected_protocol.use_possible_tls_quic;
-        if (!matches_detected_protocol_membership(
-                filter.detected_protocol,
-                effective_protocol_hint(connection, hint_settings))) {
-            continue;
-        }
-
-        if (!matches_tls_version_criteria(filter.tls_version, connection)) {
-            continue;
-        }
-
-        if (!matches_quic_version_criteria(filter.quic_version, connection)) {
-            continue;
-        }
-
-        const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(connection);
-        if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
-            continue;
-        }
-
-        if (!matches_aggregate_criteria(filter.aggregate, connection)) {
-            continue;
-        }
-
-        if (!matches_directionality_criteria(filter.directionality, connection)) {
-            continue;
-        }
-
-        if (!matches_address_criteria(filter.addresses, connection)) {
-            continue;
-        }
-
-        if (!matches_time_criteria(filter.time, connection)) {
-            continue;
-        }
-
-        if (!matches_service_criteria(filter.service, service_hint_value(connection))) {
-            continue;
-        }
-
-        result.matching_flow_indices.push_back(index);
-    }
-
-    return result;
+AdvancedFlowFilterResult evaluate_advanced_flow_filter(
+    std::span<const CanonicalFlowMetadata> flows,
+    const CompiledAdvancedFlowFilter& filter,
+    const std::optional<std::span<const std::size_t>> candidate_flow_indices
+) {
+    return evaluate_advanced_flow_filter_impl(flows, filter, candidate_flow_indices);
 }
 
 AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(

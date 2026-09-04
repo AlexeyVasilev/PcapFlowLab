@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <span>
@@ -15,8 +16,10 @@
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
+#include "app/session/SelectedFlowPacketAccess.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
+#include "app/session/UnrecognizedPacketAccess.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
@@ -26,6 +29,7 @@
 #include "core/io/PcapReader.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexWriter.h"
+#include "core/index/Serialization.h"
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
@@ -190,6 +194,7 @@ public:
     ) const;
     bool load_index(const std::filesystem::path& index_path);
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
+    bool load_v16_index_for_testing(const std::filesystem::path& index_path);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool source_capture_accessible() const noexcept;
@@ -208,9 +213,14 @@ public:
     [[nodiscard]] bool flow_grouping_ignores_vlan_and_mpls_layers() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_gtpu_teids() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
-    [[nodiscard]] const CapturePacketSizeStatistics& packet_size_statistics() const noexcept;
+    [[nodiscard]] const CapturePacketStatistics& packet_statistics() const noexcept;
+    [[nodiscard]] CapturePacketSizeStatistics packet_size_statistics() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     [[nodiscard]] FlowPacketCountHistogram flow_packet_count_histogram() const;
+    [[nodiscard]] CaptureFlowCharacteristicsStatistics flow_characteristics_statistics() const;
+    [[nodiscard]] FlowDirectionDistributionStatistics packet_direction_distribution_statistics() const;
+    [[nodiscard]] FlowDirectionDistributionStatistics original_byte_direction_distribution_statistics() const;
+    [[nodiscard]] CaptureTcpFlagStatistics tcp_flag_statistics() const;
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
         ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
     ) const;
@@ -242,6 +252,10 @@ public:
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet
+    ) const;
+    [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
+        const PacketRef& packet,
+        std::optional<std::size_t> flow_index
     ) const;
     [[nodiscard]] session_detail::SelectedStreamItemDataPresentation derive_selected_flow_stream_item_data(
         std::size_t flow_index,
@@ -279,6 +293,14 @@ public:
         const session_detail::SelectedPacketByteViewId& id,
         session_detail::ByteExportFormat format,
         const std::filesystem::path& output_path,
+        std::string* out_error_text = nullptr
+    ) const;
+    [[nodiscard]] bool export_selected_packet_byte_view(
+        const PacketRef& packet,
+        const session_detail::SelectedPacketByteViewId& id,
+        session_detail::ByteExportFormat format,
+        const std::filesystem::path& output_path,
+        std::optional<std::size_t> flow_index,
         std::string* out_error_text = nullptr
     ) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
@@ -369,6 +391,10 @@ public:
         std::size_t flow_index,
         std::uint64_t flow_packet_index
     ) const;
+    [[nodiscard]] std::optional<SelectedFlowPacketContext> selected_flow_packet_context_for_packet_index(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_exact_packet_number(
         std::size_t flow_index,
@@ -417,6 +443,7 @@ public:
     bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] bool is_unrecognized_packet_index(std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<PacketOwnershipContext> resolve_packet_ownership_context(
         std::uint64_t packet_index
     ) const;
@@ -532,10 +559,28 @@ private:
         bool has_pagination_lookahead {false};
     };
 
-    struct CachedTopSummary {
-        std::size_t limit {0};
-        CaptureTopSummary summary {};
+    struct V16BackedSessionStorage {
+        std::filesystem::path index_path {};
+        detail::CaptureIndexStableHeader header {};
+        detail::CaptureIndexV16FastStatisticsTier fast_statistics_tier {};
+        CaptureIndexV16MetadataTier metadata {};
+        std::vector<session_detail::CanonicalFlowMetadata> flows {};
+        CaptureGeneralStatistics general_statistics {};
     };
+
+    [[nodiscard]] bool uses_v16_storage() const noexcept;
+    [[nodiscard]] bool load_v16_index_result(
+        const std::filesystem::path& index_path,
+        detail::CaptureIndexV16CompleteReadResult result
+    );
+    [[nodiscard]] std::unique_ptr<session_detail::SelectedFlowPacketAccessSource>
+    make_selected_flow_packet_access_source_for_flow(std::size_t flow_index) const;
+    [[nodiscard]] std::unique_ptr<session_detail::UnrecognizedPacketAccessSource>
+    make_unrecognized_packet_access_source_for_capture() const;
+    [[nodiscard]] std::optional<session_detail::CanonicalFlowMetadata> selected_flow_metadata(
+        std::size_t flow_index,
+        bool* listed_connections_cache_hit = nullptr
+    ) const;
 
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_terminal(const PacketRef& packet) const;
@@ -565,6 +610,7 @@ private:
     [[nodiscard]] SelectedFlowStreamSuppressionSignature current_selected_flow_stream_suppression_signature(
         std::size_t flow_index
     ) const noexcept;
+    [[nodiscard]] const CaptureGeneralStatistics& general_statistics() const;
 
     void swap(CaptureSession& other) noexcept;
     void reset_runtime_state() noexcept;
@@ -575,6 +621,7 @@ private:
     CaptureSourceInfo source_info_ {};
     std::uint64_t input_file_size_ {0};
     CaptureState state_ {};
+    std::optional<V16BackedSessionStorage> v16_storage_ {};
     AnalysisSettings analysis_settings_ {};
     bool opened_from_index_ {false};
     bool flow_grouping_ignores_vlan_and_mpls_layers_ {false};
@@ -588,11 +635,8 @@ private:
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     mutable std::optional<SelectedFlowStreamContext> selected_flow_stream_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
-    mutable std::optional<CaptureProtocolSummary> protocol_summary_cache_ {};
-    mutable std::optional<FlowPacketCountHistogram> flow_packet_count_histogram_cache_ {};
+    mutable std::optional<CaptureGeneralStatistics> general_statistics_cache_ {};
     mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
-    mutable std::optional<CaptureQuicTlsSummary> quic_tls_summary_cache_ {};
-    mutable std::optional<CachedTopSummary> top_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
     mutable std::uint64_t selected_flow_stream_context_generation_ {0};
 };

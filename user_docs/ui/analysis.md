@@ -82,10 +82,11 @@ Semantics:
 - `Detected Protocol` is the selected flow's detected protocol hint when one is
   available.
 - `Service hint` is the current service metadata carried by the flow.
-- `First packet` and `Last packet` are the first and last packet timestamps in
-  the selected flow.
+- `First packet` and `Last packet` are shown as complete UTC timestamps for
+  the first and last packets in the selected flow.
 - `Duration` is the difference between the last packet timestamp and the first
-  packet timestamp.
+  packet timestamp, shown with millisecond precision. A valid one-packet or
+  zero-duration flow is shown as `00:00:00.000`.
 - `Largest gap` is the largest time gap between consecutive packets in the
   flow's time-ordered packet sequence.
 - `Packets considered` is the packet count that the Analysis calculations
@@ -124,7 +125,7 @@ general quantitative metrics.
 Current rows:
 
 - `Packets/sec`
-- `Data rate`
+- `Original data rate`
 - `Avg packet size`
 - `Avg inter-arrival`
 - `Min packet size`
@@ -135,8 +136,8 @@ Semantics:
 - `Packets/sec` uses packet count divided by whole-flow duration. Directional
   columns use the same duration denominator with only that side's packet count
   in the numerator. If the flow duration is zero, the rate is shown as zero.
-- `Data rate` uses original bytes, not captured bytes and not payload bytes.
-  It is original-byte volume divided by whole-flow duration. Directional
+- `Original data rate` uses original bytes, not captured bytes and not payload
+  bytes. It is original-byte volume divided by whole-flow duration. Directional
   columns use the same rule with each side's original-byte total.
 - `Avg packet size` uses original packet length. Directional columns use each
   side's original-byte total divided by that side's packet count.
@@ -190,7 +191,7 @@ The rate graph shows the selected flow over time.
 
 Current controls:
 
-- `Data/s`
+- `Original data/s`
 - `Packets/s`
 - `A->B`
 - `B->A`
@@ -205,7 +206,9 @@ Current context labels:
 
 Semantics:
 
-- `Data/s` uses original bytes per second within each graph window.
+- `Original data/s` uses original packet lengths recorded by the capture when
+  computing bytes per second within each graph window. It is not a physical
+  line-rate metric.
 - `Packets/s` uses packet count per second within each graph window.
 - `A->B` and `B->A` show one directional series at a time.
 - `Both` overlays both directional series together.
@@ -277,16 +280,21 @@ direction summaries.
 
 ## Packet-size distribution
 
-The `Packet Size Histogram` buckets packet sizes by original packet length.
-It does not bucket by captured length.
+The `Packet Size Histogram` has two local selectors:
 
-Current directional toggles:
-
+- `Original`
+- `Captured`
 - `All`
 - `A->B`
 - `B->A`
 
-Current bucket boundaries:
+`Original` uses the original packet length recorded by capture metadata.
+`Captured` uses the bytes actually retained in the capture.
+
+The size selector and the direction selector are independent. For example, you
+can inspect `Captured` + `B->A` without reloading Analysis.
+
+Current bucket boundaries are the same for both size modes:
 
 1. `0-63`
 2. `64-127`
@@ -299,13 +307,15 @@ Current bucket boundaries:
 9. `2500-5000`
 10. `5001+`
 
-The separate line:
+The footer below the histogram reports the exact maximum packet size for the
+currently selected size mode and direction:
 
-`Max captured packet size`
+- `Original` + `All` uses the exact maximum original packet length across the flow.
+- `Captured` + `All` uses the exact maximum captured packet length across the flow.
+- `A->B` and `B->A` use the exact maximum for the selected direction only.
 
-is intentionally different. It reports the maximum captured packet length seen
-in the selected flow, even though the histogram buckets themselves use original
-packet length.
+This exact value is not inferred from the bucket label. The buckets stay
+coarse, while the footer shows the precise maximum for the current view.
 
 ## Inter-arrival timing
 

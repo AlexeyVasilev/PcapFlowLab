@@ -6,6 +6,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/CaptureSession.h"
 #include "core/services/FlowAnalysisService.h"
 
@@ -100,10 +101,49 @@ double total_bytes_from_rate_series(const std::vector<FlowAnalysisRatePoint>& po
     const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
     double total_bytes = 0.0;
     for (const auto& point : points) {
-        total_bytes += point.data_per_second * window_seconds;
+        total_bytes += point.original_data_per_second * window_seconds;
     }
 
     return total_bytes;
+}
+
+void expect_matching_rate_graphs(const FlowAnalysisRateGraph& left, const FlowAnalysisRateGraph& right) {
+    PFL_EXPECT(left.available == right.available);
+    PFL_EXPECT(left.status_text == right.status_text);
+    PFL_EXPECT(left.window_us == right.window_us);
+    PFL_REQUIRE(left.points_a_to_b.size() == right.points_a_to_b.size());
+    PFL_REQUIRE(left.points_b_to_a.size() == right.points_b_to_a.size());
+    for (std::size_t index = 0; index < left.points_a_to_b.size(); ++index) {
+        PFL_EXPECT(left.points_a_to_b[index].relative_time_us == right.points_a_to_b[index].relative_time_us);
+        PFL_EXPECT(nearly_equal(
+            left.points_a_to_b[index].original_data_per_second,
+            right.points_a_to_b[index].original_data_per_second));
+        PFL_EXPECT(nearly_equal(
+            left.points_a_to_b[index].packets_per_second,
+            right.points_a_to_b[index].packets_per_second));
+    }
+    for (std::size_t index = 0; index < left.points_b_to_a.size(); ++index) {
+        PFL_EXPECT(left.points_b_to_a[index].relative_time_us == right.points_b_to_a[index].relative_time_us);
+        PFL_EXPECT(nearly_equal(
+            left.points_b_to_a[index].original_data_per_second,
+            right.points_b_to_a[index].original_data_per_second));
+        PFL_EXPECT(nearly_equal(
+            left.points_b_to_a[index].packets_per_second,
+            right.points_b_to_a[index].packets_per_second));
+    }
+}
+
+const FrontendAnalysisPacketSizeHistogramDimensionRowDto* frontend_packet_size_row(
+    const std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto>& rows,
+    const std::string& bucket_label
+) {
+    for (const auto& row : rows) {
+        if (row.bucket_label == bucket_label) {
+            return &row;
+        }
+    }
+
+    return nullptr;
 }
 
 std::uint64_t analysis_packet_timestamp_us(const PacketRef& packet) noexcept {
@@ -329,6 +369,10 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->byte_ratio_text == "2.3 : 1");
     PFL_EXPECT(analysis->packet_direction_text == "Balanced");
     PFL_EXPECT(analysis->data_direction_text == "Mostly A->B");
+    PFL_REQUIRE(analysis->first_packet_timestamp_us.has_value());
+    PFL_REQUIRE(analysis->last_packet_timestamp_us.has_value());
+    PFL_EXPECT(*analysis->first_packet_timestamp_us == 1000100ULL);
+    PFL_EXPECT(*analysis->last_packet_timestamp_us == 3000450ULL);
     PFL_EXPECT(analysis->first_packet_timestamp_text == "00:00:01.000100");
     PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
     PFL_EXPECT(analysis->largest_gap_us == 1000200U);
@@ -405,6 +449,79 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(*frontend_analysis.sequence_preview_rows[0].payload_length == make_http_request_payload().size());
     PFL_EXPECT(*frontend_analysis.sequence_preview_rows[1].payload_length == 20U);
     PFL_EXPECT(*frontend_analysis.sequence_preview_rows[2].payload_length == 10U);
+    PFL_REQUIRE(frontend_analysis.start_timestamp_us.has_value());
+    PFL_REQUIRE(frontend_analysis.end_timestamp_us.has_value());
+    PFL_REQUIRE(frontend_analysis.duration_us.has_value());
+    PFL_EXPECT(*frontend_analysis.start_timestamp_us == 1000100ULL);
+    PFL_EXPECT(*frontend_analysis.end_timestamp_us == 3000450ULL);
+    PFL_EXPECT(*frontend_analysis.duration_us == 2000350ULL);
+    PFL_EXPECT(frontend_analysis.start_time_full_utc_text == "1970-01-01 00:00:01.000 UTC");
+    PFL_EXPECT(frontend_analysis.end_time_full_utc_text == "1970-01-01 00:00:03.000 UTC");
+    PFL_EXPECT(frontend_analysis.duration_text_milliseconds == "00:00:02.000");
+    PFL_REQUIRE(frontend_analysis.packet_size_histogram_dimension_rows.size() == 10U);
+    {
+        const auto* histogram_row = frontend_packet_size_row(
+            frontend_analysis.packet_size_histogram_dimension_rows,
+            "64-127"
+        );
+        PFL_REQUIRE(histogram_row != nullptr);
+        PFL_EXPECT(histogram_row->original_count_all == 3U);
+        PFL_EXPECT(histogram_row->original_count_a_to_b == 2U);
+        PFL_EXPECT(histogram_row->original_count_b_to_a == 1U);
+        PFL_EXPECT(histogram_row->captured_count_all == 3U);
+        PFL_EXPECT(histogram_row->captured_count_a_to_b == 2U);
+        PFL_EXPECT(histogram_row->captured_count_b_to_a == 1U);
+    }
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_all ==
+        analysis->packet_size_histograms.original.maximum_packet_length_all
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_a_to_b ==
+        analysis->packet_size_histograms.original.maximum_packet_length_a_to_b
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_b_to_a ==
+        analysis->packet_size_histograms.original.maximum_packet_length_b_to_a
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_all ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_all
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_a_to_b ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_b_to_a ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a
+    );
+    PFL_REQUIRE(frontend_analysis.packet_size_histogram_original_maximum_all.has_value());
+    PFL_REQUIRE(frontend_analysis.packet_size_histogram_captured_maximum_all.has_value());
+    PFL_EXPECT(!frontend_analysis.packet_size_histogram_original_maximum_all_text.empty());
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_all_text ==
+        frontend_analysis.max_captured_packet_size_text
+    );
+    PFL_EXPECT(frontend_analysis.rate_graph_available);
+    PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == frontend_analysis.rate_graph_points_b_to_a.size());
+    PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == analysis->rate_graph.points_a_to_b.size());
+    PFL_EXPECT(frontend_analysis.rate_graph_points_b_to_a.size() == analysis->rate_graph.points_b_to_a.size());
+    PFL_EXPECT(!frontend_analysis.rate_graph_points_a_to_b.empty());
+    for (std::size_t index = 0; index < frontend_analysis.rate_graph_points_a_to_b.size(); ++index) {
+        const auto& frontend_point = frontend_analysis.rate_graph_points_a_to_b[index];
+        const auto& backend_point = analysis->rate_graph.points_a_to_b[index];
+        PFL_EXPECT(frontend_point.relative_time_us == backend_point.relative_time_us);
+        PFL_EXPECT(nearly_equal(frontend_point.original_data_per_second, backend_point.original_data_per_second));
+        PFL_EXPECT(nearly_equal(frontend_point.packets_per_second, backend_point.packets_per_second));
+    }
+    for (std::size_t index = 0; index < frontend_analysis.rate_graph_points_b_to_a.size(); ++index) {
+        const auto& frontend_point = frontend_analysis.rate_graph_points_b_to_a[index];
+        const auto& backend_point = analysis->rate_graph.points_b_to_a[index];
+        PFL_EXPECT(frontend_point.relative_time_us == backend_point.relative_time_us);
+        PFL_EXPECT(nearly_equal(frontend_point.original_data_per_second, backend_point.original_data_per_second));
+        PFL_EXPECT(nearly_equal(frontend_point.packets_per_second, backend_point.packets_per_second));
+    }
 
     PFL_EXPECT(!session.get_flow_analysis(99U).has_value());
 
@@ -530,7 +647,25 @@ void run_flow_analysis_tests() {
     const auto truncated_analysis = direct_service.analyze(truncated_connection);
     PFL_EXPECT(truncated_analysis.max_packet_size_bytes == 400U);
     PFL_EXPECT(truncated_analysis.max_captured_packet_size_bytes == 120U);
-    PFL_EXPECT(packet_histogram_count(truncated_analysis, "64-127") == 2U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis, "64-127") == 0U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis, "256-511") == 1U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis.packet_size_histograms.original.histogram_all, "64-127") == 0U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis.packet_size_histograms.original.histogram_all, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis.packet_size_histograms.original.histogram_all, "256-511") == 1U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis.packet_size_histograms.captured.histogram_all, "64-127") == 2U);
+    PFL_EXPECT(histogram_total_count(truncated_analysis.packet_size_histograms.original.histogram_all) == 2U);
+    PFL_EXPECT(histogram_total_count(truncated_analysis.packet_size_histograms.captured.histogram_all) == 2U);
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.original.maximum_packet_length_all == 400U);
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b == 400U);
+    PFL_EXPECT(!truncated_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.captured.maximum_packet_length_all == 120U);
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b == 120U);
+    PFL_EXPECT(!truncated_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
 
     const auto truncated_request_payload = std::vector<std::uint8_t>(40U, 0x41U);
     const auto truncated_response_payload = std::vector<std::uint8_t>(80U, 0x42U);
@@ -605,6 +740,10 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(!authoritative_aggregate_analysis.sequence_preview_rows[1].payload_length.has_value());
     PFL_EXPECT(authoritative_aggregate_analysis.captured_bytes == 999U);
     PFL_EXPECT(authoritative_aggregate_analysis.duration_us == 3000200ULL);
+    PFL_REQUIRE(authoritative_aggregate_analysis.first_packet_timestamp_us.has_value());
+    PFL_REQUIRE(authoritative_aggregate_analysis.last_packet_timestamp_us.has_value());
+    PFL_EXPECT(*authoritative_aggregate_analysis.first_packet_timestamp_us == 2000100ULL);
+    PFL_EXPECT(*authoritative_aggregate_analysis.last_packet_timestamp_us == 5000300ULL);
     PFL_EXPECT(authoritative_aggregate_analysis.first_packet_timestamp_text == "00:00:02.000100");
     PFL_EXPECT(authoritative_aggregate_analysis.last_packet_timestamp_text == "00:00:05.000300");
     PFL_EXPECT(authoritative_aggregate_analysis.max_packet_size_bytes == 1600U);
@@ -681,23 +820,61 @@ void run_flow_analysis_tests() {
     );
     FlowAnalysisService directional_histogram_service {};
     const auto directional_histogram_analysis = directional_histogram_service.analyze(directional_histogram_connection);
-    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_all.size() == 10U);
-    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b.size() == 10U);
-    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a.size() == 10U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "0-63") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1400-1550") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1551-2499") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1024-1399") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "5001+") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "64-127") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "128-255") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "512-1023") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "2500-5000") == 2U);
-    PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_all) == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.original.histogram_all.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.captured.histogram_all.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a.size() == 10U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "0-63") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1400-1550") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1551-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1024-1399") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "5001+") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "64-127") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "512-1023") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "2500-5000") == 2U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "0-63") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1400-1550") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1551-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1024-1399") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "5001+") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "64-127") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "512-1023") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "2500-5000") == 2U);
+    PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_all) == 10U);
+    PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_all) == 10U);
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a == 5000U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a == 5000U);
     PFL_EXPECT(
-        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_all) ==
-        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b) +
-        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a)
+        *directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all ==
+        directional_histogram_connection.aggregate_stats.max_original_packet_length
+    );
+    PFL_EXPECT(
+        *directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all ==
+        directional_histogram_connection.aggregate_stats.max_captured_packet_length
+    );
+    PFL_EXPECT(
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_all) ==
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b) +
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a)
+    );
+    PFL_EXPECT(
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_all) ==
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b) +
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a)
     );
     PFL_EXPECT(directional_histogram_analysis.inter_arrival_histograms.histogram_all.size() == 9U);
     PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "0-9 us") == 1U);
@@ -750,6 +927,16 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(single_packet_analysis->max_packet_size_a_to_b_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->min_packet_size_b_to_a_bytes == 0U);
     PFL_EXPECT(single_packet_analysis->max_packet_size_b_to_a_bytes == 0U);
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.original.maximum_packet_length_all == request_packet.size());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.original.maximum_packet_length_a_to_b == request_packet.size());
+    PFL_EXPECT(!single_packet_analysis->packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_all == request_packet.size());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b == request_packet.size());
+    PFL_EXPECT(!single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
     PFL_EXPECT(single_packet_analysis->packet_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->byte_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->packet_direction_text == "Mostly A->B");
@@ -996,27 +1183,27 @@ void run_flow_analysis_tests() {
     const auto* a_start_point = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 0U);
     PFL_EXPECT(a_start_point != nullptr);
     PFL_EXPECT(nearly_equal(a_start_point->packets_per_second, 200.0));
-    PFL_EXPECT(nearly_equal(a_start_point->data_per_second, 30000.0));
+    PFL_EXPECT(nearly_equal(a_start_point->original_data_per_second, 30000.0));
 
     const auto* b_mid_point = rate_point_at(rate_graph_analysis.rate_graph.points_b_to_a, 20000U);
     PFL_EXPECT(b_mid_point != nullptr);
     PFL_EXPECT(nearly_equal(b_mid_point->packets_per_second, 100.0));
-    PFL_EXPECT(nearly_equal(b_mid_point->data_per_second, 40000.0));
+    PFL_EXPECT(nearly_equal(b_mid_point->original_data_per_second, 40000.0));
 
     const auto* a_tail_point = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 40000U);
     PFL_EXPECT(a_tail_point != nullptr);
     PFL_EXPECT(nearly_equal(a_tail_point->packets_per_second, 100.0));
-    PFL_EXPECT(nearly_equal(a_tail_point->data_per_second, 30000.0));
+    PFL_EXPECT(nearly_equal(a_tail_point->original_data_per_second, 30000.0));
 
     const auto* empty_a_window = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 10000U);
     PFL_EXPECT(empty_a_window != nullptr);
     PFL_EXPECT(nearly_equal(empty_a_window->packets_per_second, 0.0));
-    PFL_EXPECT(nearly_equal(empty_a_window->data_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(empty_a_window->original_data_per_second, 0.0));
 
     const auto* empty_b_window = rate_point_at(rate_graph_analysis.rate_graph.points_b_to_a, 10000U);
     PFL_EXPECT(empty_b_window != nullptr);
     PFL_EXPECT(nearly_equal(empty_b_window->packets_per_second, 0.0));
-    PFL_EXPECT(nearly_equal(empty_b_window->data_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(empty_b_window->original_data_per_second, 0.0));
 
     const auto total_packets_from_series =
         total_packets_from_rate_series(rate_graph_analysis.rate_graph.points_a_to_b, rate_graph_analysis.rate_graph.window_us)
@@ -1026,6 +1213,89 @@ void run_flow_analysis_tests() {
         + total_bytes_from_rate_series(rate_graph_analysis.rate_graph.points_b_to_a, rate_graph_analysis.rate_graph.window_us);
     PFL_EXPECT(nearly_equal(total_packets_from_series, 4.0));
     PFL_EXPECT(nearly_equal(total_bytes_from_series, 1000.0));
+
+    const auto rate_graph_input = FlowAnalysisInput {
+        .protocol = rate_graph_connection.key.protocol,
+        .protocol_hint = rate_graph_connection.protocol_hint,
+        .service_hint = rate_graph_connection.service_hint,
+        .quic_version = rate_graph_connection.quic_version,
+        .tls_version = rate_graph_connection.tls_version,
+        .aggregate_stats = rate_graph_connection.aggregate_stats,
+        .total_packets = rate_graph_connection.packet_count,
+        .total_bytes = rate_graph_connection.total_bytes,
+        .packets_a_to_b = rate_graph_connection.flow_a.packet_count,
+        .packets_b_to_a = rate_graph_connection.flow_b.packet_count,
+        .bytes_a_to_b = rate_graph_connection.flow_a.total_bytes,
+        .bytes_b_to_a = rate_graph_connection.flow_b.total_bytes,
+        .packets_for_a_to_b = std::span<const PacketRef>(
+            rate_graph_connection.flow_a.packets.data(),
+            rate_graph_connection.flow_a.packets.size()),
+        .packets_for_b_to_a = std::span<const PacketRef>(
+            rate_graph_connection.flow_b.packets.data(),
+            rate_graph_connection.flow_b.packets.size()),
+    };
+    const auto rate_graph_input_analysis = analysis_service.analyze(rate_graph_input);
+    PFL_EXPECT(rate_graph_input_analysis.timeline_packet_count_considered == rate_graph_analysis.timeline_packet_count_considered);
+    PFL_EXPECT(rate_graph_input_analysis.sequence_preview_packets == rate_graph_analysis.sequence_preview_packets);
+    PFL_REQUIRE(rate_graph_input_analysis.sequence_preview_rows.size() == rate_graph_analysis.sequence_preview_rows.size());
+    for (std::size_t index = 0; index < rate_graph_analysis.sequence_preview_rows.size(); ++index) {
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].flow_packet_number ==
+            rate_graph_analysis.sequence_preview_rows[index].flow_packet_number);
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].direction_text ==
+            rate_graph_analysis.sequence_preview_rows[index].direction_text);
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].delta_time_us ==
+            rate_graph_analysis.sequence_preview_rows[index].delta_time_us);
+    }
+    expect_matching_rate_graphs(rate_graph_input_analysis.rate_graph, rate_graph_analysis.rate_graph);
+
+    const auto zero_duration_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 80U, 10U),
+        },
+        {}
+    );
+    const auto zero_duration_analysis = analysis_service.analyze(zero_duration_connection);
+    PFL_REQUIRE(zero_duration_analysis.first_packet_timestamp_us.has_value());
+    PFL_REQUIRE(zero_duration_analysis.last_packet_timestamp_us.has_value());
+    PFL_EXPECT(*zero_duration_analysis.first_packet_timestamp_us == *zero_duration_analysis.last_packet_timestamp_us);
+    PFL_EXPECT(zero_duration_analysis.duration_us == 0U);
+    PFL_EXPECT(
+        format_frontend_duration_milliseconds(zero_duration_analysis.duration_us) ==
+        "00:00:00.000"
+    );
+
+    auto midnight_crossing_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 80U, 10U),
+        },
+        {
+            make_analysis_packet_ref(1U, 200U, 96U, 16U),
+        }
+    );
+    midnight_crossing_connection.aggregate_stats.first_timestamp_us = 86399999123ULL;
+    midnight_crossing_connection.aggregate_stats.last_timestamp_us = 86401122123ULL;
+    const auto midnight_crossing_analysis = analysis_service.analyze(midnight_crossing_connection);
+    PFL_REQUIRE(midnight_crossing_analysis.first_packet_timestamp_us.has_value());
+    PFL_REQUIRE(midnight_crossing_analysis.last_packet_timestamp_us.has_value());
+    PFL_EXPECT(*midnight_crossing_analysis.first_packet_timestamp_us == 86399999123ULL);
+    PFL_EXPECT(*midnight_crossing_analysis.last_packet_timestamp_us == 86401122123ULL);
+    PFL_EXPECT(midnight_crossing_analysis.duration_us == 1123000ULL);
+    PFL_EXPECT(
+        format_frontend_absolute_utc_timestamp(*midnight_crossing_analysis.first_packet_timestamp_us).value_or("") ==
+        "1970-01-01 23:59:59.999 UTC"
+    );
+    PFL_EXPECT(
+        format_frontend_absolute_utc_timestamp(*midnight_crossing_analysis.last_packet_timestamp_us).value_or("") ==
+        "1970-01-02 00:00:01.122 UTC"
+    );
+    PFL_EXPECT(format_frontend_duration_milliseconds(midnight_crossing_analysis.duration_us) == "00:00:01.123");
 
     std::vector<PacketRef> capped_rate_a_packets {};
     std::vector<PacketRef> capped_rate_b_packets {};

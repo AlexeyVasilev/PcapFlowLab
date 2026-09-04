@@ -87,7 +87,14 @@ different responsibilities.
 - [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
   Current compact per-connection aggregate metadata and PacketRef foundation.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
-  Current stable v15 container/header and per-section compatibility contract.
+  Previous stable v15 container/header and rebuild-required compatibility
+  boundary.
+- [Index v16 Container RFC](features/index-v16-container-rfc.md)
+  Current stable v16 Statistics/metadata/detail index layout and
+  compatibility contract.
+- [Statistics, Reporting, and Large-Index Architecture RFC](features/statistics-reporting-index-rfc.md)
+  Current Statistics/reporting architecture direction and migration rationale
+  that pairs with the v16 container RFC.
 
 ## Export
 

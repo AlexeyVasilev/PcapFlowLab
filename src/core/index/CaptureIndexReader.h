@@ -4,6 +4,7 @@
 
 #include "core/domain/CaptureState.h"
 #include "core/index/CaptureIndex.h"
+#include "core/index/Serialization.h"
 #include "core/open_failure_info.h"
 
 struct OpenContext;
@@ -20,6 +21,13 @@ public:
               std::filesystem::path& out_source_capture_path,
               CaptureSourceInfo* out_source_info = nullptr,
               OpenContext* ctx = nullptr) const;
+    bool read_v16_complete(const std::filesystem::path& index_path,
+                           detail::CaptureIndexV16CompleteReadResult& out_result,
+                           OpenContext* ctx = nullptr) const;
+    bool read_v16_fast_statistics(const std::filesystem::path& index_path,
+                                  detail::CaptureIndexV16FastStatisticsTier& out_tier,
+                                  detail::CaptureIndexV16FastStatisticsTierReadResult& out_result,
+                                  OpenContext* ctx = nullptr) const;
     [[nodiscard]] const OpenFailureInfo& last_error() const noexcept;
 
 private:

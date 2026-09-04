@@ -686,6 +686,23 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets.size() == 2U);
         PFL_EXPECT(exported_packets[0].ts_usec == 100U);
         PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_v16.idx";
+        const auto indexed_output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_v16_output.pcap";
+        std::filesystem::remove(index_path);
+        std::filesystem::remove(indexed_output_path);
+        PFL_EXPECT(session.save_index(index_path));
+
+        CaptureSession indexed_session {};
+        PFL_EXPECT(indexed_session.load_index(index_path));
+        PFL_EXPECT(indexed_session.state().unrecognized_packets.empty());
+        PFL_EXPECT(indexed_session.unrecognized_packet_count() == 3U);
+        PFL_EXPECT(indexed_session.export_smart_unrecognized_packets_to_pcap(options, indexed_output_path));
+
+        const auto indexed_exported_packets = read_all_packets(indexed_output_path);
+        PFL_EXPECT(indexed_exported_packets.size() == 2U);
+        PFL_EXPECT(indexed_exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(indexed_exported_packets[1].ts_usec == 200U);
     }
 
     {
