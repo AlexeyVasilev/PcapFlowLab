@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -217,7 +218,9 @@ CaptureState build_selected_flow_packet_access_state() {
     return state;
 }
 
-detail::CaptureIndexStableHeader make_v16_test_header() {
+detail::CaptureIndexStableHeader make_v16_test_header(
+    std::string source_capture_path_utf8 = "selected-flow-provider-test.pcap"
+) {
     return detail::CaptureIndexStableHeader {
         .magic = kStableCaptureIndexMagic,
         .container_format_version = kCaptureIndexStableContainerFormatVersion,
@@ -229,7 +232,7 @@ detail::CaptureIndexStableHeader make_v16_test_header() {
         .source_file_size = 4096U,
         .source_last_write_time = 0,
         .source_content_fingerprint = 0x12345678ULL,
-        .source_capture_path_utf8 = "selected-flow-provider-test.pcap",
+        .source_capture_path_utf8 = std::move(source_capture_path_utf8),
     };
 }
 
@@ -249,7 +252,8 @@ detail::CaptureIndexV16FastStatisticsTier make_v16_fast_tier(const CaptureState&
 
 CaptureIndexV16MetadataTier write_and_read_v16_metadata(
     const CaptureState& state,
-    const std::filesystem::path& index_path
+    const std::filesystem::path& index_path,
+    std::string source_capture_path_utf8 = "selected-flow-provider-test.pcap"
 ) {
     const auto fast_tier = make_v16_fast_tier(state);
     const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
@@ -257,7 +261,11 @@ CaptureIndexV16MetadataTier write_and_read_v16_metadata(
 
     std::ofstream stream(index_path, std::ios::binary | std::ios::trunc);
     PFL_REQUIRE(stream.is_open());
-    PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_test_header(), fast_tier));
+    PFL_REQUIRE(detail::write_v16_fast_statistics_tier(
+        stream,
+        make_v16_test_header(std::move(source_capture_path_utf8)),
+        fast_tier
+    ));
     PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan));
     PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan_result.plan.packetref_detail_sections));
     PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan_result.plan.unrecognized_reason_sections));
@@ -989,6 +997,32 @@ void run_selected_flow_packet_access_tests() {
                 v16_merged.packets[index].flow_local_packet_number ==
                 resident_merged.packets[index].flow_local_packet_number);
         }
+    }
+
+    {
+        ScopedTestContext context {"capture_session_v16_selected_flow_exact_packet_context_does_not_require_source_capture"};
+
+        const auto state = build_selected_flow_packet_access_state();
+        const auto index_path =
+            std::filesystem::temp_directory_path() / "pfl_selected_flow_packet_access_v16_no_source.idx";
+        const auto missing_source_path =
+            std::filesystem::temp_directory_path() / "pfl_selected_flow_packet_access_missing_source.pcap";
+        std::filesystem::remove(missing_source_path);
+        static_cast<void>(write_and_read_v16_metadata(state, index_path, missing_source_path.generic_string()));
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.load_v16_index_for_testing(index_path));
+        PFL_EXPECT(session.opened_from_index());
+        PFL_EXPECT(!session.has_source_capture());
+        PFL_EXPECT(!session.source_capture_accessible());
+        PFL_EXPECT(!session.find_packet(30U).has_value());
+
+        const auto packet_context = session.selected_flow_packet_context_for_packet_index(0U, 30U);
+        PFL_REQUIRE(packet_context.has_value());
+        PFL_EXPECT(packet_context->packet.packet_index == 30U);
+        PFL_EXPECT(packet_context->flow_packet_index == 3U);
+        PFL_EXPECT(packet_context->direction == Direction::a_to_b);
+        PFL_EXPECT(!session.selected_flow_packet_context_for_packet_index(0U, 999U).has_value());
     }
 
     {

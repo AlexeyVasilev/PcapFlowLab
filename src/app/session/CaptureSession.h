@@ -379,6 +379,10 @@ public:
         std::size_t flow_index,
         std::uint64_t flow_packet_index
     ) const;
+    [[nodiscard]] std::optional<SelectedFlowPacketContext> selected_flow_packet_context_for_packet_index(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_exact_packet_number(
         std::size_t flow_index,

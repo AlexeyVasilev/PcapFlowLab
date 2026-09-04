@@ -598,10 +598,21 @@ void run_query_tests() {
     PFL_EXPECT(third_selected_flow_packet->packet_index == 3U);
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 0U) == std::optional<std::uint64_t> {1U});
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 2U) == std::optional<std::uint64_t> {2U});
+    const auto cached_second_packet_context = cache_session.selected_flow_packet_context_for_packet_index(0U, 2U);
+    PFL_REQUIRE(cached_second_packet_context.has_value());
+    PFL_EXPECT(cached_second_packet_context->packet.packet_index == 2U);
+    PFL_EXPECT(cached_second_packet_context->flow_packet_index == 2U);
+    PFL_EXPECT(cached_second_packet_context->direction == Direction::a_to_b);
     PFL_EXPECT(!cache_session.selected_flow_cached_packet_number(0U, 3U).has_value());
     PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 3U).has_value());
     PFL_EXPECT(cache_session.selected_flow_exact_packet_number(0U, 3U) == std::optional<std::uint64_t> {3U});
+    const auto provider_third_packet_context = cache_session.selected_flow_packet_context_for_packet_index(0U, 3U);
+    PFL_REQUIRE(provider_third_packet_context.has_value());
+    PFL_EXPECT(provider_third_packet_context->packet.packet_index == 3U);
+    PFL_EXPECT(provider_third_packet_context->flow_packet_index == 3U);
+    PFL_EXPECT(provider_third_packet_context->direction == Direction::a_to_b);
     PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 1U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_context_for_packet_index(0U, 1U).has_value());
     PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 0U).has_value());
     PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 5U).has_value());
 

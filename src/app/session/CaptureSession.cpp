@@ -2076,16 +2076,6 @@ std::optional<PacketRef> connection_packet_at(
     return lookup.packet.has_value() ? std::optional<PacketRef> {lookup.packet->packet} : std::nullopt;
 }
 
-std::optional<std::uint64_t> connection_packet_number(
-    const session_detail::SelectedFlowPacketAccessSource& source,
-    const std::uint64_t packet_index
-) {
-    const auto lookup = session_detail::selected_flow_packet_context_for_packet_index(source, packet_index);
-    return lookup.packet.has_value()
-        ? std::optional<std::uint64_t> {lookup.packet->flow_local_packet_number}
-        : std::nullopt;
-}
-
 std::optional<PacketRef> find_packet_in_state_metadata(const CaptureState& state, const std::uint64_t packet_index) {
     for (const auto* connection : state.ipv4_connections.list()) {
         const auto packet = find_packet_in_connection(*connection, packet_index);
@@ -5490,6 +5480,28 @@ std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_co
     );
 }
 
+std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_context_for_packet_index(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet_index); entry != nullptr) {
+        if (entry->packet.packet_index == packet_index && entry->flow_local_packet_number > 0U) {
+            return SelectedFlowPacketContext {
+                .packet = entry->packet,
+                .flow_packet_index = entry->flow_local_packet_number,
+                .direction = entry->direction,
+            };
+        }
+    }
+
+    auto source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!source) {
+        return std::nullopt;
+    }
+
+    return find_packet_context_in_connection(*source, packet_index);
+}
+
 std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
     const std::size_t flow_index,
     const std::uint64_t packet_index
@@ -5501,15 +5513,10 @@ std::optional<std::uint64_t> CaptureSession::selected_flow_exact_packet_number(
     const std::size_t flow_index,
     const std::uint64_t packet_index
 ) const {
-    auto source = make_selected_flow_packet_access_source_for_flow(flow_index);
-    if (!source) {
-        return std::nullopt;
-    }
-
-    return connection_packet_number(
-        *source,
-        packet_index
-    );
+    const auto context = selected_flow_packet_context_for_packet_index(flow_index, packet_index);
+    return context.has_value()
+        ? std::optional<std::uint64_t> {context->flow_packet_index}
+        : std::nullopt;
 }
 
 namespace {

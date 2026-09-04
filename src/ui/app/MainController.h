@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -828,7 +829,13 @@ private:
         stream,
     };
 
+    struct SelectedPacketResolution {
+        PacketRef packet {};
+        std::optional<std::uint64_t> zero_based_flow_packet_index {};
+    };
+
     bool openPath(const QString& path, bool asIndex);
+    [[nodiscard]] std::optional<SelectedPacketResolution> resolveSelectedPacket() const;
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();

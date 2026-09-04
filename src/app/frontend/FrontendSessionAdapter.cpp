@@ -2464,13 +2464,11 @@ FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_packet_byt
             return unavailable_byte_export_result("The selected packet is unavailable.");
         }
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             return unavailable_byte_export_result("The selected packet is unavailable.");
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return unavailable_byte_export_result("The selected packet is unavailable.");
-        }
+        packet = context->packet;
     }
 
     static_cast<void>(loaded_packet_window_count);
@@ -3804,28 +3802,28 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
 
     std::optional<PacketRef> packet {};
+    std::optional<std::uint64_t> resolved_flow_packet_index {};
     if (flow_packet_index != 0U) {
         packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
         if (!packet.has_value() || packet->packet_index != packet_index) {
             result.error_text = "The selected packet is unavailable.";
             return result;
         }
+        resolved_flow_packet_index = flow_packet_index;
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             result.error_text = "The selected packet is unavailable.";
             return result;
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            result.error_text = "The selected packet is unavailable.";
-            return result;
-        }
+        packet = context->packet;
+        resolved_flow_packet_index = context->flow_packet_index;
     }
 
     auto details = build_frontend_packet_details(
         *packet,
         selected_flow_index_,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        resolved_flow_packet_index,
         loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
     return details;
@@ -3851,6 +3849,7 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
     }
 
     std::optional<PacketRef> packet {};
+    std::optional<std::uint64_t> resolved_flow_packet_index {};
     if (flow_packet_index != 0U) {
         packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
         if (!packet.has_value() || packet->packet_index != packet_index) {
@@ -3859,26 +3858,23 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
                 .unavailable_text = "The selected packet is unavailable.",
             };
         }
+        resolved_flow_packet_index = flow_packet_index;
     } else {
-        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        const auto context = session_.selected_flow_packet_context_for_packet_index(*selected_flow_index_, packet_index);
+        if (!context.has_value() || context->packet.packet_index != packet_index) {
             return FrontendPacketDetailsDto::PacketByteViewContent {
                 .available = false,
                 .unavailable_text = "The selected packet is unavailable.",
             };
         }
-        packet = session_.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return FrontendPacketDetailsDto::PacketByteViewContent {
-                .available = false,
-                .unavailable_text = "The selected packet is unavailable.",
-            };
-        }
+        packet = context->packet;
+        resolved_flow_packet_index = context->flow_packet_index;
     }
 
     return build_frontend_packet_byte_view_content(
         *packet,
         stable_id,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        resolved_flow_packet_index,
         loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
 }
