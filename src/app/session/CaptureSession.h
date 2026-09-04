@@ -253,6 +253,10 @@ public:
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet
     ) const;
+    [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
+        const PacketRef& packet,
+        std::optional<std::size_t> flow_index
+    ) const;
     [[nodiscard]] session_detail::SelectedStreamItemDataPresentation derive_selected_flow_stream_item_data(
         std::size_t flow_index,
         std::size_t max_packets_to_scan,
@@ -289,6 +293,14 @@ public:
         const session_detail::SelectedPacketByteViewId& id,
         session_detail::ByteExportFormat format,
         const std::filesystem::path& output_path,
+        std::string* out_error_text = nullptr
+    ) const;
+    [[nodiscard]] bool export_selected_packet_byte_view(
+        const PacketRef& packet,
+        const session_detail::SelectedPacketByteViewId& id,
+        session_detail::ByteExportFormat format,
+        const std::filesystem::path& output_path,
+        std::optional<std::size_t> flow_index,
         std::string* out_error_text = nullptr
     ) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
@@ -431,6 +443,7 @@ public:
     bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] bool is_unrecognized_packet_index(std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<PacketOwnershipContext> resolve_packet_ownership_context(
         std::uint64_t packet_index
     ) const;
@@ -564,6 +577,10 @@ private:
     make_selected_flow_packet_access_source_for_flow(std::size_t flow_index) const;
     [[nodiscard]] std::unique_ptr<session_detail::UnrecognizedPacketAccessSource>
     make_unrecognized_packet_access_source_for_capture() const;
+    [[nodiscard]] std::optional<session_detail::CanonicalFlowMetadata> selected_flow_metadata(
+        std::size_t flow_index,
+        bool* listed_connections_cache_hit = nullptr
+    ) const;
 
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_terminal(const PacketRef& packet) const;

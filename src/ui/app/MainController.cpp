@@ -6198,11 +6198,15 @@ bool MainController::exportSelectedPacketBytes(const QString& formatId) {
     }
 
     std::string errorText {};
+    const auto packet_flow_index = !unrecognized_packets_selected_ && selected_flow_index_ >= 0
+        ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)}
+        : std::nullopt;
     if (!session_.export_selected_packet_byte_view(
             packet,
             *parsed_view_id,
             *parsed_format,
             std::filesystem::path {outputPath.toStdWString()},
+            packet_flow_index,
             &errorText)) {
         setStatusText(
             errorText.empty()

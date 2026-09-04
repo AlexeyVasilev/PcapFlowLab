@@ -2478,6 +2478,7 @@ FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_packet_byt
             *parsed_view_id,
             *parsed_format,
             output_path,
+            selected_flow_index_,
             &error_text)) {
         return unavailable_byte_export_result(
             error_text.empty() ? "Failed to export the selected packet byte view." : error_text
@@ -2519,14 +2520,7 @@ FrontendByteExportResult FrontendSessionAdapter::export_unrecognized_packet_byte
         return unavailable_byte_export_result("The selected packet is unavailable.");
     }
 
-    const auto matches_unrecognized = std::any_of(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        [packet_index](const UnrecognizedPacketRecord& record) {
-            return record.packet.packet_index == packet_index;
-        }
-    );
-    if (!matches_unrecognized) {
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
         return unavailable_byte_export_result("The selected packet is unavailable in the unrecognized packet context.");
     }
 
@@ -3899,14 +3893,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details
         return result;
     }
 
-    const auto matches_unrecognized = std::any_of(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        [packet_index](const UnrecognizedPacketRecord& record) {
-            return record.packet.packet_index == packet_index;
-        }
-    );
-    if (!matches_unrecognized) {
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
         result.error_text = "The selected packet is unavailable in the unrecognized packet context.";
         return result;
     }
@@ -3930,6 +3917,13 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_unre
         return FrontendPacketDetailsDto::PacketByteViewContent {
             .available = false,
             .unavailable_text = "The selected packet is unavailable.",
+        };
+    }
+
+    if (!session_.is_unrecognized_packet_index(packet_index)) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The selected packet is unavailable in the unrecognized packet context.",
         };
     }
 
@@ -4153,18 +4147,8 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(
         false
     );
 
-    const auto unrecognized_packet = std::lower_bound(
-        session_.state().unrecognized_packets.begin(),
-        session_.state().unrecognized_packets.end(),
-        packet_index,
-        [](const UnrecognizedPacketRecord& record, const std::uint64_t target_packet_index) {
-            return record.packet.packet_index < target_packet_index;
-        }
-    );
-
     result.packet_available = true;
-    result.recognized_flow = unrecognized_packet == session_.state().unrecognized_packets.end() ||
-        unrecognized_packet->packet.packet_index != packet_index;
+    result.recognized_flow = !session_.is_unrecognized_packet_index(packet_index);
     result.details_available = details.details_available;
     result.packet_index = packet.packet_index;
     result.packet_in_file = packet.packet_index + 1U;

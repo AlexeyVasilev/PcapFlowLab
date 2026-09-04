@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -37,6 +38,20 @@ struct UnrecognizedPacketAccessRow {
     ) = default;
 };
 
+struct UnrecognizedPacketMetadataRow {
+    std::uint64_t row_number {0};
+    std::uint64_t packet_index {0};
+    std::uint32_t ts_sec {0};
+    std::uint32_t ts_usec {0};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+
+    [[nodiscard]] friend bool operator==(
+        const UnrecognizedPacketMetadataRow&,
+        const UnrecognizedPacketMetadataRow&
+    ) = default;
+};
+
 struct UnrecognizedPacketAccessCountResult {
     UnrecognizedPacketAccessStatus status {UnrecognizedPacketAccessStatus::ok};
     std::uint64_t row_count {0};
@@ -58,6 +73,28 @@ struct UnrecognizedPacketAccessReadResult {
     }
 };
 
+struct UnrecognizedPacketMetadataReadResult {
+    UnrecognizedPacketAccessStatus status {UnrecognizedPacketAccessStatus::ok};
+    std::vector<UnrecognizedPacketMetadataRow> rows {};
+    std::uint64_t total_row_count {0};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == UnrecognizedPacketAccessStatus::ok;
+    }
+};
+
+struct UnrecognizedPacketMetadataLookupResult {
+    UnrecognizedPacketAccessStatus status {UnrecognizedPacketAccessStatus::ok};
+    std::optional<UnrecognizedPacketMetadataRow> row {};
+    std::uint64_t total_row_count {0};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == UnrecognizedPacketAccessStatus::ok;
+    }
+};
+
 class UnrecognizedPacketAccessSource {
 public:
     virtual ~UnrecognizedPacketAccessSource() = default;
@@ -66,6 +103,13 @@ public:
     [[nodiscard]] virtual UnrecognizedPacketAccessReadResult read_range(
         std::uint64_t offset,
         std::uint64_t limit
+    ) const = 0;
+    [[nodiscard]] virtual UnrecognizedPacketMetadataReadResult read_metadata_range(
+        std::uint64_t offset,
+        std::uint64_t limit
+    ) const = 0;
+    [[nodiscard]] virtual UnrecognizedPacketMetadataLookupResult find_packet_index(
+        std::uint64_t packet_index
     ) const = 0;
 };
 
@@ -79,6 +123,13 @@ public:
     [[nodiscard]] UnrecognizedPacketAccessReadResult read_range(
         std::uint64_t offset,
         std::uint64_t limit
+    ) const override;
+    [[nodiscard]] UnrecognizedPacketMetadataReadResult read_metadata_range(
+        std::uint64_t offset,
+        std::uint64_t limit
+    ) const override;
+    [[nodiscard]] UnrecognizedPacketMetadataLookupResult find_packet_index(
+        std::uint64_t packet_index
     ) const override;
 
 private:
@@ -96,6 +147,13 @@ public:
     [[nodiscard]] UnrecognizedPacketAccessReadResult read_range(
         std::uint64_t offset,
         std::uint64_t limit
+    ) const override;
+    [[nodiscard]] UnrecognizedPacketMetadataReadResult read_metadata_range(
+        std::uint64_t offset,
+        std::uint64_t limit
+    ) const override;
+    [[nodiscard]] UnrecognizedPacketMetadataLookupResult find_packet_index(
+        std::uint64_t packet_index
     ) const override;
 
 private:

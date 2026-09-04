@@ -181,6 +181,7 @@ void run_unrecognized_packet_tests() {
         CaptureSession loaded_index_session {};
         PFL_EXPECT(loaded_index_session.load_index(index_path));
         PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 1U);
+        PFL_EXPECT(loaded_index_session.state().unrecognized_packets.empty());
         const auto loaded_unrecognized_stats = loaded_index_session.unrecognized_packet_statistics();
         PFL_EXPECT(loaded_unrecognized_stats.packet_count == source_unrecognized_stats.packet_count);
         PFL_EXPECT(loaded_unrecognized_stats.captured_bytes == source_unrecognized_stats.captured_bytes);
@@ -188,6 +189,34 @@ void run_unrecognized_packet_tests() {
         const auto loaded_rows = loaded_index_session.list_unrecognized_packets();
         PFL_REQUIRE(loaded_rows.size() == 1U);
         PFL_EXPECT(loaded_rows[0].reason_text == "TCP header truncated");
+        PFL_EXPECT(loaded_index_session.is_unrecognized_packet_index(loaded_rows[0].packet_index));
+        PFL_EXPECT(!loaded_index_session.is_unrecognized_packet_index(loaded_rows[0].packet_index + 1U));
+        const auto loaded_packet = loaded_index_session.find_packet(loaded_rows[0].packet_index);
+        PFL_REQUIRE(loaded_packet.has_value());
+        const auto loaded_ownership = loaded_index_session.resolve_packet_ownership_context(loaded_rows[0].packet_index);
+        PFL_REQUIRE(loaded_ownership.has_value());
+        PFL_EXPECT(loaded_ownership->packet.packet_index == loaded_rows[0].packet_index);
+        PFL_EXPECT(!loaded_ownership->flow_index.has_value());
+
+        FrontendSessionAdapter loaded_adapter {};
+        const auto loaded_open_result = loaded_adapter.open_capture(index_path);
+        PFL_EXPECT(loaded_open_result.opened);
+        const auto loaded_frontend_packets = loaded_adapter.get_unrecognized_packets(0U, 30U);
+        PFL_REQUIRE(loaded_frontend_packets.packets.size() == 1U);
+        PFL_EXPECT(loaded_frontend_packets.packets[0].reason_text == "TCP header truncated");
+        const auto loaded_frontend_details =
+            loaded_adapter.get_unrecognized_packet_details(loaded_frontend_packets.packets[0].packet_index);
+        PFL_EXPECT(loaded_frontend_details.details_available);
+        PFL_EXPECT(loaded_frontend_details.selected_byte_view.available);
+        const auto loaded_frontend_bytes = loaded_adapter.get_unrecognized_packet_byte_view_content(
+            loaded_frontend_packets.packets[0].packet_index,
+            "frame:0:0"
+        );
+        PFL_EXPECT(loaded_frontend_bytes.available);
+
+        loaded_index_session.clear_source_capture_attachment();
+        PFL_EXPECT(loaded_index_session.is_unrecognized_packet_index(loaded_rows[0].packet_index));
+        PFL_EXPECT(!loaded_index_session.find_packet(loaded_rows[0].packet_index).has_value());
     }
 
     {

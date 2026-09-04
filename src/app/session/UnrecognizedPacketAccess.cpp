@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -62,6 +63,19 @@ namespace {
         return UnrecognizedPacketAccessStatus::malformed_reason_reference;
     }
     return UnrecognizedPacketAccessStatus::malformed_reason_reference;
+}
+
+[[nodiscard]] UnrecognizedPacketMetadataRow make_metadata_row(
+    const CaptureIndexV16UnrecognizedDirectoryEntry& row
+) noexcept {
+    return UnrecognizedPacketMetadataRow {
+        .row_number = row.row_number,
+        .packet_index = row.packet_index,
+        .ts_sec = row.ts_sec,
+        .ts_usec = row.ts_usec,
+        .captured_length = row.captured_length,
+        .original_length = row.original_length,
+    };
 }
 
 }  // namespace
@@ -127,6 +141,89 @@ UnrecognizedPacketAccessReadResult ResidentUnrecognizedPacketAccessSource::read_
         });
     }
 
+    return result;
+}
+
+UnrecognizedPacketMetadataReadResult ResidentUnrecognizedPacketAccessSource::read_metadata_range(
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) const {
+    UnrecognizedPacketMetadataReadResult result {
+        .total_row_count = static_cast<std::uint64_t>(records_.size()),
+    };
+
+    if (offset > result.total_row_count) {
+        result.status = UnrecognizedPacketAccessStatus::invalid_offset;
+        result.error_detail = "requested resident unrecognized row offset is past the end of the logical row space";
+        return result;
+    }
+    if (limit == 0U || offset == result.total_row_count) {
+        return result;
+    }
+
+    std::uint64_t requested_end {0};
+    if (!checked_add_u64(offset, limit, requested_end)) {
+        result.status = UnrecognizedPacketAccessStatus::invalid_requested_length;
+        result.error_detail = "requested resident unrecognized row range overflowed";
+        return result;
+    }
+
+    const auto effective_end = std::min(requested_end, result.total_row_count);
+    result.rows.reserve(static_cast<std::size_t>(effective_end - offset));
+
+    std::optional<std::uint64_t> prior_packet_index {};
+    for (std::uint64_t index = offset; index < effective_end; ++index) {
+        const auto& record = records_[static_cast<std::size_t>(index)];
+        if (prior_packet_index.has_value() && record.packet.packet_index <= *prior_packet_index) {
+            result.status = UnrecognizedPacketAccessStatus::malformed_directory;
+            result.error_detail =
+                "resident unrecognized packet sequence is not strictly increasing by packet_index";
+            result.rows.clear();
+            return result;
+        }
+        prior_packet_index = record.packet.packet_index;
+
+        result.rows.push_back(UnrecognizedPacketMetadataRow {
+            .row_number = index + 1U,
+            .packet_index = record.packet.packet_index,
+            .ts_sec = record.packet.ts_sec,
+            .ts_usec = record.packet.ts_usec,
+            .captured_length = record.packet.captured_length,
+            .original_length = record.packet.original_length,
+        });
+    }
+
+    return result;
+}
+
+UnrecognizedPacketMetadataLookupResult ResidentUnrecognizedPacketAccessSource::find_packet_index(
+    const std::uint64_t packet_index
+) const {
+    UnrecognizedPacketMetadataLookupResult result {
+        .total_row_count = static_cast<std::uint64_t>(records_.size()),
+    };
+
+    const auto it = std::lower_bound(
+        records_.begin(),
+        records_.end(),
+        packet_index,
+        [](const UnrecognizedPacketRecord& record, const std::uint64_t target_packet_index) {
+            return record.packet.packet_index < target_packet_index;
+        }
+    );
+    if (it == records_.end() || it->packet.packet_index != packet_index) {
+        return result;
+    }
+
+    const auto row_index = static_cast<std::uint64_t>(std::distance(records_.begin(), it));
+    result.row = UnrecognizedPacketMetadataRow {
+        .row_number = row_index + 1U,
+        .packet_index = it->packet.packet_index,
+        .ts_sec = it->packet.ts_sec,
+        .ts_usec = it->packet.ts_usec,
+        .captured_length = it->packet.captured_length,
+        .original_length = it->packet.original_length,
+    };
     return result;
 }
 
@@ -231,6 +328,84 @@ UnrecognizedPacketAccessReadResult CaptureIndexV16UnrecognizedPacketAccessSource
             .original_length = row.original_length,
             .reason_text = reason.reason_text,
         });
+    }
+
+    return result;
+}
+
+UnrecognizedPacketMetadataReadResult CaptureIndexV16UnrecognizedPacketAccessSource::read_metadata_range(
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) const {
+    UnrecognizedPacketMetadataReadResult result {
+        .status = initialization_status_,
+        .total_row_count = total_row_count_,
+        .error_detail = initialization_error_detail,
+    };
+    if (initialization_status_ != UnrecognizedPacketAccessStatus::ok) {
+        return result;
+    }
+
+    std::ifstream stream(index_path_, std::ios::binary);
+    if (!stream.is_open()) {
+        result.status = UnrecognizedPacketAccessStatus::source_read_failed;
+        result.error_detail = "failed to open the v16 index for lazy unrecognized row access";
+        return result;
+    }
+
+    const auto directory_rows = detail::read_v16_unrecognized_directory_range(
+        stream,
+        directory_sections_,
+        offset,
+        limit
+    );
+    result.total_row_count = directory_rows.total_row_count;
+    if (!directory_rows) {
+        result.status = map_directory_status(directory_rows.status);
+        result.error_detail = directory_rows.error_detail;
+        return result;
+    }
+
+    result.rows.reserve(directory_rows.rows.size());
+    for (const auto& row : directory_rows.rows) {
+        result.rows.push_back(make_metadata_row(row));
+    }
+    return result;
+}
+
+UnrecognizedPacketMetadataLookupResult CaptureIndexV16UnrecognizedPacketAccessSource::find_packet_index(
+    const std::uint64_t packet_index
+) const {
+    UnrecognizedPacketMetadataLookupResult result {
+        .status = initialization_status_,
+        .total_row_count = total_row_count_,
+        .error_detail = initialization_error_detail,
+    };
+    if (initialization_status_ != UnrecognizedPacketAccessStatus::ok || total_row_count_ == 0U) {
+        return result;
+    }
+
+    std::uint64_t low = 0U;
+    std::uint64_t high = total_row_count_;
+    while (low < high) {
+        const auto mid = low + ((high - low) / 2U);
+        const auto read_result = read_metadata_range(mid, 1U);
+        if (!read_result || read_result.rows.empty()) {
+            result.status = read_result.status;
+            result.error_detail = read_result.error_detail;
+            return result;
+        }
+
+        const auto& row = read_result.rows.front();
+        if (row.packet_index == packet_index) {
+            result.row = row;
+            return result;
+        }
+        if (row.packet_index < packet_index) {
+            low = mid + 1U;
+        } else {
+            high = mid;
+        }
     }
 
     return result;

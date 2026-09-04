@@ -551,11 +551,35 @@ void run_index_tests() {
         CaptureSession loaded_stream_session {};
         PFL_EXPECT(loaded_stream_session.load_index(stream_index_path));
         PFL_EXPECT(loaded_stream_session.has_source_capture());
+        PFL_EXPECT(loaded_stream_session.state().ipv4_connections.size() == 0U);
         const auto loaded_stream_rows = loaded_stream_session.list_flow_stream_items(0);
         expect_matching_stream_rows(loaded_stream_rows, original_stream_rows);
+        const auto loaded_stream_prefix_rows = loaded_stream_session.list_flow_stream_items_for_packet_prefix(0, 2U, 2U);
+        expect_matching_stream_rows(loaded_stream_prefix_rows, original_stream_rows);
         PFL_EXPECT(loaded_stream_session.summary().packet_count == original_stream_session.summary().packet_count);
         PFL_EXPECT(loaded_stream_session.summary().flow_count == original_stream_session.summary().flow_count);
         PFL_EXPECT(loaded_stream_session.summary().total_bytes == original_stream_session.summary().total_bytes);
+    }
+
+    {
+        const auto http_stream_index_path = std::filesystem::temp_directory_path() / "pfl_index_http_stream_roundtrip.idx";
+        std::filesystem::remove(http_stream_index_path);
+
+        CaptureSession original_http_stream_session {};
+        PFL_EXPECT(original_http_stream_session.open_capture(
+            fixture_path(std::filesystem::path("parsing/http/http_get_1.pcap")),
+            CaptureImportOptions {}
+        ));
+        const auto original_http_stream_rows = original_http_stream_session.list_flow_stream_items(0);
+        PFL_REQUIRE(!original_http_stream_rows.empty());
+        PFL_EXPECT(original_http_stream_session.save_index(http_stream_index_path));
+
+        CaptureSession loaded_http_stream_session {};
+        PFL_EXPECT(loaded_http_stream_session.load_index(http_stream_index_path));
+        PFL_EXPECT(loaded_http_stream_session.has_source_capture());
+        PFL_EXPECT(loaded_http_stream_session.state().ipv4_connections.size() == 0U);
+        const auto loaded_http_stream_rows = loaded_http_stream_session.list_flow_stream_items(0);
+        expect_matching_stream_rows(loaded_http_stream_rows, original_http_stream_rows);
     }
 
     expect_index_roundtrip_preserves_protocol_path_identity(

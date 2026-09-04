@@ -101,6 +101,8 @@ constexpr std::string_view kDirectionAToB = "A\xE2\x86\x92" "B";
 constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
 constexpr std::string_view kCompactLabelSeparator = " \xE2\x80\xA2 ";
 
+using FlowDirectionalKey = std::variant<FlowKeyV4, FlowKeyV6>;
+
 std::optional<std::vector<session_detail::CanonicalFlowMetadata>> build_v16_flow_catalog(
     const CaptureIndexV16MetadataTier& metadata
 ) {
@@ -1082,6 +1084,66 @@ std::optional<std::size_t> find_quic_flow_index_for_packet(
     return std::nullopt;
 }
 
+std::optional<FlowDirectionalKey> directional_flow_key(
+    const session_detail::CanonicalFlowMetadata& flow,
+    const Direction direction
+) {
+    const bool has_direction = direction == Direction::a_to_b ? flow.has_flow_a : flow.has_flow_b;
+    if (!has_direction) {
+        return std::nullopt;
+    }
+
+    if (flow.family == FlowAddressFamily::ipv4) {
+        const auto* endpoint_a = std::get_if<EndpointKeyV4>(&flow.endpoint_a);
+        const auto* endpoint_b = std::get_if<EndpointKeyV4>(&flow.endpoint_b);
+        if (endpoint_a == nullptr || endpoint_b == nullptr) {
+            return std::nullopt;
+        }
+        const auto& source = direction == Direction::a_to_b ? *endpoint_a : *endpoint_b;
+        const auto& destination = direction == Direction::a_to_b ? *endpoint_b : *endpoint_a;
+        return FlowDirectionalKey {FlowKeyV4 {
+            .src_addr = source.addr,
+            .dst_addr = destination.addr,
+            .src_port = source.port,
+            .dst_port = destination.port,
+            .protocol = flow.protocol,
+            .protocol_path_id = flow.protocol_path_id,
+        }};
+    }
+
+    const auto* endpoint_a = std::get_if<EndpointKeyV6>(&flow.endpoint_a);
+    const auto* endpoint_b = std::get_if<EndpointKeyV6>(&flow.endpoint_b);
+    if (endpoint_a == nullptr || endpoint_b == nullptr) {
+        return std::nullopt;
+    }
+    const auto& source = direction == Direction::a_to_b ? *endpoint_a : *endpoint_b;
+    const auto& destination = direction == Direction::a_to_b ? *endpoint_b : *endpoint_a;
+    return FlowDirectionalKey {FlowKeyV6 {
+        .src_addr = source.addr,
+        .dst_addr = destination.addr,
+        .src_port = source.port,
+        .dst_port = destination.port,
+        .protocol = flow.protocol,
+        .protocol_path_id = flow.protocol_path_id,
+    }};
+}
+
+std::uint16_t directional_key_src_port(const FlowDirectionalKey& key) noexcept {
+    return std::visit([](const auto& typed_key) noexcept {
+        return typed_key.src_port;
+    }, key);
+}
+
+std::uint16_t directional_key_dst_port(const FlowDirectionalKey& key) noexcept {
+    return std::visit([](const auto& typed_key) noexcept {
+        return typed_key.dst_port;
+    }, key);
+}
+
+bool directional_key_uses_port(const FlowDirectionalKey& key, const std::uint16_t port) noexcept {
+    return directional_key_src_port(key) == port || directional_key_dst_port(key) == port;
+}
+
 std::size_t selected_flow_packet_count(const session_detail::SelectedFlowPacketAccessSource& source) noexcept {
     const auto merged_read = session_detail::read_selected_flow_merged_range(source, 0U, 0U);
     if (!merged_read) {
@@ -1602,28 +1664,26 @@ bool retained_tls_cursor_eligible_for_direction(
 
 std::optional<RetainedTlsBuildResult> build_retained_tls_stream_items_bounded(
     const CaptureSession& session,
-    const ListedConnectionRef& connection,
+    const session_detail::CanonicalFlowMetadata& flow,
+    const session_detail::SelectedFlowPacketAccessSource& packet_source,
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan,
     const std::size_t target,
     const AnalysisSettings& analysis_settings,
     const session_detail::TlsStreamRetainedFrontier* retained_frontier = nullptr
 ) {
-    if (protocol_id(connection) != ProtocolId::tcp || target == 0U) {
+    if (protocol_id(flow) != ProtocolId::tcp || target == 0U) {
         return std::nullopt;
     }
 
-    const auto total_packets = connection.family == FlowAddressFamily::ipv4
-        ? connection_packet_count(*connection.ipv4)
-        : connection_packet_count(*connection.ipv6);
+    const auto total_packets = selected_flow_packet_count(packet_source);
     const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
-    const auto packet_source = make_selected_flow_packet_access_source(connection);
     const auto bounded_prefix = load_selected_flow_packet_prefix_window(packet_source, bounded_packet_budget);
     const auto direction_packets_a =
         std::span<const PacketRef>(bounded_prefix.packets_a.data(), bounded_prefix.packets_a.size());
     const auto direction_packets_b =
         std::span<const PacketRef>(bounded_prefix.packets_b.data(), bounded_prefix.packets_b.size());
-    const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
+    const auto effective_hint = effective_protocol_hint(flow, analysis_settings);
 
     if (!retained_tls_cursor_eligible_for_direction(
             session, flow_index, Direction::a_to_b, direction_packets_a, effective_hint) ||
@@ -1789,12 +1849,11 @@ bool append_arp_stream_item_for_packet(
     return true;
 }
 
-template <typename Connection>
 void append_connection_stream_items_bounded(
     std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
-    const Connection& connection,
+    const session_detail::CanonicalFlowMetadata& flow,
     const std::span<const SelectedFlowWindowPacket> bounded_packets,
     const std::span<const PacketRef> bounded_direction_packets_a,
     const std::span<const PacketRef> bounded_direction_packets_b,
@@ -1805,8 +1864,11 @@ void append_connection_stream_items_bounded(
     const DirectionalStreamPolicy& direction_policy_b
 ) {
     constexpr std::uint16_t kQuicCandidatePort = 443U;
+    const auto flow_key_a = directional_flow_key(flow, Direction::a_to_b);
+    const auto flow_key_b = directional_flow_key(flow, Direction::b_to_a);
     const bool uses_quic_candidate_port = flow_protocol == ProtocolId::udp &&
-        (connection.flow_a.key.src_port == kQuicCandidatePort || connection.flow_a.key.dst_port == kQuicCandidatePort);
+        ((flow_key_a.has_value() && directional_key_uses_port(*flow_key_a, kQuicCandidatePort)) ||
+            (flow_key_b.has_value() && directional_key_uses_port(*flow_key_b, kQuicCandidatePort)));
     const auto bounded_quic_packets = uses_quic_candidate_port
         ? merge_packet_refs_by_index(bounded_direction_packets_a, bounded_direction_packets_b)
         : std::vector<PacketRef> {};
@@ -1825,7 +1887,7 @@ void append_connection_stream_items_bounded(
     std::size_t scanned_packets = 0U;
     bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
     bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
-    const auto connection_flow_hint = connection.protocol_hint;
+    const auto connection_flow_hint = flow.protocol_hint;
     while (rows.size() < target_count &&
            scanned_packets < bounded_packets.size() &&
            scanned_packets < max_packets_to_scan) {
@@ -1931,38 +1993,28 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::udp) {
-            const bool handled_quic = use_a
-                ? append_quic_stream_items_for_packet(
-                    rows,
-                    session,
-                    flow_index,
-                    connection.flow_a.key,
-                    bounded_direction_packets,
-                    packet,
-                    direction_text,
-                    payload_span,
-                    quic_stream_confirmed,
-                    quic_initial_secret_connection_id.has_value()
-                        ? std::span<const std::uint8_t>(
-                            quic_initial_secret_connection_id->data(),
-                            quic_initial_secret_connection_id->size())
-                        : std::span<const std::uint8_t> {}
-                )
-                : append_quic_stream_items_for_packet(
-                    rows,
-                    session,
-                    flow_index,
-                    connection.flow_b.key,
-                    bounded_direction_packets,
-                    packet,
-                    direction_text,
-                    payload_span,
-                    quic_stream_confirmed,
-                    quic_initial_secret_connection_id.has_value()
-                        ? std::span<const std::uint8_t>(
-                            quic_initial_secret_connection_id->data(),
-                            quic_initial_secret_connection_id->size())
-                        : std::span<const std::uint8_t> {}
+            const auto& directional_key = use_a ? flow_key_a : flow_key_b;
+            const bool handled_quic = directional_key.has_value() &&
+                std::visit(
+                    [&](const auto& typed_flow_key) {
+                        return append_quic_stream_items_for_packet(
+                            rows,
+                            session,
+                            flow_index,
+                            typed_flow_key,
+                            bounded_direction_packets,
+                            packet,
+                            direction_text,
+                            payload_span,
+                            quic_stream_confirmed,
+                            quic_initial_secret_connection_id.has_value()
+                                ? std::span<const std::uint8_t>(
+                                    quic_initial_secret_connection_id->data(),
+                                    quic_initial_secret_connection_id->size())
+                                : std::span<const std::uint8_t> {}
+                        );
+                    },
+                    *directional_key
                 );
 
             if (handled_quic) {
@@ -2251,31 +2303,29 @@ std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept;
 
 std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     const CaptureSession& session,
-    const ListedConnectionRef& connection,
+    const session_detail::CanonicalFlowMetadata& flow,
+    const session_detail::SelectedFlowPacketAccessSource& packet_source,
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan,
     const std::size_t target,
     const AnalysisSettings& analysis_settings,
     const bool strict_protocol_budget = false
 ) {
-    const auto flow_protocol = protocol_id(connection);
+    const auto flow_protocol = protocol_id(flow);
     std::vector<BuiltStreamRow> rows {};
 
-    const auto total_packets = connection.family == FlowAddressFamily::ipv4
-        ? connection_packet_count(*connection.ipv4)
-        : connection_packet_count(*connection.ipv6);
+    const auto total_packets = selected_flow_packet_count(packet_source);
     rows.reserve(std::min(target, total_packets));
 
     DirectionalStreamPolicy direction_policy_a {};
     DirectionalStreamPolicy direction_policy_b {};
-    const auto packet_source = make_selected_flow_packet_access_source(connection);
     const auto bounded_prefix = load_selected_flow_packet_prefix_window(packet_source, max_packets_to_scan);
     const auto direction_packets_a =
         std::span<const PacketRef>(bounded_prefix.packets_a.data(), bounded_prefix.packets_a.size());
     const auto direction_packets_b =
         std::span<const PacketRef>(bounded_prefix.packets_b.data(), bounded_prefix.packets_b.size());
     if (flow_protocol == ProtocolId::tcp) {
-        const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
+        const auto effective_hint = effective_protocol_hint(flow, analysis_settings);
         const auto probe_a = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_a);
         const auto probe_b = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_b);
         const auto tls_result_a = sniff_tls_prefix(probe_a.bytes);
@@ -2429,41 +2479,22 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     }
 
     if (rows.size() < target) {
-        if (connection.family == FlowAddressFamily::ipv4) {
-            append_connection_stream_items_bounded(
-                rows,
-                session,
-                flow_index,
-                *connection.ipv4,
-                std::span<const SelectedFlowWindowPacket>(
-                    bounded_prefix.merged_packets.data(),
-                    bounded_prefix.merged_packets.size()),
-                direction_packets_a,
-                direction_packets_b,
-                flow_protocol,
-                target,
-                max_packets_to_scan,
-                direction_policy_a,
-                direction_policy_b
-            );
-        } else {
-            append_connection_stream_items_bounded(
-                rows,
-                session,
-                flow_index,
-                *connection.ipv6,
-                std::span<const SelectedFlowWindowPacket>(
-                    bounded_prefix.merged_packets.data(),
-                    bounded_prefix.merged_packets.size()),
-                direction_packets_a,
-                direction_packets_b,
-                flow_protocol,
-                target,
-                max_packets_to_scan,
-                direction_policy_a,
-                direction_policy_b
-            );
-        }
+        append_connection_stream_items_bounded(
+            rows,
+            session,
+            flow_index,
+            flow,
+            std::span<const SelectedFlowWindowPacket>(
+                bounded_prefix.merged_packets.data(),
+                bounded_prefix.merged_packets.size()),
+            direction_packets_a,
+            direction_packets_b,
+            flow_protocol,
+            target,
+            max_packets_to_scan,
+            direction_policy_a,
+            direction_policy_b
+        );
     }
 
     std::stable_sort(rows.begin(), rows.end(), [](const BuiltStreamRow& left, const BuiltStreamRow& right) {
@@ -2983,6 +3014,31 @@ CaptureSession::make_unrecognized_packet_access_source_for_capture() const {
     );
 }
 
+std::optional<session_detail::CanonicalFlowMetadata> CaptureSession::selected_flow_metadata(
+    const std::size_t flow_index,
+    bool* listed_connections_cache_hit
+) const {
+    if (uses_v16_storage()) {
+        if (listed_connections_cache_hit != nullptr) {
+            *listed_connections_cache_hit = true;
+        }
+        if (flow_index >= v16_storage_->flows.size()) {
+            return std::nullopt;
+        }
+        return v16_storage_->flows[flow_index];
+    }
+
+    bool cache_hit = false;
+    const auto& connections = listed_connections(&cache_hit);
+    if (listed_connections_cache_hit != nullptr) {
+        *listed_connections_cache_hit = cache_hit;
+    }
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+    return session_detail::make_canonical_flow_metadata(flow_index, connections[flow_index]);
+}
+
 bool CaptureSession::has_capture() const noexcept {
     return has_loaded_state_;
 }
@@ -3497,31 +3553,35 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     }
 
     bool listed_connections_cache_hit = false;
-    const auto& connections = listed_connections(&listed_connections_cache_hit);
+    const auto flow_metadata = selected_flow_metadata(flow_index, &listed_connections_cache_hit);
     resolution.listed_connections_cache_hit = listed_connections_cache_hit;
-    resolution.listed_connections_called = !listed_connections_cache_hit;
-    if (flow_index >= connections.size()) {
+    resolution.listed_connections_called = !uses_v16_storage() && !listed_connections_cache_hit;
+    if (!flow_metadata.has_value()) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "invalid-flow-index";
         return resolution;
     }
 
-    const auto& connection = connections[flow_index];
-    if (protocol_id(connection) != ProtocolId::tcp) {
+    if (flow_metadata->protocol != ProtocolId::tcp) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "non-tcp";
+        return resolution;
+    }
+
+    auto packet_source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!packet_source) {
+        selected_flow_tcp_prefix_context_.reset();
+        resolution.result = "invalid-flow-index";
         return resolution;
     }
 
     SelectedFlowTcpPrefixContext context {};
     context.flow_index = flow_index;
     context.prepared_packet_window_count = max_packets_to_scan;
-    context.family = connection.family;
-    context.ipv4 = connection.ipv4;
-    context.ipv6 = connection.ipv6;
+    context.family = flow_metadata->family;
 
     auto prefix_window = load_selected_flow_packet_prefix_window(
-        make_selected_flow_packet_access_source(connection),
+        *packet_source,
         max_packets_to_scan
     );
     context.prefix_count_a = prefix_window.packets_a.size();
@@ -3635,8 +3695,7 @@ void CaptureSession::enrich_flow_analysis_sequence_preview(
         return;
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
+    if (!selected_flow_metadata(flow_index).has_value()) {
         return;
     }
 
@@ -3799,9 +3858,12 @@ void CaptureSession::prepare_selected_flow_packet_cache(
     }
     prepare_selected_flow_full_packet_cache(flow_index, prefix_packet_refs);
 
-    const auto flow_protocol = uses_v16_storage()
-        ? v16_storage_->flows[flow_index].protocol
-        : protocol_id(listed_connections()[flow_index]);
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    if (!flow_metadata.has_value()) {
+        selected_flow_packet_cache_.reset();
+        return;
+    }
+    const auto flow_protocol = protocol_id(*flow_metadata);
     if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp) {
         selected_flow_packet_cache_.reset();
         return;
@@ -4223,6 +4285,13 @@ std::string CaptureSession::protocol_path_compact_text(const ProtocolPathId prot
 std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
     const PacketRef& packet
 ) const {
+    return derive_selected_packet_byte_presentation(packet, std::nullopt);
+}
+
+std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
+    const PacketRef& packet,
+    const std::optional<std::size_t> flow_index
+) const {
     const auto packet_bytes = read_packet_data(packet);
     if (packet_bytes.empty()) {
         return std::nullopt;
@@ -4232,8 +4301,13 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
         return session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
-    const auto& connections = listed_connections();
-    const auto quic_flow_index = find_quic_flow_index_for_packet(connections, analysis_settings_, packet.packet_index);
+    std::optional<std::size_t> quic_flow_index {};
+    if (flow_index.has_value()) {
+        quic_flow_index = flow_index;
+    } else if (!uses_v16_storage()) {
+        const auto& connections = listed_connections();
+        quic_flow_index = find_quic_flow_index_for_packet(connections, analysis_settings_, packet.packet_index);
+    }
     auto quic_presentation = quic_flow_index.has_value()
         ? derive_quic_presentation_for_packet(*quic_flow_index, packet.packet_index)
         : std::optional<session_detail::QuicPresentationResult> {};
@@ -4292,14 +4366,14 @@ session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_select
         );
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    if (!flow_metadata.has_value()) {
         return make_unavailable(
             session_detail::StreamItemDataState::unavailable,
-            "The selected flow index is outside the current listed-connection range."
+            "The selected flow index is outside the current flow metadata range."
         );
     }
-    const auto flow_protocol = protocol_id(connections[flow_index]);
+    const auto flow_protocol = protocol_id(*flow_metadata);
 
     static_cast<void>(list_flow_stream_items_for_packet_prefix(flow_index, max_packets_to_scan, limit));
 
@@ -4468,7 +4542,25 @@ bool CaptureSession::export_selected_packet_byte_view(
     const std::filesystem::path& output_path,
     std::string* out_error_text
 ) const {
-    const auto presentation = derive_selected_packet_byte_presentation(packet);
+    return export_selected_packet_byte_view(
+        packet,
+        id,
+        format,
+        output_path,
+        std::nullopt,
+        out_error_text
+    );
+}
+
+bool CaptureSession::export_selected_packet_byte_view(
+    const PacketRef& packet,
+    const session_detail::SelectedPacketByteViewId& id,
+    const session_detail::ByteExportFormat format,
+    const std::filesystem::path& output_path,
+    const std::optional<std::size_t> flow_index,
+    std::string* out_error_text
+) const {
+    const auto presentation = derive_selected_packet_byte_presentation(packet, flow_index);
     if (!presentation.has_value()) {
         if (out_error_text != nullptr) {
             *out_error_text = "The selected packet byte view is unavailable for export.";
@@ -4592,16 +4684,26 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const 
         return std::nullopt;
     }
 
-    const auto& connections = listed_connections();
-    if (request.flow_index >= connections.size()) {
+    const auto flow_metadata = selected_flow_metadata(request.flow_index);
+    if (!flow_metadata.has_value() || protocol_id(*flow_metadata) != ProtocolId::tcp) {
         return std::nullopt;
     }
-    if (protocol_id(connections[request.flow_index]) != ProtocolId::tcp) {
+
+    auto packet_source = make_selected_flow_packet_access_source_for_flow(request.flow_index);
+    if (!packet_source) {
+        return std::nullopt;
+    }
+    const auto direction_packets = read_all_direction_packets(*packet_source, request.direction);
+    if (!direction_packets.has_value()) {
         return std::nullopt;
     }
 
     ReassemblyService service {};
-    return service.reassemble_tcp_payload(*this, request);
+    return service.reassemble_tcp_payload(
+        *this,
+        request,
+        std::span<const PacketRef>(direction_packets->data(), direction_packets->size())
+    );
 }
 std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
     const ReassemblyRequest& request,
@@ -4611,11 +4713,8 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
         return std::nullopt;
     }
 
-    const auto& connections = listed_connections();
-    if (request.flow_index >= connections.size()) {
-        return std::nullopt;
-    }
-    if (protocol_id(connections[request.flow_index]) != ProtocolId::tcp) {
+    const auto flow_metadata = selected_flow_metadata(request.flow_index);
+    if (!flow_metadata.has_value() || protocol_id(*flow_metadata) != ProtocolId::tcp) {
         return std::nullopt;
     }
 
@@ -4658,17 +4757,20 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         return std::nullopt;
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    if (!flow_metadata.has_value() || flow_metadata->protocol != ProtocolId::udp) {
         return std::nullopt;
     }
 
     constexpr std::size_t kOnDemandQuicHintPacketBudget = 4U;
     FlowHintService hint_service {analysis_settings_, true};
-    const auto packet_source = make_selected_flow_packet_access_source(connections[flow_index]);
+    const auto packet_source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!packet_source) {
+        return std::nullopt;
+    }
 
-    const auto try_direction = [&](const auto& flow_key, const Direction direction) -> std::optional<std::string> {
-        const auto direction_packets = packet_source.read_direction(direction, 0U, kOnDemandQuicHintPacketBudget);
+    const auto try_direction = [&](const FlowDirectionalKey& flow_key, const Direction direction) -> std::optional<std::string> {
+        const auto direction_packets = packet_source->read_direction(direction, 0U, kOnDemandQuicHintPacketBudget);
         if (!direction_packets) {
             return std::nullopt;
         }
@@ -4689,10 +4791,16 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
                 continue;
             }
 
-            const auto hint = hint_service.detect(
-                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-                packet.data_link_type,
-                flow_key);
+            const auto hint = std::visit(
+                [&](const auto& typed_flow_key) {
+                    return hint_service.detect(
+                        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                        packet.data_link_type,
+                        typed_flow_key
+                    );
+                },
+                flow_key
+            );
             if (!hint.service_hint.empty()) {
                 return hint.service_hint;
             }
@@ -4701,47 +4809,22 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         return std::nullopt;
     };
 
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        const auto& connection = *connections[flow_index].ipv4;
-        if (connection.key.protocol != ProtocolId::udp) {
-            return std::nullopt;
-        }
-
-        const auto try_flow =
-            [&](const FlowV4& flow, const bool has_flow, const Direction direction) -> std::optional<std::string> {
-            if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
-                return std::nullopt;
-            }
-            return try_direction(flow.key, direction);
-        };
-
-        if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a, Direction::a_to_b);
-            from_flow_a.has_value()) {
-            return from_flow_a;
-        }
-
-        return try_flow(connection.flow_b, connection.has_flow_b, Direction::b_to_a);
-    }
-
-    const auto& connection = *connections[flow_index].ipv6;
-    if (connection.key.protocol != ProtocolId::udp) {
-        return std::nullopt;
-    }
-
     const auto try_flow =
-        [&](const FlowV6& flow, const bool has_flow, const Direction direction) -> std::optional<std::string> {
-        if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
+        [&](const std::optional<FlowDirectionalKey>& flow_key, const Direction direction) -> std::optional<std::string> {
+        if (!flow_key.has_value() ||
+            directional_key_src_port(*flow_key) == 443U ||
+            directional_key_dst_port(*flow_key) != 443U) {
             return std::nullopt;
         }
-        return try_direction(flow.key, direction);
+        return try_direction(*flow_key, direction);
     };
 
-    if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a, Direction::a_to_b);
+    if (const auto from_flow_a = try_flow(directional_flow_key(*flow_metadata, Direction::a_to_b), Direction::a_to_b);
         from_flow_a.has_value()) {
         return from_flow_a;
     }
 
-    return try_flow(connection.flow_b, connection.has_flow_b, Direction::b_to_a);
+    return try_flow(directional_flow_key(*flow_metadata, Direction::b_to_a), Direction::b_to_a);
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet(
@@ -4766,11 +4849,9 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         return std::nullopt;
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
-        return std::nullopt;
-    }
-    if (effective_protocol_hint(connections[flow_index], analysis_settings_) != FlowProtocolHint::quic) {
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    if (!flow_metadata.has_value() ||
+        effective_protocol_hint(*flow_metadata, analysis_settings_) != FlowProtocolHint::quic) {
         return std::nullopt;
     }
 
@@ -4780,12 +4861,15 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         std::unique(selected_packet_indices.begin(), selected_packet_indices.end()),
         selected_packet_indices.end()
     );
-    const auto packet_source = make_selected_flow_packet_access_source(connections[flow_index]);
+    const auto packet_source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!packet_source) {
+        return std::nullopt;
+    }
 
     std::optional<Direction> selected_direction {};
     for (const auto packet_index : selected_packet_indices) {
         const auto packet_context = session_detail::selected_flow_packet_context_for_packet_index(
-            packet_source,
+            *packet_source,
             packet_index
         );
         if (!packet_context.packet.has_value()) {
@@ -4805,52 +4889,35 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         return std::nullopt;
     }
 
-    const auto build_for_connection =
-        [&](const auto& connection) -> std::optional<session_detail::QuicPresentationResult> {
-            if (connection.key.protocol != ProtocolId::udp) {
-                return std::nullopt;
-            }
+    if (flow_metadata->protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
 
-            const auto initial_secret_connection_id =
-                find_quic_client_initial_connection_id_for_packet_source(*this, packet_source, flow_index);
-            const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
-                ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
-                : std::span<const std::uint8_t> {};
+    const auto selected_flow_key = directional_flow_key(*flow_metadata, *selected_direction);
+    if (!selected_flow_key.has_value()) {
+        return std::nullopt;
+    }
 
-            if (*selected_direction == Direction::a_to_b) {
-                if (!connection.has_flow_a) {
-                    return std::nullopt;
-                }
-                return build_quic_presentation_for_selected_direction(
-                    *this,
-                    connection.flow_a.key,
-                    packet_source,
-                    Direction::a_to_b,
-                    selected_packet_indices,
-                    initial_secret_connection_id_span,
-                    flow_index
-                );
-            }
+    const auto initial_secret_connection_id =
+        find_quic_client_initial_connection_id_for_packet_source(*this, *packet_source, flow_index);
+    const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
+        ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
+        : std::span<const std::uint8_t> {};
 
-            if (!connection.has_flow_b) {
-                return std::nullopt;
-            }
+    return std::visit(
+        [&](const auto& flow_key) -> std::optional<session_detail::QuicPresentationResult> {
             return build_quic_presentation_for_selected_direction(
                 *this,
-                connection.flow_b.key,
-                packet_source,
-                Direction::b_to_a,
+                flow_key,
+                *packet_source,
+                *selected_direction,
                 selected_packet_indices,
                 initial_secret_connection_id_span,
                 flow_index
             );
-        };
-
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        return build_for_connection(*connections[flow_index].ipv4);
-    }
-
-    return build_for_connection(*connections[flow_index].ipv6);
+        },
+        *selected_flow_key
+    );
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_context(
@@ -5256,12 +5323,13 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
         return {};
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    auto packet_source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!flow_metadata.has_value() || !packet_source) {
         return {};
     }
 
-    const auto flow_protocol = protocol_id(connections[flow_index]);
+    const auto flow_protocol = protocol_id(*flow_metadata);
     if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp && flow_protocol != ProtocolId::arp) {
         return {};
     }
@@ -5271,7 +5339,8 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
     const auto max_packets_to_scan = flow_packet_count(flow_index);
     const auto built_rows = build_flow_stream_items_bounded(
         *this,
-        connections[flow_index],
+        *flow_metadata,
+        *packet_source,
         flow_index,
         max_packets_to_scan,
         target,
@@ -5305,12 +5374,13 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         prepare_selected_flow_packet_cache(flow_index, bounded_packet_budget);
     }
 
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
+    const auto flow_metadata = selected_flow_metadata(flow_index);
+    auto packet_source = make_selected_flow_packet_access_source_for_flow(flow_index);
+    if (!flow_metadata.has_value() || !packet_source) {
         return {};
     }
 
-    const auto flow_protocol = protocol_id(connections[flow_index]);
+    const auto flow_protocol = protocol_id(*flow_metadata);
     if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp && flow_protocol != ProtocolId::arp) {
         return {};
     }
@@ -5369,7 +5439,8 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     std::vector<BuiltStreamRow> built_rows {};
     if (const auto fresh_tls_rows = build_retained_tls_stream_items_bounded(
             *this,
-            connections[flow_index],
+            *flow_metadata,
+            *packet_source,
             flow_index,
             bounded_packet_budget,
             limit,
@@ -5379,7 +5450,8 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     } else {
         built_rows = build_flow_stream_items_bounded(
             *this,
-            connections[flow_index],
+            *flow_metadata,
+            *packet_source,
             flow_index,
             bounded_packet_budget,
             limit,
@@ -5551,6 +5623,18 @@ namespace {
     }
 
     packet_selection[static_cast<std::size_t>(packet.packet_index)] = 1U;
+    return true;
+}
+
+[[nodiscard]] bool mark_packet_index_for_smart_export(
+    std::vector<std::uint8_t>& packet_selection,
+    const std::uint64_t packet_index
+) {
+    if (!ensure_packet_marker_capacity(packet_selection, packet_index)) {
+        return false;
+    }
+
+    packet_selection[static_cast<std::size_t>(packet_index)] = 1U;
     return true;
 }
 
@@ -6225,39 +6309,39 @@ bool export_flow_info_csv_rows(
     return selected_packets;
 }
 
-[[nodiscard]] std::vector<PacketRef> collect_selected_smart_export_unrecognized_packets(
-    const std::vector<UnrecognizedPacketRecord>& records,
+[[nodiscard]] std::vector<std::uint64_t> collect_selected_smart_export_unrecognized_packet_indices(
+    const std::vector<session_detail::UnrecognizedPacketMetadataRow>& rows,
     const SmartPacketRetentionOptions& options
 ) {
-    if (records.empty()) {
+    if (rows.empty()) {
         return {};
     }
 
     if (options.base_mode == SmartFlowExportBaseMode::all_packets) {
-        std::vector<PacketRef> selected_packets {};
-        selected_packets.reserve(records.size());
-        for (const auto& record : records) {
-            selected_packets.push_back(record.packet);
+        std::vector<std::uint64_t> selected_packet_indices {};
+        selected_packet_indices.reserve(rows.size());
+        for (const auto& row : rows) {
+            selected_packet_indices.push_back(row.packet_index);
         }
-        return selected_packets;
+        return selected_packet_indices;
     }
 
     std::vector<std::size_t> selected_indices {};
-    selected_indices.reserve(records.size());
+    selected_indices.reserve(rows.size());
 
     std::size_t base_prefix_packet_count = 0U;
     if (options.base_mode == SmartFlowExportBaseMode::first_n_packets) {
         base_prefix_packet_count = static_cast<std::size_t>(
-            std::min<std::uint64_t>(options.first_n_packets, static_cast<std::uint64_t>(records.size()))
+            std::min<std::uint64_t>(options.first_n_packets, static_cast<std::uint64_t>(rows.size()))
         );
         for (std::size_t index = 0; index < base_prefix_packet_count; ++index) {
             selected_indices.push_back(index);
         }
     } else {
         std::uint64_t accumulated_original_bytes = 0U;
-        for (std::size_t index = 0; index < records.size(); ++index) {
+        for (std::size_t index = 0; index < rows.size(); ++index) {
             selected_indices.push_back(index);
-            accumulated_original_bytes += records[index].packet.original_length;
+            accumulated_original_bytes += rows[index].original_length;
             ++base_prefix_packet_count;
             if (accumulated_original_bytes >= options.first_m_original_bytes) {
                 break;
@@ -6266,12 +6350,12 @@ bool export_flow_info_csv_rows(
     }
 
     if (options.include_last_packet) {
-        selected_indices.push_back(records.size() - 1U);
+        selected_indices.push_back(rows.size() - 1U);
     }
 
-    if (options.include_every_kth_packet_after_base && options.every_kth_packet > 0U && base_prefix_packet_count < records.size()) {
+    if (options.include_every_kth_packet_after_base && options.every_kth_packet > 0U && base_prefix_packet_count < rows.size()) {
         const auto step = static_cast<std::size_t>(options.every_kth_packet);
-        for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < records.size(); after_base_index += step) {
+        for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < rows.size(); after_base_index += step) {
             selected_indices.push_back(base_prefix_packet_count + after_base_index - 1U);
         }
     }
@@ -6279,12 +6363,12 @@ bool export_flow_info_csv_rows(
     std::sort(selected_indices.begin(), selected_indices.end());
     selected_indices.erase(std::unique(selected_indices.begin(), selected_indices.end()), selected_indices.end());
 
-    std::vector<PacketRef> selected_packets {};
-    selected_packets.reserve(selected_indices.size());
+    std::vector<std::uint64_t> selected_packet_indices {};
+    selected_packet_indices.reserve(selected_indices.size());
     for (const auto index : selected_indices) {
-        selected_packets.push_back(records[index].packet);
+        selected_packet_indices.push_back(rows[index].packet_index);
     }
-    return selected_packets;
+    return selected_packet_indices;
 }
 
 }  // namespace
@@ -6469,7 +6553,23 @@ bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
     const SmartSingleFileExportOptions& export_options,
     std::string* out_error_text
 ) const {
-    if (!has_source_capture() || state_.unrecognized_packets.empty()) {
+    if (!has_source_capture()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No unrecognized packets available for smart export.";
+        }
+        return false;
+    }
+
+    auto source = make_unrecognized_packet_access_source_for_capture();
+    if (!source) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No unrecognized packets available for smart export.";
+        }
+        return false;
+    }
+
+    const auto count_result = source->row_count();
+    if (!count_result || count_result.row_count == 0U) {
         if (out_error_text != nullptr) {
             *out_error_text = "No unrecognized packets available for smart export.";
         }
@@ -6483,8 +6583,19 @@ bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
         return false;
     }
 
-    const auto selected_packets = collect_selected_smart_export_unrecognized_packets(state_.unrecognized_packets, options);
-    if (selected_packets.empty()) {
+    const auto metadata_result = source->read_metadata_range(0U, count_result.row_count);
+    if (!metadata_result) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to read unrecognized packet metadata for smart export.";
+        }
+        return false;
+    }
+
+    const auto selected_packet_indices = collect_selected_smart_export_unrecognized_packet_indices(
+        metadata_result.rows,
+        options
+    );
+    if (selected_packet_indices.empty()) {
         if (out_error_text != nullptr) {
             *out_error_text = "No packets were selected for smart export.";
         }
@@ -6492,8 +6603,8 @@ bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
     }
 
     std::vector<std::uint8_t> packet_selection {};
-    for (const auto& packet : selected_packets) {
-        if (!mark_packet_for_smart_export(packet_selection, packet)) {
+    for (const auto packet_index : selected_packet_indices) {
+        if (!mark_packet_index_for_smart_export(packet_selection, packet_index)) {
             if (out_error_text != nullptr) {
                 *out_error_text = "Smart export packet selection exceeded internal limits.";
             }
@@ -6897,7 +7008,10 @@ std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index)
 }
 
 SourcePacketLookupResult CaptureSession::lookup_source_packet(const std::uint64_t packet_index) const {
-    if (packet_index >= state_.summary.packet_count) {
+    const auto total_packet_count = state_.packet_statistics.total_packet_count != 0U
+        ? state_.packet_statistics.total_packet_count
+        : state_.summary.packet_count;
+    if (packet_index >= total_packet_count) {
         return SourcePacketLookupResult {
             .status = SourcePacketLookupStatus::out_of_range,
         };
@@ -6948,6 +7062,15 @@ SourcePacketLookupResult CaptureSession::lookup_source_packet(const std::uint64_
         state_.packet_locator,
         packet_index
     );
+}
+
+bool CaptureSession::is_unrecognized_packet_index(const std::uint64_t packet_index) const {
+    auto source = make_unrecognized_packet_access_source_for_capture();
+    if (!source) {
+        return false;
+    }
+    const auto lookup = source->find_packet_index(packet_index);
+    return lookup && lookup.row.has_value();
 }
 
 std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_context(
