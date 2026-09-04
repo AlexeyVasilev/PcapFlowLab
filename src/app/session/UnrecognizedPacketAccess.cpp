@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <istream>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -76,6 +77,33 @@ namespace {
         .captured_length = row.captured_length,
         .original_length = row.original_length,
     };
+}
+
+[[nodiscard]] UnrecognizedPacketMetadataReadResult read_v16_metadata_range_from_stream(
+    std::istream& stream,
+    const std::span<const CaptureIndexV16UnrecognizedDirectorySectionInfo> directory_sections,
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) {
+    UnrecognizedPacketMetadataReadResult result {};
+    const auto directory_rows = detail::read_v16_unrecognized_directory_range(
+        stream,
+        directory_sections,
+        offset,
+        limit
+    );
+    result.total_row_count = directory_rows.total_row_count;
+    if (!directory_rows) {
+        result.status = map_directory_status(directory_rows.status);
+        result.error_detail = directory_rows.error_detail;
+        return result;
+    }
+
+    result.rows.reserve(directory_rows.rows.size());
+    for (const auto& row : directory_rows.rows) {
+        result.rows.push_back(make_metadata_row(row));
+    }
+    return result;
 }
 
 }  // namespace
@@ -353,24 +381,12 @@ UnrecognizedPacketMetadataReadResult CaptureIndexV16UnrecognizedPacketAccessSour
         return result;
     }
 
-    const auto directory_rows = detail::read_v16_unrecognized_directory_range(
+    return read_v16_metadata_range_from_stream(
         stream,
         directory_sections_,
         offset,
         limit
     );
-    result.total_row_count = directory_rows.total_row_count;
-    if (!directory_rows) {
-        result.status = map_directory_status(directory_rows.status);
-        result.error_detail = directory_rows.error_detail;
-        return result;
-    }
-
-    result.rows.reserve(directory_rows.rows.size());
-    for (const auto& row : directory_rows.rows) {
-        result.rows.push_back(make_metadata_row(row));
-    }
-    return result;
 }
 
 UnrecognizedPacketMetadataLookupResult CaptureIndexV16UnrecognizedPacketAccessSource::find_packet_index(
@@ -385,11 +401,18 @@ UnrecognizedPacketMetadataLookupResult CaptureIndexV16UnrecognizedPacketAccessSo
         return result;
     }
 
+    std::ifstream stream(index_path_, std::ios::binary);
+    if (!stream.is_open()) {
+        result.status = UnrecognizedPacketAccessStatus::source_read_failed;
+        result.error_detail = "failed to open the v16 index for lazy unrecognized row access";
+        return result;
+    }
+
     std::uint64_t low = 0U;
     std::uint64_t high = total_row_count_;
     while (low < high) {
         const auto mid = low + ((high - low) / 2U);
-        const auto read_result = read_metadata_range(mid, 1U);
+        const auto read_result = read_v16_metadata_range_from_stream(stream, directory_sections_, mid, 1U);
         if (!read_result || read_result.rows.empty()) {
             result.status = read_result.status;
             result.error_detail = read_result.error_detail;

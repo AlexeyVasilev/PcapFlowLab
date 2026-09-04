@@ -1117,6 +1117,19 @@ std::vector<session_detail::UnrecognizedPacketAccessRow> expected_unrecognized_r
     return rows;
 }
 
+session_detail::UnrecognizedPacketMetadataRow expected_unrecognized_metadata_row(
+    const session_detail::UnrecognizedPacketAccessRow& row
+) {
+    return session_detail::UnrecognizedPacketMetadataRow {
+        .row_number = row.row_number,
+        .packet_index = row.packet_index,
+        .ts_sec = row.ts_sec,
+        .ts_usec = row.ts_usec,
+        .captured_length = row.captured_length,
+        .original_length = row.original_length,
+    };
+}
+
 void expect_unrecognized_access_rows_match(
     const std::vector<session_detail::UnrecognizedPacketAccessRow>& actual,
     const std::vector<session_detail::UnrecognizedPacketAccessRow>& expected
@@ -3049,6 +3062,36 @@ void run_index_format_tests() {
             }
         );
 
+        const auto first_lookup = v16_source.find_packet_index(expected_rows.front().packet_index);
+        PFL_REQUIRE(static_cast<bool>(first_lookup));
+        PFL_REQUIRE(first_lookup.row.has_value());
+        PFL_EXPECT(*first_lookup.row == expected_unrecognized_metadata_row(expected_rows.front()));
+
+        const auto middle_lookup = v16_source.find_packet_index(expected_rows[1].packet_index);
+        PFL_REQUIRE(static_cast<bool>(middle_lookup));
+        PFL_REQUIRE(middle_lookup.row.has_value());
+        PFL_EXPECT(*middle_lookup.row == expected_unrecognized_metadata_row(expected_rows[1]));
+
+        const auto last_lookup = v16_source.find_packet_index(expected_rows.back().packet_index);
+        PFL_REQUIRE(static_cast<bool>(last_lookup));
+        PFL_REQUIRE(last_lookup.row.has_value());
+        PFL_EXPECT(*last_lookup.row == expected_unrecognized_metadata_row(expected_rows.back()));
+
+        const auto missing_before = v16_source.find_packet_index(expected_rows.front().packet_index - 1U);
+        PFL_REQUIRE(static_cast<bool>(missing_before));
+        PFL_EXPECT(!missing_before.row.has_value());
+        PFL_EXPECT(missing_before.total_row_count == expected_rows.size());
+
+        const auto missing_between = v16_source.find_packet_index(
+            expected_rows[1].packet_index + ((expected_rows[2].packet_index - expected_rows[1].packet_index) / 2U)
+        );
+        PFL_REQUIRE(static_cast<bool>(missing_between));
+        PFL_EXPECT(!missing_between.row.has_value());
+
+        const auto missing_after = v16_source.find_packet_index(expected_rows.back().packet_index + 1U);
+        PFL_REQUIRE(static_cast<bool>(missing_after));
+        PFL_EXPECT(!missing_after.row.has_value());
+
         std::ifstream directory_stream(index_path, std::ios::binary);
         PFL_REQUIRE(directory_stream.is_open());
         const auto raw_directory_rows = detail::read_v16_unrecognized_directory_range(
@@ -3091,6 +3134,27 @@ void run_index_format_tests() {
         PFL_REQUIRE(static_cast<bool>(later_page_without_prior_decode));
         PFL_REQUIRE(later_page_without_prior_decode.rows.size() == 1U);
         PFL_EXPECT(later_page_without_prior_decode.rows.front().row_number == 2U);
+
+        auto lookup_corrupted_bytes = container_bytes;
+        write_le64_at(
+            lookup_corrupted_bytes,
+            first_directory_section->offset +
+                detail::kCaptureIndexStableSectionHeaderEncodedSize +
+                8U +
+                kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes,
+            99U
+        );
+        const auto lookup_corrupted_path =
+            write_temp_binary_file("pfl_v16_unrecognized_lookup_corrupted.idx", lookup_corrupted_bytes);
+        session_detail::CaptureIndexV16UnrecognizedPacketAccessSource lookup_corrupted_source(
+            lookup_corrupted_path,
+            decoded_metadata
+        );
+        const auto malformed_lookup = lookup_corrupted_source.find_packet_index(expected_rows[1].packet_index);
+        PFL_EXPECT(
+            malformed_lookup.status ==
+            session_detail::UnrecognizedPacketAccessStatus::malformed_directory);
+        PFL_EXPECT(!malformed_lookup.error_detail.empty());
 
         const auto empty_tail = v16_source.read_range(expected_rows.size(), 8U);
         PFL_REQUIRE(static_cast<bool>(empty_tail));
