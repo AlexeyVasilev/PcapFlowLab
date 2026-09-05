@@ -39,6 +39,8 @@ struct SummaryCommandOptions {
     std::optional<std::filesystem::path> out_index_path {};
     std::optional<std::filesystem::path> out_flows_list_path {};
     std::optional<std::filesystem::path> out_protocol_path_tree_path {};
+    std::optional<std::filesystem::path> out_statistics_html_path {};
+    std::optional<std::filesystem::path> out_statistics_markdown_path {};
     SummaryCommandProgressMode progress_mode {SummaryCommandProgressMode::auto_mode};
     bool force {false};
 };

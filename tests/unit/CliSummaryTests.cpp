@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/frontend/FrontendStatisticsOverview.h"
+#include "app/frontend/FrontendStatisticsReport.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/SummaryCommand.h"
@@ -25,6 +27,59 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 bool contains_text(const std::string_view haystack, const std::string_view needle) {
     return haystack.find(needle) != std::string_view::npos;
+}
+
+bool contains_text_in_order(
+    const std::string_view haystack,
+    const std::vector<std::string_view>& needles
+) {
+    std::size_t offset = 0U;
+    for (const auto needle : needles) {
+        const auto found = haystack.find(needle, offset);
+        if (found == std::string_view::npos) {
+            return false;
+        }
+        offset = found + needle.size();
+    }
+    return true;
+}
+
+bool section_contains_text(
+    const std::string_view haystack,
+    const std::string_view section_heading,
+    const std::string_view next_section_heading,
+    const std::string_view needle
+) {
+    const auto section_begin = haystack.find(section_heading);
+    if (section_begin == std::string_view::npos) {
+        return false;
+    }
+    const auto content_begin = section_begin + section_heading.size();
+    const auto section_end = haystack.find(next_section_heading, content_begin);
+    const auto content_end = section_end == std::string_view::npos ? haystack.size() : section_end;
+    return haystack.substr(content_begin, content_end - content_begin).find(needle) != std::string_view::npos;
+}
+
+bool contains_markdown_heading_line(
+    const std::string_view haystack,
+    const std::string_view heading
+) {
+    std::size_t offset = 0U;
+    while (offset <= haystack.size()) {
+        const auto line_end = haystack.find('\n', offset);
+        const auto line = haystack.substr(
+            offset,
+            line_end == std::string_view::npos ? haystack.size() - offset : line_end - offset
+        );
+        if (line == heading) {
+            return true;
+        }
+        if (line_end == std::string_view::npos) {
+            return false;
+        }
+        offset = line_end + 1U;
+    }
+    return false;
 }
 
 constexpr std::string_view kSharedUnavailableText {"—"};
@@ -98,6 +153,15 @@ std::vector<std::string> read_text_file_lines(const std::filesystem::path& path)
         lines.push_back(line);
     }
     return lines;
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+    return std::string {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
 }
 
 std::vector<std::string> split_csv_line(const std::string& line) {
@@ -403,6 +467,8 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "--out-index <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-flows-list <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-protocol-path-tree <path>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--out-statistics-html <path>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--out-statistics-markdown <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--progress <auto|on|off>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--force"));
         PFL_EXPECT(contains_text(result.stdout_text, "-h, --help"));
@@ -594,6 +660,50 @@ void expect_summary_dispatch_and_parse_rules() {
         PFL_REQUIRE(parse_result.options.has_value());
         PFL_REQUIRE(parse_result.options->out_flows_list_path.has_value());
         PFL_EXPECT(parse_result.options->out_flows_list_path->filename() == "flows.csv");
+    }
+
+    {
+        const std::vector<std::string_view> args {
+            "capture.pcap",
+            "--out-statistics-html",
+            "statistics.html",
+            "--out-statistics-markdown",
+            "statistics.md",
+        };
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_REQUIRE(parse_result.options->out_statistics_html_path.has_value());
+        PFL_REQUIRE(parse_result.options->out_statistics_markdown_path.has_value());
+        PFL_EXPECT(parse_result.options->out_statistics_html_path->filename() == "statistics.html");
+        PFL_EXPECT(parse_result.options->out_statistics_markdown_path->filename() == "statistics.md");
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--out-statistics-html"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "--out-statistics-html requires a path"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--out-statistics-markdown"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "--out-statistics-markdown requires a path"));
+    }
+
+    {
+        const std::vector<std::string_view> args {
+            "capture.pcap",
+            "--out-statistics-html",
+            "a.html",
+            "--out-statistics-html",
+            "b.html",
+        };
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Duplicate --out-statistics-html"));
     }
 
     {
@@ -1233,6 +1343,275 @@ void expect_protocol_path_summary_execution() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Protocol Path Tree"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Mode: Kind overview"));
     PFL_EXPECT(!contains_text(execution_result.stdout_text, "additional rows not shown"));
+}
+
+void expect_statistics_report_rendering_escaping_contracts() {
+    {
+        FrontendStatisticsReportInput input {};
+        input.metadata = FrontendStatisticsReportMetadata {
+            .application_name = "Pcap Flow Lab",
+            .application_version = "9.9.9-test",
+            .client_name = "Qt",
+            .generated_at_utc = "2026-03-22 12:27:32 UTC",
+            .statistics_scope = "Partial",
+            .index_revision = std::optional<std::uint32_t> {16U},
+        };
+        const auto report = build_frontend_statistics_report_data(input);
+        const auto markdown = render_frontend_statistics_report_markdown(report);
+        const auto html = render_frontend_statistics_report_html(report);
+        PFL_EXPECT(contains_text(markdown, "## Report Information"));
+        PFL_EXPECT(contains_text(markdown, "| Application | Pcap Flow Lab |"));
+        PFL_EXPECT(contains_text(markdown, "| Version | 9.9.9-test |"));
+        PFL_EXPECT(contains_text(markdown, "| Client | Qt |"));
+        PFL_EXPECT(contains_text(markdown, "| Generated at | 2026-03-22 12:27:32 UTC |"));
+        PFL_EXPECT(contains_text(markdown, "| Statistics scope | Partial |"));
+        PFL_EXPECT(contains_text(markdown, "| Index revision | 16 |"));
+        PFL_EXPECT(contains_text(html, "<th>Application</th><td>Pcap Flow Lab</td>"));
+        PFL_EXPECT(contains_text(html, "<th>Client</th><td>Qt</td>"));
+        PFL_EXPECT(contains_text(html, "<th>Generated at</th><td>2026-03-22 12:27:32 UTC</td>"));
+    }
+
+    const FrontendStatisticsReportData report {
+        .title = "Escaping <Report> & \"Quotes\"",
+        .sections = {
+            FrontendStatisticsReportSection {
+                .title = "Report Information",
+                .fields = {
+                    {
+                        .name = "Generated at",
+                        .value = "2026-03-22 12:27:32 UTC",
+                    },
+                    {
+                        .name = "Pipe | field",
+                        .value = "value | with\nline",
+                    },
+                    {
+                        .name = "Unsafe HTML",
+                        .value = "<script>alert('x') & more</script>",
+                    },
+                },
+                .tables = {
+                    FrontendStatisticsReportTable {
+                        .title = "Escaped Table",
+                        .headers = {"Name | Header", "Value"},
+                        .rows = {
+                            {"alpha | beta", "line 1\nline 2"},
+                        },
+                    },
+                },
+            },
+        },
+    };
+
+    const auto markdown = render_frontend_statistics_report_markdown(report);
+    PFL_EXPECT(contains_text(markdown, "Pipe \\| field"));
+    PFL_EXPECT(contains_text(markdown, "value \\| with line"));
+    PFL_EXPECT(contains_text(markdown, "2026-03-22 12:27:32 UTC"));
+    PFL_EXPECT(contains_text(markdown, "Name \\| Header"));
+    PFL_EXPECT(contains_text(markdown, "alpha \\| beta"));
+    PFL_EXPECT(!contains_text(markdown, "| value | with"));
+
+    const auto html = render_frontend_statistics_report_html(report);
+    PFL_EXPECT(contains_text(html, "&lt;Report&gt;"));
+    PFL_EXPECT(contains_text(html, "&quot;Quotes&quot;"));
+    PFL_EXPECT(contains_text(html, "Report Information"));
+    PFL_EXPECT(contains_text(html, "2026-03-22 12:27:32 UTC"));
+    PFL_EXPECT(contains_text(html, "&lt;script&gt;alert(&#39;x&#39;) &amp; more&lt;/script&gt;"));
+    PFL_EXPECT(!contains_text(html, "<script>"));
+}
+
+void expect_statistics_report_side_output_contracts() {
+    const auto capture_path = build_extended_summary_capture_path();
+    const auto markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report.md";
+    const auto html_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report.html";
+    std::filesystem::remove(markdown_path);
+    std::filesystem::remove(html_path);
+
+    cli::SummaryCommandOptions baseline_options {};
+    baseline_options.input_path = capture_path;
+    const auto baseline_result = cli::execute_summary_command(baseline_options);
+    PFL_REQUIRE(baseline_result.exit_code == 0);
+
+    cli::SummaryCommandOptions report_options {};
+    report_options.input_path = capture_path;
+    report_options.out_statistics_markdown_path = markdown_path;
+    report_options.out_statistics_html_path = html_path;
+    const auto report_result = cli::execute_summary_command(report_options);
+    PFL_EXPECT(report_result.exit_code == 0);
+    PFL_EXPECT(report_result.stdout_text == baseline_result.stdout_text);
+    PFL_EXPECT(contains_text(report_result.stderr_text, "Statistics Markdown report written to:"));
+    PFL_EXPECT(contains_text(report_result.stderr_text, "Statistics HTML report written to:"));
+
+    const auto markdown = read_text_file(markdown_path);
+    const auto html = read_text_file(html_path);
+
+    const std::vector<std::string_view> section_order {
+        "## Report Information",
+        "## Input",
+        "## Overview",
+        "## Capture Time",
+        "## Protocol Summary",
+        "## Unrecognized Packets",
+        "## Packet Size Distribution",
+        "## Flows by Packet Count",
+        "## Detected Protocol Hints",
+        "## Capture Metrics",
+        "## Flow Characteristics",
+        "## Direction Distribution",
+        "## TCP Flags",
+        "## QUIC and TLS",
+        "## Top Flows by Original Bytes",
+        "## Top Endpoints and Ports",
+        "## Protocol Path Statistics - Identity Tree",
+    };
+    const std::vector<std::string_view> html_section_order {
+        "<h2>Report Information</h2>",
+        "<h2>Input</h2>",
+        "<h2>Overview</h2>",
+        "<h2>Capture Time</h2>",
+        "<h2>Protocol Summary</h2>",
+        "<h2>Unrecognized Packets</h2>",
+        "<h2>Packet Size Distribution</h2>",
+        "<h2>Flows by Packet Count</h2>",
+        "<h2>Detected Protocol Hints</h2>",
+        "<h2>Capture Metrics</h2>",
+        "<h2>Flow Characteristics</h2>",
+        "<h2>Direction Distribution</h2>",
+        "<h2>TCP Flags</h2>",
+        "<h2>QUIC and TLS</h2>",
+        "<h2>Top Flows by Original Bytes</h2>",
+        "<h2>Top Endpoints and Ports</h2>",
+        "<h2>Protocol Path Statistics - Identity Tree</h2>",
+    };
+
+    PFL_EXPECT(contains_text(markdown, "# PcapFlowLab Statistics Report"));
+    PFL_EXPECT(contains_text_in_order(markdown, section_order));
+    PFL_EXPECT(contains_text(markdown, "| Application | Pcap Flow Lab |"));
+    PFL_EXPECT(contains_text(markdown, std::string {"| Version | "} + PFL_APP_VERSION + " |"));
+    PFL_EXPECT(contains_text(markdown, "| Client | CLI |"));
+    PFL_EXPECT(contains_text(markdown, "| Generated at |"));
+    PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+    PFL_EXPECT(contains_text(markdown, "### Transport"));
+    PFL_EXPECT(contains_text(markdown, "### IP Family"));
+    PFL_EXPECT(contains_text(markdown, "### QUIC Recognition"));
+    PFL_EXPECT(contains_text(markdown, "### QUIC Versions"));
+    PFL_EXPECT(contains_text(markdown, "### TLS Recognition"));
+    PFL_EXPECT(contains_text(markdown, "### TLS Versions"));
+    PFL_EXPECT(!section_contains_text(markdown, "## Overview", "## Capture Time", "Unrecognized packets"));
+    PFL_EXPECT(!contains_markdown_heading_line(markdown, "## Transport Summary"));
+    PFL_EXPECT(!contains_markdown_heading_line(markdown, "## IP Family Summary"));
+    PFL_EXPECT(!contains_markdown_heading_line(markdown, "## QUIC Recognition"));
+    PFL_EXPECT(!contains_markdown_heading_line(markdown, "## TLS Recognition"));
+    PFL_EXPECT(!contains_text(markdown, "### TCP Flags"));
+    PFL_EXPECT(!contains_text(markdown, "### Detected Protocol Hints"));
+    PFL_EXPECT(!contains_text(markdown, "### Top Flows by Original Bytes"));
+    PFL_EXPECT(!contains_text(markdown, "### Identity Tree"));
+    PFL_EXPECT(contains_text(markdown, capture_path.filename().string()));
+    PFL_EXPECT(contains_text(markdown, "Ethernet"));
+    PFL_EXPECT(!contains_text(markdown, "Kind overview"));
+    PFL_EXPECT(!contains_text(markdown, "Terminal paths"));
+    const auto markdown_protocol_path_position =
+        markdown.rfind("## Protocol Path Statistics - Identity Tree");
+    PFL_REQUIRE(markdown_protocol_path_position != std::string::npos);
+    PFL_EXPECT(markdown.find("\n## ", markdown_protocol_path_position + 1U) == std::string::npos);
+
+    PFL_EXPECT(contains_text(html, "<!doctype html>"));
+    PFL_EXPECT(contains_text(html, "<h1>PcapFlowLab Statistics Report</h1>"));
+    PFL_EXPECT(contains_text_in_order(html, html_section_order));
+    PFL_EXPECT(contains_text(html, "<th>Application</th><td>Pcap Flow Lab</td>"));
+    PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Client</th><td>CLI</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+    PFL_EXPECT(contains_text(html, "<h3>Transport</h3>"));
+    PFL_EXPECT(contains_text(html, "<h3>IP Family</h3>"));
+    PFL_EXPECT(contains_text(html, "<h3>QUIC Recognition</h3>"));
+    PFL_EXPECT(contains_text(html, "<h3>TLS Recognition</h3>"));
+    PFL_EXPECT(!section_contains_text(html, "<h2>Overview</h2>", "<h2>Capture Time</h2>", "Unrecognized packets"));
+    PFL_EXPECT(!contains_text(html, "<h2>Transport Summary</h2>"));
+    PFL_EXPECT(!contains_text(html, "<h2>IP Family Summary</h2>"));
+    PFL_EXPECT(!contains_text(html, "<h2>QUIC Recognition</h2>"));
+    PFL_EXPECT(!contains_text(html, "<h2>TLS Recognition</h2>"));
+    PFL_EXPECT(!contains_text(html, "<h3>TCP Flags</h3>"));
+    PFL_EXPECT(!contains_text(html, "<h3>Detected Protocol Hints</h3>"));
+    PFL_EXPECT(!contains_text(html, "<h3>Top Flows by Original Bytes</h3>"));
+    PFL_EXPECT(!contains_text(html, "<h3>Identity Tree</h3>"));
+    PFL_EXPECT(contains_text(html, capture_path.filename().string()));
+    PFL_EXPECT(!contains_text(html, "Kind overview"));
+    PFL_EXPECT(!contains_text(html, "Terminal paths"));
+    const auto html_protocol_path_position =
+        html.rfind("<h2>Protocol Path Statistics - Identity Tree</h2>");
+    PFL_REQUIRE(html_protocol_path_position != std::string::npos);
+    PFL_EXPECT(html.find("<h2>", html_protocol_path_position + 1U) == std::string::npos);
+
+    FrontendSessionAdapter raw_adapter {};
+    PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_fast.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+    append_binary_bytes(index_path, std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU});
+    std::filesystem::remove(capture_path);
+
+    const auto index_markdown_path =
+        std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_fast.md";
+    std::filesystem::remove(index_markdown_path);
+
+    cli::SummaryCommandOptions index_report_options {};
+    index_report_options.input_path = index_path;
+    index_report_options.out_statistics_markdown_path = index_markdown_path;
+    const auto index_report_result = cli::execute_summary_command(index_report_options);
+    PFL_EXPECT(index_report_result.exit_code == 0);
+    PFL_EXPECT(contains_text(index_report_result.stdout_text, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(index_report_result.stderr_text, "Statistics Markdown report written to:"));
+    PFL_EXPECT(!contains_text(index_report_result.stderr_text, "trailing"));
+
+    const auto index_markdown = read_text_file(index_markdown_path);
+    PFL_EXPECT(contains_text(index_markdown, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(index_markdown, "Recorded source capture"));
+    PFL_EXPECT(contains_text(index_markdown, "| Client | CLI |"));
+    PFL_EXPECT(contains_text(index_markdown, "| Statistics scope | Complete |"));
+    PFL_EXPECT(contains_text(index_markdown, "| Index revision |"));
+    PFL_EXPECT(contains_text(index_markdown, "Protocol Path Statistics - Identity Tree"));
+    PFL_EXPECT(!contains_text(index_markdown, "Kind overview"));
+    PFL_EXPECT(!contains_text(index_markdown, "Terminal paths"));
+
+    {
+        const auto existing_markdown_path =
+            write_temp_text_file("pfl_cli_statistics_report_existing.md", "old");
+        cli::SummaryCommandOptions existing_options {};
+        existing_options.input_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+        existing_options.out_statistics_markdown_path = existing_markdown_path;
+        const auto existing_result = cli::execute_summary_command(existing_options);
+        PFL_EXPECT(existing_result.exit_code == 1);
+        PFL_EXPECT(contains_text(existing_result.stderr_text, "--out-statistics-markdown already exists"));
+
+        cli::SummaryCommandOptions force_options {};
+        force_options.input_path = existing_options.input_path;
+        force_options.out_statistics_markdown_path = existing_markdown_path;
+        force_options.force = true;
+        const auto force_result = cli::execute_summary_command(force_options);
+        PFL_EXPECT(force_result.exit_code == 0);
+        PFL_EXPECT(contains_text(force_result.stderr_text, "Statistics Markdown report written to:"));
+    }
+
+    {
+        cli::SummaryCommandOptions directory_target_options {};
+        directory_target_options.input_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+        directory_target_options.out_statistics_html_path = std::filesystem::temp_directory_path();
+        const auto directory_target_result = cli::execute_summary_command(directory_target_options);
+        PFL_EXPECT(directory_target_result.exit_code == 1);
+        PFL_EXPECT(contains_text(directory_target_result.stderr_text, "--out-statistics-html must be a regular file path"));
+    }
+
+    {
+        cli::SummaryCommandOptions conflict_options {};
+        conflict_options.input_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+        conflict_options.out_statistics_html_path = html_path;
+        conflict_options.out_statistics_markdown_path = html_path;
+        conflict_options.force = true;
+        const auto conflict_result = cli::execute_summary_command(conflict_options);
+        PFL_EXPECT(conflict_result.exit_code == 1);
+        PFL_EXPECT(contains_text(conflict_result.stderr_text, "Summary side outputs must target distinct paths."));
+    }
 }
 
 void expect_settings_file_contracts() {
@@ -1954,6 +2333,8 @@ void run_cli_summary_tests() {
     expect_top_flow_service_cli_rendering();
     expect_protocol_path_preview_rendering();
     expect_protocol_path_summary_execution();
+    expect_statistics_report_rendering_escaping_contracts();
+    expect_statistics_report_side_output_contracts();
     expect_settings_file_contracts();
     expect_index_output_contracts();
     expect_protocol_path_export_contracts();

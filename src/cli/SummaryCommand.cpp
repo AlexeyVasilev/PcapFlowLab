@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -10,6 +14,7 @@
 
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/frontend/FrontendStatisticsOverview.h"
+#include "app/frontend/FrontendStatisticsReport.h"
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -18,6 +23,7 @@
 #include "cli/FlowsCommand.h"
 #include "cli/PacketInfoCommand.h"
 #include "../../core/open_context.h"
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 
@@ -51,6 +57,8 @@ constexpr std::array<std::string_view, 2> kHelpOptions {
 
 constexpr std::string_view kSharedUnavailableText {"—"};
 constexpr std::string_view kCliUnavailableText {"-"};
+constexpr std::size_t kStatisticsReportTopEndpointPortLimit =
+    kCaptureStatisticsSnapshotTopEndpointCapacity;
 
 struct TableColumn {
     std::string header {};
@@ -112,6 +120,8 @@ std::string render_summary_examples() {
     out << "  pcap-flow-lab summary capture.idx --protocol-path-tree --protocol-path-mode identity-tree\n";
     out << "  pcap-flow-lab summary capture.pcap --out-index capture.pflidx\n";
     out << "  pcap-flow-lab summary capture.idx --out-protocol-path-tree protocol-path.txt\n";
+    out << "  pcap-flow-lab summary capture.idx --out-statistics-html statistics.html\n";
+    out << "  pcap-flow-lab summary capture.idx --out-statistics-markdown statistics.md\n";
     return out.str();
 }
 
@@ -372,13 +382,16 @@ std::string render_basic_summary_text(
     return out.str();
 }
 
-SummaryStatisticsDtos build_summary_statistics_dtos(const FrontendSessionAdapter& adapter) {
+SummaryStatisticsDtos build_summary_statistics_dtos(
+    const FrontendSessionAdapter& adapter,
+    const std::size_t top_endpoint_port_limit = 5U
+) {
     return SummaryStatisticsDtos {
         .packet_size_statistics = adapter.get_capture_packet_size_statistics(),
         .flow_packet_count_histogram = adapter.get_flow_packet_count_histogram(),
         .protocol_hint_statistics = adapter.get_protocol_hint_statistics(),
         .quic_tls_statistics = adapter.get_quic_tls_statistics(),
-        .top_endpoint_port_statistics = adapter.get_top_endpoint_port_statistics(5U),
+        .top_endpoint_port_statistics = adapter.get_top_endpoint_port_statistics(top_endpoint_port_limit),
     };
 }
 
@@ -582,7 +595,8 @@ FrontendOverviewDto build_fast_v16_overview(
 }
 
 SummaryStatisticsDtos build_fast_v16_summary_statistics_dtos(
-    const detail::CaptureIndexV16FastStatisticsTier& tier
+    const detail::CaptureIndexV16FastStatisticsTier& tier,
+    const std::size_t top_endpoint_port_limit = 5U
 ) {
     const auto packet_statistics =
         session_detail::project_packet_statistics_from_snapshot(tier.capture_statistics_snapshot);
@@ -591,7 +605,8 @@ SummaryStatisticsDtos build_fast_v16_summary_statistics_dtos(
     const AnalysisSettings analysis_settings {};
     const auto protocol_summary =
         session_detail::project_protocol_summary(general_statistics, analysis_settings.use_possible_tls_quic);
-    const auto top_summary = session_detail::slice_top_summary(general_statistics.top_summary, 5U);
+    const auto top_summary =
+        session_detail::slice_top_summary(general_statistics.top_summary, top_endpoint_port_limit);
 
     return SummaryStatisticsDtos {
         .packet_size_statistics = build_frontend_capture_packet_size_statistics(packet_statistics),
@@ -605,7 +620,7 @@ SummaryStatisticsDtos build_fast_v16_summary_statistics_dtos(
         },
         .top_endpoint_port_statistics = FrontendTopEndpointPortStatisticsDto {
             .has_capture = true,
-            .limit = 5U,
+            .limit = top_endpoint_port_limit,
             .top_endpoints = build_frontend_top_endpoints(top_summary),
             .top_ports = build_frontend_top_ports(top_summary),
             .top_flows = build_frontend_top_flows(
@@ -618,6 +633,81 @@ SummaryStatisticsDtos build_fast_v16_summary_statistics_dtos(
             ),
         },
     };
+}
+
+bool summary_statistics_report_requested(const SummaryCommandOptions& options) noexcept {
+    return options.out_statistics_html_path.has_value() ||
+        options.out_statistics_markdown_path.has_value();
+}
+
+std::string format_report_generation_timestamp_utc(const std::chrono::system_clock::time_point timestamp) {
+    const auto time = std::chrono::system_clock::to_time_t(timestamp);
+    std::tm utc {};
+#if defined(_WIN32)
+    gmtime_s(&utc, &time);
+#else
+    gmtime_r(&time, &utc);
+#endif
+    char buffer[32] {};
+    if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S UTC", &utc) == 0U) {
+        return {};
+    }
+    return buffer;
+}
+
+std::string statistics_report_scope_text(const FrontendOverviewDto& overview) {
+    return overview.statistics_partial_open_warning_text.empty() ? "Complete" : "Partial";
+}
+
+FrontendStatisticsReportMetadata make_cli_statistics_report_metadata(
+    const FrontendOverviewDto& overview,
+    const std::optional<std::uint32_t> index_revision = std::nullopt
+) {
+    return FrontendStatisticsReportMetadata {
+        .application_name = "Pcap Flow Lab",
+        .application_version = PFL_APP_VERSION,
+        .client_name = "CLI",
+        .generated_at_utc = format_report_generation_timestamp_utc(std::chrono::system_clock::now()),
+        .statistics_scope = statistics_report_scope_text(overview),
+        .index_revision = index_revision,
+    };
+}
+
+FrontendStatisticsReportInput make_statistics_report_input(
+    FrontendStatisticsReportMetadata metadata,
+    FrontendOverviewDto overview,
+    SummaryStatisticsDtos statistics,
+    std::vector<FrontendProtocolPathStatsDto> protocol_path_identity_tree
+) {
+    return FrontendStatisticsReportInput {
+        .metadata = std::move(metadata),
+        .overview = std::move(overview),
+        .packet_size_statistics = std::move(statistics.packet_size_statistics),
+        .flow_packet_count_histogram = std::move(statistics.flow_packet_count_histogram),
+        .protocol_hint_statistics = std::move(statistics.protocol_hint_statistics),
+        .quic_tls_statistics = std::move(statistics.quic_tls_statistics),
+        .top_endpoint_port_statistics = std::move(statistics.top_endpoint_port_statistics),
+        .protocol_path_identity_tree = std::move(protocol_path_identity_tree),
+    };
+}
+
+bool write_text_file(
+    const std::filesystem::path& path,
+    const std::string& text,
+    const std::string_view error_context,
+    std::string& error_text
+) {
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        error_text = std::string {error_context} + ": " + path.string();
+        return false;
+    }
+    stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!stream.good()) {
+        error_text = std::string {error_context} + ": " + path.string();
+        return false;
+    }
+    return true;
 }
 
 std::string render_extended_summary_text(
@@ -1062,7 +1152,7 @@ std::string render_extended_summary_text(
 }
 
 OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& options) {
-    std::array<CliOutputTarget, 3> outputs {};
+    std::array<CliOutputTarget, 5> outputs {};
     std::size_t output_count = 0U;
     if (options.out_index_path.has_value()) {
         outputs[output_count++] = CliOutputTarget {
@@ -1080,6 +1170,18 @@ OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& option
         outputs[output_count++] = CliOutputTarget {
             .label = "--out-protocol-path-tree",
             .path = *options.out_protocol_path_tree_path,
+        };
+    }
+    if (options.out_statistics_html_path.has_value()) {
+        outputs[output_count++] = CliOutputTarget {
+            .label = "--out-statistics-html",
+            .path = *options.out_statistics_html_path,
+        };
+    }
+    if (options.out_statistics_markdown_path.has_value()) {
+        outputs[output_count++] = CliOutputTarget {
+            .label = "--out-statistics-markdown",
+            .path = *options.out_statistics_markdown_path,
         };
     }
 
@@ -1187,6 +1289,9 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
         fast_tier
     );
     const auto statistics = build_fast_v16_summary_statistics_dtos(fast_tier);
+    const auto report_statistics = summary_statistics_report_requested(options)
+        ? build_fast_v16_summary_statistics_dtos(fast_tier, kStatisticsReportTopEndpointPortLimit)
+        : SummaryStatisticsDtos {};
 
     std::ostringstream stdout_builder {};
     stdout_builder << render_basic_summary_text(overview, false);
@@ -1228,6 +1333,55 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
             };
         }
         stderr_text += "Protocol Path Tree written to: " + options.out_protocol_path_tree_path->string() + '\n';
+    }
+
+    if (summary_statistics_report_requested(options)) {
+        const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
+            make_cli_statistics_report_metadata(overview, read_result.header.index_revision),
+            overview,
+            report_statistics,
+            build_frontend_protocol_path_statistics(
+                build_fast_protocol_path_summary(fast_tier, ProtocolPathStatisticsMode::identity_tree)
+            )
+        ));
+
+        if (options.out_statistics_markdown_path.has_value()) {
+            const auto markdown = render_frontend_statistics_report_markdown(report);
+            std::string error_text {};
+            if (!write_text_file(
+                    *options.out_statistics_markdown_path,
+                    markdown,
+                    "Failed to write Statistics Markdown report",
+                    error_text)) {
+                stderr_text += error_text + '\n';
+                return {
+                    .exit_code = 1,
+                    .stdout_text = stdout_builder.str(),
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+            stderr_text += "Statistics Markdown report written to: " +
+                options.out_statistics_markdown_path->string() + '\n';
+        }
+
+        if (options.out_statistics_html_path.has_value()) {
+            const auto html = render_frontend_statistics_report_html(report);
+            std::string error_text {};
+            if (!write_text_file(
+                    *options.out_statistics_html_path,
+                    html,
+                    "Failed to write Statistics HTML report",
+                    error_text)) {
+                stderr_text += error_text + '\n';
+                return {
+                    .exit_code = 1,
+                    .stdout_text = stdout_builder.str(),
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+            stderr_text += "Statistics HTML report written to: " +
+                options.out_statistics_html_path->string() + '\n';
+        }
     }
 
     auto stdout_text = stdout_builder.str();
@@ -1389,6 +1543,53 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
         stderr_text += "Protocol Path Tree written to: " + export_result.output_path + '\n';
     }
 
+    if (summary_statistics_report_requested(options)) {
+        const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
+            make_cli_statistics_report_metadata(overview),
+            overview,
+            build_summary_statistics_dtos(adapter, kStatisticsReportTopEndpointPortLimit),
+            adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree)
+        ));
+
+        if (options.out_statistics_markdown_path.has_value()) {
+            const auto markdown = render_frontend_statistics_report_markdown(report);
+            std::string error_text {};
+            if (!write_text_file(
+                    *options.out_statistics_markdown_path,
+                    markdown,
+                    "Failed to write Statistics Markdown report",
+                    error_text)) {
+                stderr_text += error_text + '\n';
+                return {
+                    .exit_code = 1,
+                    .stdout_text = stdout_builder.str(),
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+            stderr_text += "Statistics Markdown report written to: " +
+                options.out_statistics_markdown_path->string() + '\n';
+        }
+
+        if (options.out_statistics_html_path.has_value()) {
+            const auto html = render_frontend_statistics_report_html(report);
+            std::string error_text {};
+            if (!write_text_file(
+                    *options.out_statistics_html_path,
+                    html,
+                    "Failed to write Statistics HTML report",
+                    error_text)) {
+                stderr_text += error_text + '\n';
+                return {
+                    .exit_code = 1,
+                    .stdout_text = stdout_builder.str(),
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+            stderr_text += "Statistics HTML report written to: " +
+                options.out_statistics_html_path->string() + '\n';
+        }
+    }
+
     auto stdout_text = stdout_builder.str();
     if (!stdout_text.empty() && stdout_text.back() != '\n') {
         stdout_text.push_back('\n');
@@ -1437,7 +1638,9 @@ std::string render_summary_command_help() {
     out << "Side outputs\n";
     out << "  --out-index <path>\n";
     out << "  --out-flows-list <path>\n";
-    out << "  --out-protocol-path-tree <path>\n\n";
+    out << "  --out-protocol-path-tree <path>\n";
+    out << "  --out-statistics-html <path>\n";
+    out << "  --out-statistics-markdown <path>\n\n";
     out << "Runtime\n";
     out << "  --progress <auto|on|off>\n";
     out << "  --force\n\n";
@@ -1503,6 +1706,8 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
     bool out_index_seen = false;
     bool out_flows_list_seen = false;
     bool out_protocol_path_tree_seen = false;
+    bool out_statistics_html_seen = false;
+    bool out_statistics_markdown_seen = false;
     bool protocol_path_mode_seen = false;
     bool progress_seen = false;
 
@@ -1628,6 +1833,46 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
             }
             out_protocol_path_tree_seen = true;
             options.out_protocol_path_tree_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--out-statistics-html") {
+            if (out_statistics_html_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --out-statistics-html is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--out-statistics-html requires a path.",
+                };
+            }
+            out_statistics_html_seen = true;
+            options.out_statistics_html_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--out-statistics-markdown") {
+            if (out_statistics_markdown_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --out-statistics-markdown is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--out-statistics-markdown requires a path.",
+                };
+            }
+            out_statistics_markdown_seen = true;
+            options.out_statistics_markdown_path = std::filesystem::path {std::string {args[++index]}};
             continue;
         }
 
