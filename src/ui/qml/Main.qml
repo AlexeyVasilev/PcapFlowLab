@@ -89,6 +89,22 @@ ApplicationWindow {
     }
 
     Action {
+        id: exportStatisticsHtmlAction
+        objectName: "exportStatisticsHtmlAction"
+        text: "Export Statistics as HTML..."
+        enabled: mainController.canExportStatisticsReport
+        onTriggered: mainController.browseExportStatisticsHtml()
+    }
+
+    Action {
+        id: exportStatisticsMarkdownAction
+        objectName: "exportStatisticsMarkdownAction"
+        text: "Export Statistics as Markdown..."
+        enabled: mainController.canExportStatisticsReport
+        onTriggered: mainController.browseExportStatisticsMarkdown()
+    }
+
+    Action {
         id: showSettingsAction
         text: "Settings"
         onTriggered: settingsDialog.open()
@@ -149,6 +165,13 @@ ApplicationWindow {
             MenuItem { action: exportAllFlowsInfoCsvAction }
             MenuSeparator {}
             MenuItem { action: smartExportAction }
+        }
+
+        Menu {
+            title: "Statistics"
+
+            MenuItem { action: exportStatisticsHtmlAction }
+            MenuItem { action: exportStatisticsMarkdownAction }
         }
 
         Menu {

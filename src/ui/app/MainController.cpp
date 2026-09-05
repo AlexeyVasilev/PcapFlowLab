@@ -1,6 +1,7 @@
 ﻿#include "ui/app/MainController.h"
 
 #include "app/frontend/FrontendStatisticsOverview.h"
+#include "app/frontend/FrontendStatisticsReport.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -10,6 +11,7 @@
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
@@ -25,9 +27,11 @@
 #include <memory>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -43,6 +47,11 @@
 
 #include "../../../core/open_context.h"
 namespace pfl {
+
+enum class MainController::StatisticsReportFormat {
+    html,
+    markdown,
+};
 
 namespace {
 
@@ -68,6 +77,7 @@ constexpr int kProtocolPathStatisticsModeKindOverview = 0;
 constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
 constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
 constexpr std::size_t kTopSummaryLimit = 5U;
+constexpr std::size_t kStatisticsReportTopEndpointPortLimit = kCaptureStatisticsSnapshotTopEndpointCapacity;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -102,6 +112,31 @@ QString sanitize_export_filename_component(QString text) {
     return text.isEmpty() ? QStringLiteral("bytes") : text;
 }
 
+QString sanitize_statistics_report_filename_stem(QString text) {
+    text = text.trimmed();
+    if (text.isEmpty()) {
+        return QStringLiteral("capture");
+    }
+
+    for (QChar& character : text) {
+        if (character.isLetterOrNumber() || character == QLatin1Char('_') || character == QLatin1Char('-')) {
+            continue;
+        }
+        character = QChar::fromLatin1('_');
+    }
+
+    while (text.contains(QStringLiteral("__"))) {
+        text.replace(QStringLiteral("__"), QStringLiteral("_"));
+    }
+    while (text.startsWith(QLatin1Char('_')) || text.startsWith(QLatin1Char('-'))) {
+        text.remove(0, 1);
+    }
+    while (text.endsWith(QLatin1Char('_')) || text.endsWith(QLatin1Char('-'))) {
+        text.chop(1);
+    }
+    return text.isEmpty() ? QStringLiteral("capture") : text;
+}
+
 QString format_rule_count_text(const std::size_t count) {
     return count == 1U
         ? QStringLiteral("1 rule")
@@ -110,6 +145,169 @@ QString format_rule_count_text(const std::size_t count) {
 
 bool is_advanced_filter_status_text(const QString& text) {
     return text.startsWith(QStringLiteral("Advanced filter"));
+}
+
+std::string path_to_report_string(const std::filesystem::path& path) {
+    return path.empty() ? std::string {} : path.string();
+}
+
+FrontendInputKind frontend_input_kind_for_report_session(const CaptureSession& session) {
+    if (session.opened_from_index()) {
+        return FrontendInputKind::pcap_flow_lab_index;
+    }
+
+    switch (session.source_info().format) {
+    case CaptureSourceFormat::classic_pcap:
+        return FrontendInputKind::classic_pcap;
+    case CaptureSourceFormat::pcapng:
+        return FrontendInputKind::pcapng;
+    case CaptureSourceFormat::unknown:
+    default:
+        return FrontendInputKind::unknown;
+    }
+}
+
+FrontendInputMetadataDto build_statistics_report_input_metadata(const CaptureSession& session) {
+    FrontendInputMetadataDto metadata {};
+    metadata.input_path = path_to_report_string(session.input_path());
+    metadata.input_kind = frontend_input_kind_for_report_session(session);
+    metadata.input_file_size = session.input_file_size();
+    metadata.source_capture_accessible = session.source_capture_accessible();
+
+    if (session.opened_from_index() && !session.expected_source_capture_path().empty()) {
+        metadata.source_capture_path = path_to_report_string(session.expected_source_capture_path());
+    }
+
+    return metadata;
+}
+
+FrontendProtocolStatsDto make_frontend_report_protocol_stats(const ProtocolStats& stats) {
+    return FrontendProtocolStatsDto {
+        .flow_count = stats.flow_count,
+        .packet_count = stats.packet_count,
+        .captured_bytes = stats.captured_bytes,
+        .captured_bytes_text = session_detail::format_statistics_compact_size_value(stats.captured_bytes),
+        .original_bytes = stats.original_bytes,
+        .original_bytes_text = session_detail::format_statistics_compact_size_value(stats.original_bytes),
+    };
+}
+
+FrontendOverviewDto build_statistics_report_overview(const CaptureSession& session) {
+    const auto& packet_statistics = session.packet_statistics();
+    const auto protocol_summary = session.protocol_summary();
+    const auto flow_characteristics_statistics = session.flow_characteristics_statistics();
+    const auto packet_direction_distribution_statistics = session.packet_direction_distribution_statistics();
+    const auto original_byte_direction_distribution_statistics =
+        session.original_byte_direction_distribution_statistics();
+    const auto unrecognized_packets = session.unrecognized_packet_statistics();
+    const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
+        protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
+    const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
+        protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
+
+    return FrontendOverviewDto {
+        .has_capture = session.has_capture(),
+        .summary = FrontendOverviewSummaryDto {
+            .packet_count = session.summary().packet_count,
+            .flow_count = session.summary().flow_count,
+            .captured_bytes = captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(captured_bytes),
+            .original_bytes = original_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(original_bytes),
+            .total_bytes = session.summary().total_bytes,
+        },
+        .whole_capture_totals = FrontendWholeCaptureTotalsDto {
+            .packet_count = packet_statistics.total_packet_count,
+            .captured_bytes = packet_statistics.total_captured_bytes,
+            .captured_bytes_text =
+                session_detail::format_statistics_compact_size_value(packet_statistics.total_captured_bytes),
+            .original_bytes = packet_statistics.total_original_bytes,
+            .original_bytes_text =
+                session_detail::format_statistics_compact_size_value(packet_statistics.total_original_bytes),
+        },
+        .input_metadata = build_statistics_report_input_metadata(session),
+        .capture_time = build_frontend_capture_time_statistics(packet_statistics),
+        .capture_metrics = build_frontend_capture_metrics(packet_statistics),
+        .flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics),
+        .packet_direction_distribution = build_frontend_packet_direction_distribution(
+            flow_characteristics_statistics,
+            packet_direction_distribution_statistics
+        ),
+        .original_byte_direction_distribution = build_frontend_original_byte_direction_distribution(
+            flow_characteristics_statistics,
+            original_byte_direction_distribution_statistics
+        ),
+        .tcp_flag_statistics = build_frontend_tcp_flag_statistics(
+            session.tcp_flag_statistics(),
+            protocol_summary.tcp.packet_count
+        ),
+        .statistics_partial_open_warning_text =
+            build_frontend_statistics_partial_open_warning_text(session.is_partial_open()),
+        .captured_bytes = captured_bytes,
+        .original_bytes = original_bytes,
+        .unrecognized_packet_count = session.unrecognized_packet_count(),
+        .unrecognized_packets = unrecognized_packets.packet_count > 0U
+            ? std::optional<FrontendUnrecognizedPacketStatisticsDto> {
+                FrontendUnrecognizedPacketStatisticsDto {
+                    .packet_count = unrecognized_packets.packet_count,
+                    .captured_bytes = unrecognized_packets.captured_bytes,
+                    .captured_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.captured_bytes),
+                    .original_bytes = unrecognized_packets.original_bytes,
+                    .original_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.original_bytes),
+                }
+            }
+            : std::nullopt,
+        .protocol_summary = FrontendOverviewProtocolSummaryDto {
+            .tcp = make_frontend_report_protocol_stats(protocol_summary.tcp),
+            .udp = make_frontend_report_protocol_stats(protocol_summary.udp),
+            .sctp = make_frontend_report_protocol_stats(protocol_summary.sctp),
+            .other = make_frontend_report_protocol_stats(protocol_summary.other),
+            .ipv4 = make_frontend_report_protocol_stats(protocol_summary.ipv4),
+            .ipv6 = make_frontend_report_protocol_stats(protocol_summary.ipv6),
+        },
+        .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
+    };
+}
+
+FrontendStatisticsReportInput build_statistics_report_input(
+    const CaptureSession& session,
+    const AnalysisSettings& settings,
+    FrontendStatisticsReportMetadata metadata
+) {
+    const auto top_summary = session.top_summary(kStatisticsReportTopEndpointPortLimit);
+
+    return FrontendStatisticsReportInput {
+        .metadata = std::move(metadata),
+        .overview = build_statistics_report_overview(session),
+        .packet_size_statistics = build_frontend_capture_packet_size_statistics(session.packet_statistics()),
+        .flow_packet_count_histogram =
+            build_frontend_flow_packet_count_histogram(session.flow_packet_count_histogram()),
+        .protocol_hint_statistics = build_frontend_protocol_hint_statistics(session.protocol_summary()),
+        .quic_tls_statistics = FrontendQuicTlsStatisticsDto {
+            .has_capture = true,
+            .quic_recognition = session.quic_tls_summary().quic,
+            .tls_recognition = session.quic_tls_summary().tls,
+        },
+        .top_endpoint_port_statistics = FrontendTopEndpointPortStatisticsDto {
+            .has_capture = true,
+            .limit = kStatisticsReportTopEndpointPortLimit,
+            .top_endpoints = build_frontend_top_endpoints(top_summary),
+            .top_ports = build_frontend_top_ports(top_summary),
+            .top_flows = build_frontend_top_flows(
+                std::span<const TopFlowRow>(
+                    top_summary.flows_by_original_bytes.data(),
+                    top_summary.flows_by_original_bytes.size()
+                ),
+                session.state().protocol_path_registry,
+                settings
+            ),
+        },
+        .protocol_path_identity_tree = build_frontend_protocol_path_statistics(
+            session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree)
+        ),
+    };
 }
 
 bool build_protocol_path_candidate_flow_indices(
@@ -2628,6 +2826,19 @@ bool MainController::canExportAllFlowsInfoCsv() const noexcept {
         && flow_model_.totalFlowCount() > 0;
 }
 
+bool MainController::canExportStatisticsReport() const noexcept {
+    return !is_opening_
+        && !smart_export_in_progress_
+        && smart_export_thread_ == nullptr
+        && !analysis_sequence_export_in_progress_
+        && analysis_sequence_export_thread_ == nullptr
+        && !index_save_in_progress_
+        && index_save_thread_ == nullptr
+        && !flow_info_csv_export_in_progress_
+        && flow_info_csv_export_thread_ == nullptr
+        && hasCapture();
+}
+
 bool MainController::isOpening() const noexcept {
     return is_opening_;
 }
@@ -4556,6 +4767,102 @@ bool MainController::exportProtocolPathTree(const QString& path) {
     return true;
 }
 
+bool MainController::exportStatisticsReportHtml(const QString& path) {
+    return exportStatisticsReport(path, StatisticsReportFormat::html);
+}
+
+bool MainController::exportStatisticsReportMarkdown(const QString& path) {
+    return exportStatisticsReport(path, StatisticsReportFormat::markdown);
+}
+
+bool MainController::exportStatisticsReport(const QString& path, const StatisticsReportFormat format) {
+    const QString format_label = format == StatisticsReportFormat::html
+        ? QStringLiteral("HTML")
+        : QStringLiteral("Markdown");
+
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before exporting Statistics report."), true);
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before exporting Statistics report."), true);
+        return false;
+    }
+
+    if (analysis_sequence_export_in_progress_ || analysis_sequence_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current Analysis sequence export to finish before exporting Statistics report."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before exporting Statistics report."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before exporting Statistics report."), true);
+        return false;
+    }
+
+    if (!hasCapture()) {
+        setStatusText(QStringLiteral("No capture is open."), true);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    FrontendStatisticsReportMetadata metadata {
+        .application_name = "Pcap Flow Lab",
+        .application_version = applicationVersion().toStdString(),
+        .client_name = "Qt",
+        .generated_at_utc = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss 'UTC'")).toStdString(),
+        .statistics_scope = session_.is_partial_open() ? "Partial" : "Complete",
+    };
+    const auto report = build_frontend_statistics_report_data(
+        build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata))
+    );
+    const std::string rendered = format == StatisticsReportFormat::html
+        ? render_frontend_statistics_report_html(report)
+        : render_frontend_statistics_report_markdown(report);
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    QSaveFile file(trimmedPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        setStatusText(
+            QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),
+            true
+        );
+        return false;
+    }
+
+    const QByteArray bytes = QByteArray::fromStdString(rendered);
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        setStatusText(
+            QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),
+            true
+        );
+        return false;
+    }
+
+    if (!file.commit()) {
+        setStatusText(
+            QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),
+            true
+        );
+        return false;
+    }
+
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Statistics %1 report exported: %2").arg(format_label, trimmedPath));
+    return true;
+}
+
 bool MainController::exportSmartFlows(
     const QString& path,
     const int outputMode,
@@ -4969,6 +5276,20 @@ void MainController::browseExportProtocolPathTree() {
     const QString path = chooseProtocolPathTreeSaveFile();
     if (!path.isEmpty()) {
         exportProtocolPathTree(path);
+    }
+}
+
+void MainController::browseExportStatisticsHtml() {
+    const QString path = chooseStatisticsReportSaveFile(StatisticsReportFormat::html);
+    if (!path.isEmpty()) {
+        exportStatisticsReportHtml(path);
+    }
+}
+
+void MainController::browseExportStatisticsMarkdown() {
+    const QString path = chooseStatisticsReportSaveFile(StatisticsReportFormat::markdown);
+    if (!path.isEmpty()) {
+        exportStatisticsReportMarkdown(path);
     }
 }
 
@@ -8407,6 +8728,19 @@ QString MainController::advancedFlowFilterSuggestedFileName() const {
     return QStringLiteral("advanced-filter.filter");
 }
 
+QString MainController::statisticsReportSuggestedFileName(const QString& extension) const {
+    QString stem = QStringLiteral("capture");
+    if (!current_input_path_.trimmed().isEmpty()) {
+        const QString candidate = QFileInfo(current_input_path_).completeBaseName();
+        if (!candidate.trimmed().isEmpty()) {
+            stem = candidate;
+        }
+    }
+
+    return QStringLiteral("%1_statistics.%2")
+        .arg(sanitize_statistics_report_filename_stem(stem), extension);
+}
+
 bool MainController::synchronizeAdvancedFlowFilterDraft(QString* errorText) {
     if (!advanced_flow_filter_document_state_.is_editing()) {
         advanced_flow_filter_document_state_.begin_edit();
@@ -8596,6 +8930,36 @@ QString MainController::chooseProtocolPathTreeSaveFile() const {
     dialog.setNameFilter(QStringLiteral("Text Files (*.txt);;All Files (*)"));
     dialog.setDefaultSuffix(QStringLiteral("txt"));
     dialog.selectFile(QStringLiteral("protocol-path-tree.txt"));
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseStatisticsReportSaveFile(const StatisticsReportFormat format) const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+
+    switch (format) {
+    case StatisticsReportFormat::html:
+        dialog.setWindowTitle(QStringLiteral("Export Statistics as HTML"));
+        dialog.setNameFilter(QStringLiteral("HTML files (*.html);;All Files (*)"));
+        dialog.setDefaultSuffix(QStringLiteral("html"));
+        dialog.selectFile(statisticsReportSuggestedFileName(QStringLiteral("html")));
+        break;
+    case StatisticsReportFormat::markdown:
+        dialog.setWindowTitle(QStringLiteral("Export Statistics as Markdown"));
+        dialog.setNameFilter(QStringLiteral("Markdown files (*.md);;All Files (*)"));
+        dialog.setDefaultSuffix(QStringLiteral("md"));
+        dialog.selectFile(statisticsReportSuggestedFileName(QStringLiteral("md")));
+        break;
+    }
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

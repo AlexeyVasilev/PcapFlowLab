@@ -21,6 +21,7 @@
 #endif
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -810,6 +811,10 @@ std::string read_text_file_text(const std::filesystem::path& path) {
     std::ifstream stream {path, std::ios::binary};
     UI_REQUIRE(stream.is_open());
     return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
+}
+
+bool contains_text(const std::string_view haystack, const std::string_view needle) {
+    return haystack.find(needle) != std::string_view::npos;
 }
 
 std::filesystem::path write_temp_advanced_filter_file(const std::string& filename, const std::string& text) {
@@ -4712,6 +4717,130 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(expanded_text == collapsed_text);
         UI_EXPECT(protocol_path_export_controller.statusText()
             == QStringLiteral("Protocol Path Tree exported successfully."));
+    });
+
+    run_ui_section("statistics_report_export_menu_and_controller", [&]() {
+        const QString previous_application_version = QCoreApplication::applicationVersion();
+        QCoreApplication::setApplicationVersion(QStringLiteral("9.9.9-ui-test"));
+
+        MainController empty_report_controller {};
+        UI_EXPECT(!empty_report_controller.canExportStatisticsReport());
+        auto empty_report_window = load_main_qml_component(empty_report_controller);
+        auto* empty_html_action = named_object(empty_report_window.object.get(), "exportStatisticsHtmlAction");
+        auto* empty_markdown_action = named_object(empty_report_window.object.get(), "exportStatisticsMarkdownAction");
+        UI_REQUIRE(empty_html_action != nullptr);
+        UI_REQUIRE(empty_markdown_action != nullptr);
+        UI_EXPECT(!empty_html_action->property("enabled").toBool());
+        UI_EXPECT(!empty_markdown_action->property("enabled").toBool());
+        const auto no_session_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_no_session.md";
+        std::filesystem::remove(no_session_report_path, remove_error);
+        UI_EXPECT(!empty_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(no_session_report_path.wstring())));
+        UI_EXPECT(empty_report_controller.statusIsError());
+        UI_EXPECT(empty_report_controller.statusText() == QStringLiteral("No capture is open."));
+
+        MainController report_controller {};
+        auto report_window = load_main_qml_component(report_controller);
+        auto* html_action = named_object(report_window.object.get(), "exportStatisticsHtmlAction");
+        auto* markdown_action = named_object(report_window.object.get(), "exportStatisticsMarkdownAction");
+        UI_REQUIRE(html_action != nullptr);
+        UI_REQUIRE(markdown_action != nullptr);
+        UI_EXPECT(open_capture_and_wait(app, report_controller, protocol_path_mode_capture_path));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(report_controller.canExportStatisticsReport());
+        UI_EXPECT(html_action->property("enabled").toBool());
+        UI_EXPECT(markdown_action->property("enabled").toBool());
+        UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
+        UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(report_controller.protocolHintsSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.protocolPathSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.quicTlsSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.topFlowSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.topEndpointPortSectionState() == section_not_requested);
+
+        const auto markdown_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report.md";
+        const auto html_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report.html";
+        std::filesystem::remove(markdown_report_path, remove_error);
+        std::filesystem::remove(html_report_path, remove_error);
+        UI_EXPECT(report_controller.exportStatisticsReportMarkdown(QString::fromStdWString(markdown_report_path.wstring())));
+        UI_EXPECT(!report_controller.statusIsError());
+        UI_EXPECT(report_controller.statusText().contains(QStringLiteral("Statistics Markdown report exported:")));
+        UI_EXPECT(report_controller.exportStatisticsReportHtml(QString::fromStdWString(html_report_path.wstring())));
+        UI_EXPECT(!report_controller.statusIsError());
+        UI_EXPECT(report_controller.statusText().contains(QStringLiteral("Statistics HTML report exported:")));
+
+        const auto markdown_report = read_text_file_text(markdown_report_path);
+        const auto html_report = read_text_file_text(html_report_path);
+        UI_EXPECT(contains_text(markdown_report, "# PcapFlowLab Statistics Report"));
+        UI_EXPECT(contains_text(markdown_report, "| Application | Pcap Flow Lab |"));
+        UI_EXPECT(contains_text(markdown_report, "| Version | 9.9.9-ui-test |"));
+        UI_EXPECT(contains_text(markdown_report, "| Client | Qt |"));
+        UI_EXPECT(contains_text(markdown_report, "| Generated at |"));
+        UI_EXPECT(contains_text(markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree"));
+        UI_EXPECT(!contains_text(markdown_report, "Kind overview"));
+        UI_EXPECT(!contains_text(markdown_report, "Terminal paths"));
+        UI_EXPECT(contains_text(html_report, "<!doctype html>"));
+        UI_EXPECT(contains_text(html_report, "<th>Application</th><td>Pcap Flow Lab</td>"));
+        UI_EXPECT(contains_text(html_report, "<th>Version</th><td>9.9.9-ui-test</td>"));
+        UI_EXPECT(contains_text(html_report, "<th>Client</th><td>Qt</td>"));
+        UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
+        UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
+        UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(report_controller.protocolHintsSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.protocolPathSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.quicTlsSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.topFlowSectionState() == section_not_requested);
+        UI_EXPECT(report_controller.topEndpointPortSectionState() == section_not_requested);
+
+        const auto missing_directory_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_missing_statistics_report_dir" / "report.md";
+        std::filesystem::remove_all(missing_directory_report_path.parent_path(), remove_error);
+        UI_EXPECT(!report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(missing_directory_report_path.wstring())));
+        UI_EXPECT(report_controller.statusIsError());
+        UI_EXPECT(report_controller.statusText().contains(QStringLiteral("Failed to export Statistics Markdown report:")));
+
+        const auto report_index_capture_path = write_temp_pcap(
+            "pfl_ui_statistics_report_index_source.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet(ipv4(10, 65, 0, 1), ipv4(10, 65, 0, 2), 53000, 53)},
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(10, 65, 0, 3), ipv4(10, 65, 0, 4), 43000, 443)},
+            })
+        );
+        CaptureSession report_index_seed_session {};
+        UI_EXPECT(report_index_seed_session.open_capture(report_index_capture_path));
+        const auto report_index_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index.idx";
+        const auto moved_report_index_source_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index_source.gone.pcap";
+        std::filesystem::remove(report_index_path, remove_error);
+        std::filesystem::remove(moved_report_index_source_path, remove_error);
+        UI_EXPECT(report_index_seed_session.save_index(report_index_path));
+        std::filesystem::rename(report_index_capture_path, moved_report_index_source_path);
+
+        MainController index_report_controller {};
+        UI_EXPECT(open_index_and_wait(app, index_report_controller, report_index_path));
+        UI_EXPECT(index_report_controller.openedFromIndex());
+        UI_EXPECT(!index_report_controller.hasSourceCapture());
+        UI_EXPECT(index_report_controller.canExportStatisticsReport());
+        const auto index_markdown_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index.md";
+        std::filesystem::remove(index_markdown_report_path, remove_error);
+        UI_EXPECT(index_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(index_markdown_report_path.wstring())));
+        UI_EXPECT(!index_report_controller.statusIsError());
+        const auto index_markdown_report = read_text_file_text(index_markdown_report_path);
+        UI_EXPECT(contains_text(index_markdown_report, "PcapFlowLab Index"));
+        UI_EXPECT(contains_text(index_markdown_report, "Recorded source capture"));
+        UI_EXPECT(contains_text(index_markdown_report, "| Client | Qt |"));
+        UI_EXPECT(contains_text(index_markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));
+
+        QCoreApplication::setApplicationVersion(previous_application_version);
     });
 
     MainController protocol_path_filter_controller {};

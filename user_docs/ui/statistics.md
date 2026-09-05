@@ -26,6 +26,13 @@ detailed sections are collapsible and are loaded when you expand them. That
 keeps the workspace fast to open while still exposing deeper capture-wide
 summaries when you need them.
 
+Qt also provides `Statistics -> Export Statistics as HTML...` and
+`Statistics -> Export Statistics as Markdown...` from the main menu. These
+actions write a complete whole-capture report using the same shared Statistics
+report data as the CLI HTML/Markdown exports. The exported report is not
+limited by which optional Statistics sections are currently expanded in the
+workspace.
+
 ## Capture overview
 
 ![Statistics overview](images/statistics/statistics-overview.png)
