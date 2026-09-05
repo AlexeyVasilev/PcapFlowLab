@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <new>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -1184,6 +1185,16 @@ std::string export_all_flows_info_csv_result_json(const pfl::FrontendExportAllFl
 }
 
 std::string export_protocol_path_tree_result_json(const pfl::FrontendExportProtocolPathTreeResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
+std::string export_statistics_report_result_json(const pfl::FrontendExportStatisticsReportResult& result) {
     std::ostringstream out {};
     out << '{'
         << "\"exported\":" << bool_json(result.exported) << ','
@@ -3374,6 +3385,32 @@ char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     const auto path = path_from_utf8(path_utf8);
     return make_c_string(export_protocol_path_tree_result_json(
         handle->adapter.export_protocol_path_tree(statistics_mode, path)
+    ));
+}
+
+char* pfl_frontend_session_adapter_export_statistics_report_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t format,
+    const char* path_utf8
+) {
+    if (handle == nullptr || path_utf8 == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Invalid export request.\"}");
+    }
+
+    std::optional<pfl::FrontendStatisticsReportFormat> report_format {};
+    if (format == 0U) {
+        report_format = pfl::FrontendStatisticsReportFormat::html;
+    } else if (format == 1U) {
+        report_format = pfl::FrontendStatisticsReportFormat::markdown;
+    }
+
+    if (!report_format.has_value()) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Invalid export request.\"}");
+    }
+
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(export_statistics_report_result_json(
+        handle->adapter.export_statistics_report(*report_format, path)
     ));
 }
 

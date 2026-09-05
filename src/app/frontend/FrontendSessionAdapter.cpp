@@ -1,6 +1,7 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
 #include "app/frontend/FrontendStatisticsOverview.h"
+#include "app/frontend/FrontendStatisticsReport.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -9,6 +10,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SupportedProtocolCatalog.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/HexDumpService.h"
@@ -17,13 +19,20 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <map>
 #include <span>
 #include <sstream>
 #include <set>
+#include <utility>
+
+#ifndef PFL_APP_VERSION
+#define PFL_APP_VERSION "0.0.0"
+#endif
 
 namespace pfl {
 
@@ -59,8 +68,54 @@ struct AnalysisSequenceExportRow {
     std::string protocol_hint_text {};
 };
 
+constexpr std::size_t kStatisticsReportTopEndpointPortLimit =
+    kCaptureStatisticsSnapshotTopEndpointCapacity;
+
 std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
+}
+
+std::string format_frontend_statistics_report_generation_timestamp_utc(
+    const std::chrono::system_clock::time_point timestamp
+) {
+    const auto time = std::chrono::system_clock::to_time_t(timestamp);
+    std::tm utc {};
+#if defined(_WIN32)
+    gmtime_s(&utc, &time);
+#else
+    gmtime_r(&time, &utc);
+#endif
+
+    std::ostringstream out {};
+    out << std::put_time(&utc, "%Y-%m-%d %H:%M:%S UTC");
+    return out.str();
+}
+
+std::string statistics_report_scope_text(const bool partial_open) {
+    return partial_open
+        ? std::string {"Partial"}
+        : std::string {"Complete"};
+}
+
+bool write_statistics_report_text_file(
+    const std::filesystem::path& output_path,
+    const std::string& text,
+    const std::string_view error_context,
+    std::string& error_text
+) {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        error_text = std::string {error_context} + ": unable to open output file.";
+        return false;
+    }
+
+    stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!stream.good()) {
+        error_text = std::string {error_context} + ": write failed.";
+        return false;
+    }
+
+    return true;
 }
 
 FrontendByteExportResult unavailable_byte_export_result(const std::string& error_text) {
@@ -2417,6 +2472,79 @@ FrontendExportProtocolPathTreeResult FrontendSessionAdapter::export_protocol_pat
             session_detail::TextExportOverwritePolicy::overwrite_existing,
             &error_text)) {
         result.error_text = error_text.empty() ? "Failed to export Protocol Path Tree." : error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
+FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_report(
+    const FrontendStatisticsReportFormat format,
+    const std::filesystem::path& output_path
+) const {
+    FrontendExportStatisticsReportResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    const auto overview = get_overview();
+    FrontendStatisticsReportMetadata metadata {
+        .application_name = "Pcap Flow Lab",
+        .application_version = PFL_APP_VERSION,
+        .client_name = "Tauri",
+        .generated_at_utc = format_frontend_statistics_report_generation_timestamp_utc(
+            std::chrono::system_clock::now()
+        ),
+        .statistics_scope = statistics_report_scope_text(session_.is_partial_open()),
+        .index_revision = session_.opened_from_index()
+            ? std::optional<std::uint32_t> {kCaptureIndexStableIndexRevision}
+            : std::nullopt,
+    };
+
+    const FrontendStatisticsReportInput input {
+        .metadata = std::move(metadata),
+        .overview = overview,
+        .packet_size_statistics = get_capture_packet_size_statistics(),
+        .flow_packet_count_histogram = get_flow_packet_count_histogram(),
+        .protocol_hint_statistics = get_protocol_hint_statistics(),
+        .quic_tls_statistics = get_quic_tls_statistics(),
+        .top_endpoint_port_statistics =
+            get_top_endpoint_port_statistics(kStatisticsReportTopEndpointPortLimit),
+        .protocol_path_identity_tree =
+            get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree),
+    };
+    const auto report = build_frontend_statistics_report_data(input);
+
+    std::string rendered {};
+    std::string failure_text {};
+    switch (format) {
+    case FrontendStatisticsReportFormat::html:
+        rendered = render_frontend_statistics_report_html(report);
+        failure_text = "Failed to write Statistics HTML report";
+        break;
+    case FrontendStatisticsReportFormat::markdown:
+        rendered = render_frontend_statistics_report_markdown(report);
+        failure_text = "Failed to write Statistics Markdown report";
+        break;
+    default:
+        result.error_text = "Unknown Statistics report format.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!write_statistics_report_text_file(output_path, rendered, failure_text, error_text)) {
+        result.error_text = error_text.empty()
+            ? "Failed to export Statistics report."
+            : error_text;
         return result;
     }
 

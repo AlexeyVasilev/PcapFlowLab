@@ -253,6 +253,7 @@
     saveIndexInProgress: false,
     exportAllFlowsInfoCsvInProgress: false,
     protocolPathExportInProgress: false,
+    statisticsReportExportInProgress: false,
     exportCurrentFlowInProgress: false,
     exportSelectedFlowsInProgress: false,
     exportUnselectedFlowsInProgress: false,
@@ -3951,6 +3952,28 @@
     return parts.length > 0 ? parts[parts.length - 1] : normalized;
   }
 
+  function fileStemFromPath(path) {
+    const fileName = fileNameFromPath(path);
+    const extensionIndex = fileName.lastIndexOf(".");
+    return extensionIndex > 0 ? fileName.slice(0, extensionIndex) : fileName;
+  }
+
+  function sanitizeStatisticsReportFileStem(stem) {
+    const sanitized = String(stem || "")
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^[-_]+|[-_]+$/g, "");
+    return sanitized.length > 0 ? sanitized : "capture";
+  }
+
+  function statisticsReportSuggestedFileName(extension) {
+    const stem = sanitizeStatisticsReportFileStem(
+      fileStemFromPath(state.currentSessionPath || elements.capturePath?.value || "capture")
+    );
+    return `${stem}_statistics.${extension}`;
+  }
+
   function formatByteSize(bytes) {
     const value = Math.max(0, Number(bytes || 0));
     const units = ["B", "KB", "MB", "GB", "TB"];
@@ -4627,6 +4650,7 @@
   function canAttachSourceCapture() {
     return state.openState === "opened"
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
       && !currentSourceAvailability().byte_backed_inspection_available;
   }
 
@@ -4636,6 +4660,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4653,6 +4679,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4668,6 +4696,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4683,6 +4713,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4697,6 +4729,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4709,6 +4743,22 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
+  }
+
+  function canExportStatisticsReport() {
+    return state.openState === "opened"
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -4723,6 +4773,8 @@
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
+      && !state.analysisSequenceExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -6481,6 +6533,7 @@
       && state.analysis.sequence_preview_rows.length > 0
       && !state.exportAllFlowsInfoCsvInProgress
       && !state.protocolPathExportInProgress
+      && !state.statisticsReportExportInProgress
       && !state.analysisSequenceExportInProgress;
   }
 
@@ -6530,6 +6583,7 @@
     state.saveIndexInProgress = false;
     state.exportAllFlowsInfoCsvInProgress = false;
     state.protocolPathExportInProgress = false;
+    state.statisticsReportExportInProgress = false;
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
@@ -6602,6 +6656,16 @@
           item.textContent = state.exportAllFlowsInfoCsvInProgress
             ? "Exporting All Flows Info to CSV..."
             : "Export All Flows Info to CSV...";
+        } else if (action === "export-statistics-html") {
+          item.disabled = !canExportStatisticsReport();
+          item.textContent = state.statisticsReportExportInProgress
+            ? "Exporting Statistics as HTML..."
+            : "Export Statistics as HTML...";
+        } else if (action === "export-statistics-markdown") {
+          item.disabled = !canExportStatisticsReport();
+          item.textContent = state.statisticsReportExportInProgress
+            ? "Exporting Statistics as Markdown..."
+            : "Export Statistics as Markdown...";
         } else if (action === "export-current-flow") {
           item.disabled = !canExportCurrentFlow();
           item.textContent = state.exportCurrentFlowInProgress ? "Exporting Current Flow..." : "Export Current Flow";
@@ -6620,6 +6684,8 @@
             || state.saveIndexInProgress
             || state.exportAllFlowsInfoCsvInProgress
             || state.protocolPathExportInProgress
+            || state.statisticsReportExportInProgress
+            || state.analysisSequenceExportInProgress
             || state.exportCurrentFlowInProgress
             || state.exportSelectedFlowsInProgress
             || state.exportUnselectedFlowsInProgress
@@ -7662,6 +7728,10 @@
       state.openState === "opening"
       || state.attachSourceInProgress
       || state.saveIndexInProgress
+      || state.exportAllFlowsInfoCsvInProgress
+      || state.protocolPathExportInProgress
+      || state.statisticsReportExportInProgress
+      || state.analysisSequenceExportInProgress
       || state.exportCurrentFlowInProgress
       || state.exportSelectedFlowsInProgress
       || state.exportUnselectedFlowsInProgress
@@ -11836,6 +11906,12 @@
       case "export-all-flows-info-csv":
         await exportAllFlowsInfoCsvFromMenu();
         return;
+      case "export-statistics-html":
+        await exportStatisticsReportFromMenu("html");
+        return;
+      case "export-statistics-markdown":
+        await exportStatisticsReportFromMenu("markdown");
+        return;
       case "export-selected-flows":
         await exportSelectedFlowsFromMenu();
         return;
@@ -11936,6 +12012,55 @@
       setStatus(`Failed to export Protocol Path Tree: ${String(error)}`, "error");
     } finally {
       state.protocolPathExportInProgress = false;
+      render();
+    }
+  }
+
+  async function exportStatisticsReportFromMenu(format) {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canExportStatisticsReport()) {
+      return;
+    }
+
+    const isHtml = format === "html";
+    const extension = isHtml ? "html" : "md";
+    const formatLabel = isHtml ? "HTML" : "Markdown";
+    const pickerCommand = isHtml
+      ? "pick_save_statistics_html_path"
+      : "pick_save_statistics_markdown_path";
+    const reportFormat = isHtml ? 0 : 1;
+
+    try {
+      const selectedPath = await invoke(pickerCommand, {
+        suggested_file_name: statisticsReportSuggestedFileName(extension),
+      });
+      if (!selectedPath) {
+        return;
+      }
+
+      state.statisticsReportExportInProgress = true;
+      setStatus(`Exporting Statistics ${formatLabel} report...`, "neutral");
+      render();
+
+      const result = await invoke("export_statistics_report", {
+        format: reportFormat,
+        path: selectedPath,
+      });
+
+      if (result?.exported) {
+        setStatus(`Statistics ${formatLabel} report exported: ${result.output_path || selectedPath}`, "success");
+      } else {
+        setStatus(result?.error_text || `Failed to export Statistics ${formatLabel} report.`, "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export Statistics ${formatLabel} report: ${String(error)}`, "error");
+    } finally {
+      state.statisticsReportExportInProgress = false;
       render();
     }
   }

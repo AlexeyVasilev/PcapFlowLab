@@ -106,6 +106,17 @@ struct FrontendExportProtocolPathTreeResult {
     std::string error_text {};
 };
 
+enum class FrontendStatisticsReportFormat : std::uint8_t {
+    html = 0,
+    markdown = 1,
+};
+
+struct FrontendExportStatisticsReportResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 struct FrontendByteExportFormatDto {
     std::string stable_id {};
     std::string label {};

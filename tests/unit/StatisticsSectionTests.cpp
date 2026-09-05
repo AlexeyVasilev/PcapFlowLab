@@ -2502,6 +2502,150 @@ void expect_protocol_path_tree_bridge_export_contract() {
     pfl_frontend_session_adapter_free(handle);
 }
 
+void expect_frontend_statistics_report_export_uses_tauri_metadata() {
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap")).opened);
+
+    const auto markdown_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_tauri_metadata.md";
+    const auto html_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_tauri_metadata.html";
+    std::filesystem::remove(markdown_path);
+    std::filesystem::remove(html_path);
+
+    const auto markdown_result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        markdown_path
+    );
+    PFL_EXPECT(markdown_result.exported);
+    PFL_EXPECT(markdown_result.error_text.empty());
+    const auto markdown = read_text_file(markdown_path);
+    PFL_EXPECT(contains_text(markdown, "| Application | Pcap Flow Lab |"));
+    PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
+    PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+
+    const auto html_result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::html,
+        html_path
+    );
+    PFL_EXPECT(html_result.exported);
+    PFL_EXPECT(html_result.error_text.empty());
+    const auto html = read_text_file(html_path);
+    PFL_EXPECT(contains_text(html, "<th>Application</th><td>Pcap Flow Lab</td>"));
+    PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Client</th><td>Tauri</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+}
+
+void expect_frontend_statistics_report_export_works_from_v16_index_without_source() {
+    const auto capture_path = write_temp_capture_file(
+        "pfl_statistics_report_index_source.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 130, 0, 1), ipv4(10, 130, 0, 2), 51001, 443)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 130, 0, 3), ipv4(10, 130, 0, 4), 53000, 53)},
+        })
+    );
+    const auto index_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source.idx";
+    const auto report_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source.md";
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(report_path);
+
+    {
+        FrontendSessionAdapter raw_adapter {};
+        PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+        PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+    }
+
+    std::filesystem::remove(capture_path);
+
+    FrontendSessionAdapter index_adapter {};
+    const auto open_result = index_adapter.open_capture(index_path);
+    PFL_REQUIRE(open_result.opened);
+    PFL_EXPECT(open_result.opened_from_index);
+    PFL_EXPECT(!open_result.source_availability.byte_backed_inspection_available);
+
+    const auto export_result = index_adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        report_path
+    );
+    PFL_EXPECT(export_result.exported);
+    PFL_EXPECT(export_result.error_text.empty());
+
+    const auto report = read_text_file(report_path);
+    PFL_EXPECT(contains_text(report, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(
+        report,
+        std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
+    ));
+    PFL_EXPECT(contains_text(report, "## Top Endpoints and Ports"));
+    PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree"));
+}
+
+void expect_frontend_statistics_report_export_reports_write_failure() {
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap")).opened);
+
+    const auto missing_directory = std::filesystem::temp_directory_path()
+        / "pfl_missing_statistics_report_dir";
+    std::filesystem::remove_all(missing_directory);
+    const auto output_path = missing_directory / "statistics.md";
+
+    const auto result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        output_path
+    );
+    PFL_EXPECT(!result.exported);
+    PFL_EXPECT(result.output_path.empty());
+    PFL_EXPECT(contains_text(result.error_text, "Failed to write Statistics Markdown report"));
+}
+
+void expect_statistics_report_bridge_export_contract() {
+    auto* handle = pfl_frontend_session_adapter_new();
+    PFL_REQUIRE(handle != nullptr);
+
+    const auto capture_path = fixture_path("parsing/http/http_get_1.pcap");
+    const auto open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(handle, capture_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
+
+    const auto markdown_path = std::filesystem::temp_directory_path()
+        / path_from_explicit_utf8("pfl_statistics_report_bridge_тест.md");
+    std::filesystem::remove(markdown_path);
+    const auto markdown_path_utf8 = utf8_path_string(markdown_path);
+    const auto export_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 1U, markdown_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(export_json, "\"exported\":true"));
+    PFL_EXPECT(contains_text(export_json, "\"error_text\":\"\""));
+    PFL_EXPECT(std::filesystem::exists(markdown_path));
+
+    const auto markdown = read_text_file(markdown_path);
+    PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
+
+    const auto html_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_bridge.html";
+    std::filesystem::remove(html_path);
+    const auto html_path_utf8 = utf8_path_string(html_path);
+    const auto html_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 0U, html_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(html_json, "\"exported\":true"));
+    PFL_EXPECT(contains_text(read_text_file(html_path), "<th>Client</th><td>Tauri</td>"));
+
+    const auto invalid_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 9U, html_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(invalid_json, "\"exported\":false"));
+    PFL_EXPECT(contains_text(invalid_json, "\"error_text\":\"Invalid export request.\""));
+
+    pfl_frontend_session_adapter_free(handle);
+}
+
 void expect_advanced_flow_filter_text_query_bridge_contract() {
     auto* handle = pfl_frontend_session_adapter_new();
     PFL_REQUIRE(handle != nullptr);
@@ -2636,6 +2780,10 @@ void run_statistics_section_tests() {
     expect_frontend_packet_size_statistics_preserve_captured_original_bucket_split();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
+    expect_frontend_statistics_report_export_uses_tauri_metadata();
+    expect_frontend_statistics_report_export_works_from_v16_index_without_source();
+    expect_frontend_statistics_report_export_reports_write_failure();
+    expect_statistics_report_bridge_export_contract();
     expect_advanced_flow_filter_text_query_bridge_contract();
     expect_protocol_path_tree_bridge_export_contract();
 }

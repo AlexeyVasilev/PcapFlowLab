@@ -105,10 +105,15 @@ fn main() {
     let src_include = repo.join("src");
 
     let mut build = cc::Build::new();
+    let app_version = env::var("CARGO_PKG_VERSION").expect("missing CARGO_PKG_VERSION");
+    let app_version_define = format!("\"{app_version}\"");
+
     build.cpp(true);
     build.include(&repo);
     build.include(&src_include);
     build.warnings(false);
+    // Tauri compiles the C++ bridge directly, bypassing the root CMake definitions.
+    build.define("PFL_APP_VERSION", Some(app_version_define.as_str()));
     let compiler = build.get_compiler();
     if compiler.is_like_msvc() {
         build.flag_if_supported("/std:c++20");
@@ -193,6 +198,7 @@ fn main() {
         "src/core/services/IcmpInspectionParser.cpp",
         "src/app/frontend/FrontendSessionAdapter.cpp",
         "src/app/frontend/FrontendStatisticsOverview.cpp",
+        "src/app/frontend/FrontendStatisticsReport.cpp",
         "src/app/frontend/AdvancedFlowFilterStructuredDocument.cpp",
         "src/app/frontend/FrontendSettingsJson.cpp",
         "src/app/frontend/FrontendSessionAdapterBridge.cpp",

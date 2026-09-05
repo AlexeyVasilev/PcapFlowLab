@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -248,6 +248,11 @@ extern "C" {
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
+        path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_statistics_report_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        format: c_uchar,
         path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_byte_export_formats_json(
@@ -1234,6 +1239,18 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_export_protocol_path_tree_json(self.handle, mode, path.as_ptr())
         };
         parse_json_owned::<ExportProtocolPathTreeResultDto>(json)
+    }
+
+    pub fn export_statistics_report(
+        &self,
+        format: u8,
+        path: &str,
+    ) -> Result<ExportStatisticsReportResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_statistics_report_json(self.handle, format, path.as_ptr())
+        };
+        parse_json_owned::<ExportStatisticsReportResultDto>(json)
     }
 
     pub fn get_byte_export_formats(&self) -> Result<Vec<ByteExportFormatDto>, String> {

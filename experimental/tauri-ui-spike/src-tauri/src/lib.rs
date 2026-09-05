@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -644,6 +644,80 @@ fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, 
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn pick_save_statistics_html_path(
+    _app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let normalized_file_name = normalized_statistics_report_file_name(suggested_file_name, "html");
+
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export Statistics as HTML".to_string(),
+            format!("--filename={}", current_dir_prefill(&normalized_file_name)),
+            "--file-filter=HTML files | *.html".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "html").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("HTML files", &["html"])
+            .set_file_name(&normalized_file_name)
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "html").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn pick_save_statistics_markdown_path(
+    _app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let normalized_file_name = normalized_statistics_report_file_name(suggested_file_name, "md");
+
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export Statistics as Markdown".to_string(),
+            format!("--filename={}", current_dir_prefill(&normalized_file_name)),
+            "--file-filter=Markdown files | *.md".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "md").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Markdown files", &["md"])
+            .set_file_name(&normalized_file_name)
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "md").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn pick_save_byte_export_path(
     _app: AppHandle,
     title: String,
@@ -702,6 +776,22 @@ fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     }
 
     path.with_extension(extension)
+}
+
+fn normalized_statistics_report_file_name(suggested_file_name: String, extension: &str) -> String {
+    let trimmed = suggested_file_name.trim();
+    let fallback = format!("capture_statistics.{extension}");
+    let file_name = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed.to_string()
+    };
+
+    ensure_extension(PathBuf::from(file_name), extension)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| format!("capture_statistics.{extension}"))
 }
 
 #[cfg(target_os = "linux")]
@@ -1331,6 +1421,18 @@ fn export_protocol_path_tree(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn export_statistics_report(
+    state: State<'_, Mutex<AdapterState>>,
+    format: u8,
+    path: String,
+) -> Result<ExportStatisticsReportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_statistics_report(format, &path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_byte_export_formats(
     state: State<'_, Mutex<AdapterState>>,
 ) -> Result<Vec<ByteExportFormatDto>, String> {
@@ -1502,6 +1604,8 @@ pub fn run() {
             pick_save_all_flows_info_csv_path,
             pick_save_analysis_sequence_csv_path,
             pick_save_protocol_path_tree_path,
+            pick_save_statistics_html_path,
+            pick_save_statistics_markdown_path,
             open_capture,
             start_open_capture,
             poll_open_capture,
@@ -1512,6 +1616,7 @@ pub fn run() {
             export_selected_flows,
             export_all_flows_info_csv,
             export_protocol_path_tree,
+            export_statistics_report,
             get_byte_export_formats,
             export_selected_flow_packet_byte_view,
             export_unrecognized_packet_byte_view,
