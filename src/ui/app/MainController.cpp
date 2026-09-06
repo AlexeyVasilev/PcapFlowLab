@@ -4845,6 +4845,16 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
         return false;
     }
 
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    QSaveFile file(trimmedPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        setStatusText(
+            QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),
+            true
+        );
+        return false;
+    }
+
     FrontendStatisticsReportMetadata metadata {
         .application_name = "Pcap Flow Lab",
         .application_version = applicationVersion().toStdString(),
@@ -4858,16 +4868,6 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
     const std::string rendered = format == StatisticsReportFormat::html
         ? render_frontend_statistics_report_html(report)
         : render_frontend_statistics_report_markdown(report);
-
-    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    QSaveFile file(trimmedPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        setStatusText(
-            QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),
-            true
-        );
-        return false;
-    }
 
     if (rendered.size() > static_cast<std::size_t>(std::numeric_limits<qint64>::max())) {
         file.cancelWriting();

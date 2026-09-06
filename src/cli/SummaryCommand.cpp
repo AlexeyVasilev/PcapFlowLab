@@ -706,12 +706,12 @@ bool write_text_file(
 ) {
     std::ofstream stream {path, std::ios::binary | std::ios::trunc};
     if (!stream.is_open()) {
-        error_text = std::string {error_context} + ": " + path.string();
+        error_text = std::string {error_context} + " '" + path.string() + "': unable to open output file.";
         return false;
     }
     stream.write(text.data(), static_cast<std::streamsize>(text.size()));
     if (!stream.good()) {
-        error_text = std::string {error_context} + ": " + path.string();
+        error_text = std::string {error_context} + " '" + path.string() + "': write failed.";
         return false;
     }
     return true;
