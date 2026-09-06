@@ -103,15 +103,16 @@ bool write_statistics_report_text_file(
     const std::string_view error_context,
     std::string& error_text
 ) {
+    const auto output_path_text = path_to_string(output_path);
     std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
     if (!stream.is_open()) {
-        error_text = std::string {error_context} + ": unable to open output file.";
+        error_text = std::string {error_context} + " '" + output_path_text + "': unable to open output file.";
         return false;
     }
 
     stream.write(text.data(), static_cast<std::streamsize>(text.size()));
     if (!stream.good()) {
-        error_text = std::string {error_context} + ": write failed.";
+        error_text = std::string {error_context} + " '" + output_path_text + "': write failed.";
         return false;
     }
 

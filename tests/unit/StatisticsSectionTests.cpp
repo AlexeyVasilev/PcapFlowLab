@@ -2600,6 +2600,8 @@ void expect_frontend_statistics_report_export_reports_write_failure() {
     PFL_EXPECT(!result.exported);
     PFL_EXPECT(result.output_path.empty());
     PFL_EXPECT(contains_text(result.error_text, "Failed to write Statistics Markdown report"));
+    PFL_EXPECT(contains_text(result.error_text, output_path.string()));
+    PFL_EXPECT(contains_text(result.error_text, "unable to open output file"));
 }
 
 void expect_statistics_report_bridge_export_contract() {
@@ -2642,6 +2644,19 @@ void expect_statistics_report_bridge_export_contract() {
     );
     PFL_EXPECT(contains_text(invalid_json, "\"exported\":false"));
     PFL_EXPECT(contains_text(invalid_json, "\"error_text\":\"Invalid export request.\""));
+
+    const auto missing_directory = std::filesystem::temp_directory_path()
+        / "pfl_missing_statistics_report_bridge_dir";
+    std::filesystem::remove_all(missing_directory);
+    const auto failed_markdown_path = missing_directory / "statistics.md";
+    const auto failed_markdown_path_utf8 = utf8_path_string(failed_markdown_path);
+    const auto failed_export_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 1U, failed_markdown_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(failed_export_json, "\"exported\":false"));
+    PFL_EXPECT(contains_text(failed_export_json, "Failed to write Statistics Markdown report"));
+    PFL_EXPECT(contains_text(failed_export_json, "statistics.md"));
+    PFL_EXPECT(contains_text(failed_export_json, "unable to open output file"));
 
     pfl_frontend_session_adapter_free(handle);
 }

@@ -4869,8 +4869,17 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
         return false;
     }
 
-    const QByteArray bytes = QByteArray::fromStdString(rendered);
-    if (file.write(bytes) != bytes.size()) {
+    if (rendered.size() > static_cast<std::size_t>(std::numeric_limits<qint64>::max())) {
+        file.cancelWriting();
+        setStatusText(
+            QStringLiteral("Failed to export Statistics %1 report: report is too large.").arg(format_label),
+            true
+        );
+        return false;
+    }
+
+    const auto byteCount = static_cast<qint64>(rendered.size());
+    if (file.write(rendered.data(), byteCount) != byteCount) {
         file.cancelWriting();
         setStatusText(
             QStringLiteral("Failed to export Statistics %1 report: %2").arg(format_label, file.errorString()),

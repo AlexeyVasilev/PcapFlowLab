@@ -1491,6 +1491,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(markdown, "| Client | CLI |"));
     PFL_EXPECT(contains_text(markdown, "| Generated at |"));
     PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+    PFL_EXPECT(!contains_text(markdown, "| Index revision |"));
     PFL_EXPECT(contains_text(markdown, "### Transport"));
     PFL_EXPECT(contains_text(markdown, "### IP Family"));
     PFL_EXPECT(contains_text(markdown, "### QUIC Recognition"));
@@ -1522,6 +1523,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
     PFL_EXPECT(contains_text(html, "<th>Client</th><td>CLI</td>"));
     PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+    PFL_EXPECT(!contains_text(html, "<th>Index revision</th>"));
     PFL_EXPECT(contains_text(html, "<h3>Transport</h3>"));
     PFL_EXPECT(contains_text(html, "<h3>IP Family</h3>"));
     PFL_EXPECT(contains_text(html, "<h3>QUIC Recognition</h3>"));
@@ -1548,6 +1550,30 @@ void expect_statistics_report_side_output_contracts() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_fast.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+
+    const auto full_open_index_markdown_path =
+        std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_full_open_index.md";
+    const auto full_open_index_flow_list_path =
+        std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_full_open_index_flows.csv";
+    std::filesystem::remove(full_open_index_markdown_path);
+    std::filesystem::remove(full_open_index_flow_list_path);
+
+    cli::SummaryCommandOptions full_open_index_report_options {};
+    full_open_index_report_options.input_path = index_path;
+    full_open_index_report_options.out_statistics_markdown_path = full_open_index_markdown_path;
+    full_open_index_report_options.out_flows_list_path = full_open_index_flow_list_path;
+    const auto full_open_index_report_result = cli::execute_summary_command(full_open_index_report_options);
+    PFL_EXPECT(full_open_index_report_result.exit_code == 0);
+    PFL_EXPECT(contains_text(full_open_index_report_result.stderr_text, "Flow list written to:"));
+    PFL_EXPECT(contains_text(full_open_index_report_result.stderr_text, "Statistics Markdown report written to:"));
+
+    const auto full_open_index_markdown = read_text_file(full_open_index_markdown_path);
+    PFL_EXPECT(contains_text(full_open_index_markdown, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(
+        full_open_index_markdown,
+        std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
+    ));
+
     append_binary_bytes(index_path, std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU});
     std::filesystem::remove(capture_path);
 
