@@ -2018,6 +2018,100 @@ bool write_analysis_sequence_csv(
     return true;
 }
 
+FrontendOverviewDto build_frontend_overview(
+    const CaptureSession& session,
+    const bool include_protocol_path_presentations
+) {
+    const auto protocol_summary = session.protocol_summary();
+    const auto& packet_statistics = session.packet_statistics();
+    const auto flow_characteristics_statistics = session.flow_characteristics_statistics();
+    const auto packet_direction_distribution_statistics = session.packet_direction_distribution_statistics();
+    const auto original_byte_direction_distribution_statistics =
+        session.original_byte_direction_distribution_statistics();
+    const auto unrecognized_packets = session.unrecognized_packet_statistics();
+    auto protocol_path_presentations = include_protocol_path_presentations
+        ? build_protocol_path_presentations(session)
+        : std::vector<FrontendProtocolPathPresentationDto> {};
+    const auto input_metadata = build_frontend_input_metadata(session);
+    const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
+    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
+    const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
+    const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
+        flow_characteristics_statistics,
+        packet_direction_distribution_statistics
+    );
+    const auto original_byte_direction_distribution =
+        build_frontend_original_byte_direction_distribution(
+            flow_characteristics_statistics,
+            original_byte_direction_distribution_statistics
+        );
+    const auto tcp_flag_statistics = build_frontend_tcp_flag_statistics(
+        session.tcp_flag_statistics(),
+        protocol_summary.tcp.packet_count
+    );
+    const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
+        protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
+    const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
+        protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
+    const auto whole_capture_packet_count = packet_statistics.total_packet_count;
+    const auto whole_capture_captured_bytes = packet_statistics.total_captured_bytes;
+    const auto whole_capture_original_bytes = packet_statistics.total_original_bytes;
+    return FrontendOverviewDto {
+        .has_capture = session.has_capture(),
+        .summary = FrontendOverviewSummaryDto {
+            .packet_count = session.summary().packet_count,
+            .flow_count = session.summary().flow_count,
+            .captured_bytes = captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(captured_bytes),
+            .original_bytes = original_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(original_bytes),
+            .total_bytes = session.summary().total_bytes,
+        },
+        .whole_capture_totals = FrontendWholeCaptureTotalsDto {
+            .packet_count = whole_capture_packet_count,
+            .captured_bytes = whole_capture_captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_captured_bytes),
+            .original_bytes = whole_capture_original_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_original_bytes),
+        },
+        .input_metadata = std::move(input_metadata),
+        .capture_time = std::move(capture_time),
+        .capture_metrics = std::move(capture_metrics),
+        .flow_characteristics = std::move(flow_characteristics),
+        .packet_direction_distribution = std::move(packet_direction_distribution),
+        .original_byte_direction_distribution = std::move(original_byte_direction_distribution),
+        .tcp_flag_statistics = std::move(tcp_flag_statistics),
+        .statistics_partial_open_warning_text =
+            build_frontend_statistics_partial_open_warning_text(session.is_partial_open()),
+        .captured_bytes = captured_bytes,
+        .original_bytes = original_bytes,
+        .unrecognized_packet_count = session.unrecognized_packet_count(),
+        .unrecognized_packets = unrecognized_packets.packet_count > 0U
+            ? std::optional<FrontendUnrecognizedPacketStatisticsDto> {
+                FrontendUnrecognizedPacketStatisticsDto {
+                    .packet_count = unrecognized_packets.packet_count,
+                    .captured_bytes = unrecognized_packets.captured_bytes,
+                    .captured_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.captured_bytes),
+                    .original_bytes = unrecognized_packets.original_bytes,
+                    .original_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.original_bytes),
+                }
+            }
+            : std::nullopt,
+        .protocol_summary = FrontendOverviewProtocolSummaryDto {
+            .tcp = make_frontend_protocol_stats(protocol_summary.tcp),
+            .udp = make_frontend_protocol_stats(protocol_summary.udp),
+            .sctp = make_frontend_protocol_stats(protocol_summary.sctp),
+            .other = make_frontend_protocol_stats(protocol_summary.other),
+            .ipv4 = make_frontend_protocol_stats(protocol_summary.ipv4),
+            .ipv6 = make_frontend_protocol_stats(protocol_summary.ipv6),
+        },
+        .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
+        .protocol_path_presentations = std::move(protocol_path_presentations),
+    };
+}
+
 }  // namespace
 
 FrontendSessionAdapter::~FrontendSessionAdapter() {
@@ -2496,7 +2590,7 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
         return result;
     }
 
-    const auto overview = get_overview();
+    const auto overview = build_frontend_overview(session_, false);
     FrontendStatisticsReportMetadata metadata {
         .application_name = "Pcap Flow Lab",
         .application_version = PFL_APP_VERSION,
@@ -2914,92 +3008,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 }
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
-    const auto protocol_summary = session_.protocol_summary();
-    const auto& packet_statistics = session_.packet_statistics();
-    const auto flow_characteristics_statistics = session_.flow_characteristics_statistics();
-    const auto packet_direction_distribution_statistics = session_.packet_direction_distribution_statistics();
-    const auto original_byte_direction_distribution_statistics =
-        session_.original_byte_direction_distribution_statistics();
-    const auto unrecognized_packets = session_.unrecognized_packet_statistics();
-    const auto protocol_path_presentations = build_protocol_path_presentations(session_);
-    const auto input_metadata = build_frontend_input_metadata(session_);
-    const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
-    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
-    const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
-    const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
-        flow_characteristics_statistics,
-        packet_direction_distribution_statistics
-    );
-    const auto original_byte_direction_distribution =
-        build_frontend_original_byte_direction_distribution(
-            flow_characteristics_statistics,
-            original_byte_direction_distribution_statistics
-        );
-    const auto tcp_flag_statistics = build_frontend_tcp_flag_statistics(
-        session_.tcp_flag_statistics(),
-        protocol_summary.tcp.packet_count
-    );
-    const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
-        protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
-    const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
-        protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
-    const auto whole_capture_packet_count = packet_statistics.total_packet_count;
-    const auto whole_capture_captured_bytes = packet_statistics.total_captured_bytes;
-    const auto whole_capture_original_bytes = packet_statistics.total_original_bytes;
-    return FrontendOverviewDto {
-        .has_capture = session_.has_capture(),
-        .summary = FrontendOverviewSummaryDto {
-            .packet_count = session_.summary().packet_count,
-            .flow_count = session_.summary().flow_count,
-            .captured_bytes = captured_bytes,
-            .captured_bytes_text = session_detail::format_statistics_compact_size_value(captured_bytes),
-            .original_bytes = original_bytes,
-            .original_bytes_text = session_detail::format_statistics_compact_size_value(original_bytes),
-            .total_bytes = session_.summary().total_bytes,
-        },
-        .whole_capture_totals = FrontendWholeCaptureTotalsDto {
-            .packet_count = whole_capture_packet_count,
-            .captured_bytes = whole_capture_captured_bytes,
-            .captured_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_captured_bytes),
-            .original_bytes = whole_capture_original_bytes,
-            .original_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_original_bytes),
-        },
-        .input_metadata = std::move(input_metadata),
-        .capture_time = std::move(capture_time),
-        .capture_metrics = std::move(capture_metrics),
-        .flow_characteristics = std::move(flow_characteristics),
-        .packet_direction_distribution = std::move(packet_direction_distribution),
-        .original_byte_direction_distribution = std::move(original_byte_direction_distribution),
-        .tcp_flag_statistics = std::move(tcp_flag_statistics),
-        .statistics_partial_open_warning_text =
-            build_frontend_statistics_partial_open_warning_text(session_.is_partial_open()),
-        .captured_bytes = captured_bytes,
-        .original_bytes = original_bytes,
-        .unrecognized_packet_count = session_.unrecognized_packet_count(),
-        .unrecognized_packets = unrecognized_packets.packet_count > 0U
-            ? std::optional<FrontendUnrecognizedPacketStatisticsDto> {
-                FrontendUnrecognizedPacketStatisticsDto {
-                    .packet_count = unrecognized_packets.packet_count,
-                    .captured_bytes = unrecognized_packets.captured_bytes,
-                    .captured_bytes_text =
-                        session_detail::format_statistics_compact_size_value(unrecognized_packets.captured_bytes),
-                    .original_bytes = unrecognized_packets.original_bytes,
-                    .original_bytes_text =
-                        session_detail::format_statistics_compact_size_value(unrecognized_packets.original_bytes),
-                }
-            }
-            : std::nullopt,
-        .protocol_summary = FrontendOverviewProtocolSummaryDto {
-            .tcp = make_frontend_protocol_stats(protocol_summary.tcp),
-            .udp = make_frontend_protocol_stats(protocol_summary.udp),
-            .sctp = make_frontend_protocol_stats(protocol_summary.sctp),
-            .other = make_frontend_protocol_stats(protocol_summary.other),
-            .ipv4 = make_frontend_protocol_stats(protocol_summary.ipv4),
-            .ipv6 = make_frontend_protocol_stats(protocol_summary.ipv6),
-        },
-        .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
-        .protocol_path_presentations = std::move(protocol_path_presentations),
-    };
+    return build_frontend_overview(session_, true);
 }
 
 FrontendCapturePacketSizeStatisticsDto FrontendSessionAdapter::get_capture_packet_size_statistics() const {
