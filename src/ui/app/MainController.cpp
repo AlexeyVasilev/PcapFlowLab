@@ -41,6 +41,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QStringList>
+#include <QSysInfo>
 #include <QThread>
 #include <QTimer>
 #include <QVariantMap>
@@ -663,33 +664,6 @@ QString formatProtocol(const std::uint8_t protocol) {
     default:
         return QStringLiteral("%1").arg(protocol);
     }
-}
-
-QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
-    QStringList lines {};
-    lines << QStringLiteral("Capture storage summary");
-    lines << QStringLiteral("Total packets seen: %1").arg(summary.total_packets_seen);
-    lines << QStringLiteral("Recognized packets: %1").arg(summary.recognized_packets);
-    lines << QStringLiteral("Unrecognized packets: %1").arg(summary.unrecognized_packets);
-    lines << QStringLiteral("IPv4 connections: %1").arg(summary.ipv4_connection_count);
-    lines << QStringLiteral("IPv6 connections: %1").arg(summary.ipv6_connection_count);
-    lines << QStringLiteral("Flows: %1").arg(summary.flow_count);
-    lines << QStringLiteral("Connection packet refs: %1").arg(summary.connection_packet_refs);
-    lines << QStringLiteral("Unrecognized packet refs: %1").arg(summary.unrecognized_packet_refs);
-    lines << QStringLiteral("Unique protocol paths: %1").arg(summary.unique_protocol_paths);
-    lines << QStringLiteral("Protocol path layers total/max: %1 / %2")
-        .arg(summary.protocol_path_layers_total)
-        .arg(summary.protocol_path_max_depth);
-    lines << QStringLiteral("sizeof(PacketRef): %1").arg(summary.sizeof_packet_ref);
-    lines << QStringLiteral("sizeof(UnrecognizedPacketRecord): %1").arg(summary.sizeof_unrecognized_packet_record);
-    lines << QStringLiteral("sizeof(LayerKey): %1").arg(summary.sizeof_layer_key);
-    lines << QStringLiteral("Approx connection PacketRef bytes: %1").arg(summary.approx_connection_packet_ref_bytes);
-    lines << QStringLiteral("Approx unrecognized record bytes: %1").arg(summary.approx_unrecognized_record_bytes);
-    lines << QStringLiteral("Approx unrecognized reason text bytes: %1").arg(summary.approx_unrecognized_reason_text_bytes);
-    lines << QStringLiteral("Approx protocol path layer payload bytes: %1")
-        .arg(summary.approx_protocol_path_layer_payload_bytes);
-    lines << QStringLiteral("Notes: estimates exclude allocator, hash-node, and transient UI/frontend copy overhead.");
-    return lines.join(QLatin1Char('\n'));
 }
 
 QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary& summary) {
@@ -4077,12 +4051,67 @@ bool MainController::showFragmentedPacketCountColumn() const noexcept {
     return show_fragmented_packet_count_column_;
 }
 
-bool MainController::developerDiagnosticsAvailable() const noexcept {
+QString MainController::debugInformationText() const {
+    auto snapshot = session_.diagnostics_snapshot();
+
+    SessionDiagnosticsSection application_section {
+        .title = "Application",
+    };
+    application_section.fields.push_back({"Application", "Pcap Flow Lab"});
+    application_section.fields.push_back({"Version", applicationVersion().toStdString()});
+    application_section.fields.push_back({"Client", "Qt"});
 #ifndef NDEBUG
-    return true;
+    application_section.fields.push_back({"Build type", "Debug"});
 #else
-    return false;
+    application_section.fields.push_back({"Build type", "Release"});
 #endif
+    application_section.fields.push_back({"Qt version", QString::fromLatin1(qVersion()).toStdString()});
+    application_section.fields.push_back({"Operating system", QSysInfo::prettyProductName().toStdString()});
+    application_section.fields.push_back({"Process architecture", QSysInfo::currentCpuArchitecture().toStdString()});
+    snapshot.sections.insert(snapshot.sections.begin(), std::move(application_section));
+
+    SessionDiagnosticsSection runtime_section {
+        .title = "Selection / Runtime",
+    };
+    runtime_section.fields.push_back({
+        "Selected flow index",
+        selected_flow_index_ >= 0 ? std::to_string(selected_flow_index_) : "None",
+    });
+    runtime_section.fields.push_back({
+        "Selected packet index",
+        selected_packet_index_ == kInvalidPacketSelection ? "None" : std::to_string(selected_packet_index_),
+    });
+    runtime_section.fields.push_back({
+        "Selected stream item index",
+        selected_stream_item_index_ == kInvalidStreamSelection ? "None" : std::to_string(selected_stream_item_index_),
+    });
+    runtime_section.fields.push_back({
+        "Currently loaded packet row count",
+        std::to_string(loaded_packet_row_count_),
+    });
+    runtime_section.fields.push_back({
+        "Total selected-flow packet count",
+        std::to_string(total_packet_row_count_),
+    });
+    runtime_section.fields.push_back({
+        "Currently loaded Stream row count",
+        std::to_string(loaded_stream_item_count_),
+    });
+    runtime_section.fields.push_back({
+        "Total Stream row count",
+        std::to_string(total_stream_item_count_),
+    });
+    runtime_section.fields.push_back({
+        "Stream packet window count",
+        std::to_string(stream_packet_window_count_),
+    });
+    runtime_section.fields.push_back({
+        "Stream packet window partial",
+        streamPacketWindowPartial() ? "Yes" : "No",
+    });
+    snapshot.sections.push_back(std::move(runtime_section));
+
+    return QString::fromStdString(format_session_diagnostics_text(snapshot));
 }
 
 QString MainController::flowGroupingWarningText() const {
@@ -6758,14 +6787,6 @@ void MainController::selectUnrecognizedPackets() {
 
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
     refreshUnrecognizedPackets(true);
-}
-
-QString MainController::captureStorageSummaryText() const {
-    if (!session_.has_capture()) {
-        return QStringLiteral("No capture loaded.");
-    }
-
-    return formatCaptureStorageSummaryText(session_.storage_summary());
 }
 
 void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex) {

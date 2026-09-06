@@ -7124,15 +7124,65 @@ std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_c
     };
 }
 
+namespace {
+
+std::string yes_no(const bool value) {
+    return value ? "Yes" : "No";
+}
+
+std::string format_path_for_diagnostics(const std::filesystem::path& path) {
+    return path.empty() ? "Unavailable" : path.string();
+}
+
+std::string input_type_text(const CaptureSession& session) {
+    if (session.opened_from_index()) {
+        return "PcapFlowLab Index";
+    }
+
+    switch (session.source_info().format) {
+    case CaptureSourceFormat::classic_pcap:
+        return "PCAP";
+    case CaptureSourceFormat::pcapng:
+        return "PCAPNG";
+    case CaptureSourceFormat::unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+void append_diagnostics_field(
+    SessionDiagnosticsSection& section,
+    std::string name,
+    std::string value
+) {
+    section.fields.push_back(SessionDiagnosticsField {
+        .name = std::move(name),
+        .value = std::move(value),
+    });
+}
+
+void append_diagnostics_field(
+    SessionDiagnosticsSection& section,
+    std::string name,
+    const std::uint64_t value
+) {
+    append_diagnostics_field(section, std::move(name), std::to_string(value));
+}
+
+}  // namespace
+
 CaptureStorageSummary CaptureSession::storage_summary() const {
     CaptureStorageSummary summary {};
     if (uses_v16_storage()) {
+        const auto& statistics = v16_storage_->fast_statistics_tier.capture_statistics_snapshot;
         summary.ipv4_connection_count = static_cast<std::uint64_t>(v16_storage_->metadata.ipv4_connections.size());
         summary.ipv6_connection_count = static_cast<std::uint64_t>(v16_storage_->metadata.ipv6_connections.size());
-        summary.flow_count = state_.summary.flow_count;
-        summary.recognized_packets = state_.summary.packet_count;
-        summary.unrecognized_packets = state_.packet_statistics.unrecognized_packet_count;
-        summary.total_packets_seen = summary.recognized_packets;
+        summary.flow_count = statistics.total_flow_count;
+        summary.total_packets_seen = statistics.total_packet_count;
+        summary.unrecognized_packets = statistics.unrecognized_packet_count;
+        summary.recognized_packets = summary.total_packets_seen >= summary.unrecognized_packets
+            ? summary.total_packets_seen - summary.unrecognized_packets
+            : 0U;
         summary.connection_packet_refs = 0U;
         for (const auto& descriptor : v16_storage_->metadata.packetref_directory) {
             summary.connection_packet_refs += descriptor.packet_count;
@@ -7197,6 +7247,309 @@ CaptureStorageSummary CaptureSession::storage_summary() const {
         summary.protocol_path_layers_total * summary.sizeof_layer_key * 2U;
 
     return summary;
+}
+
+SessionDiagnosticsSnapshot CaptureSession::diagnostics_snapshot() const {
+    SessionDiagnosticsSnapshot snapshot {};
+    snapshot.has_capture = has_capture();
+
+    if (!has_capture()) {
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Session",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No capture loaded.",
+                },
+            },
+        });
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Source Capture",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No capture loaded.",
+                },
+            },
+        });
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Capture",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No capture loaded.",
+                },
+            },
+        });
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Storage",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No capture loaded.",
+                },
+            },
+        });
+        return snapshot;
+    }
+
+    const auto storage = storage_summary();
+
+    SessionDiagnosticsSection session_section {
+        .title = "Session",
+    };
+    append_diagnostics_field(session_section, "Current input path", format_path_for_diagnostics(input_path()));
+    append_diagnostics_field(session_section, "Input type", input_type_text(*this));
+    append_diagnostics_field(session_section, "Input file size", input_file_size());
+    append_diagnostics_field(session_section, "Opened from index", yes_no(opened_from_index()));
+    append_diagnostics_field(session_section, "Completeness", is_partial_open() ? "Partial import/open" : "Complete");
+    if (is_partial_open() && partial_open_failure().has_details()) {
+        const auto& failure = partial_open_failure();
+        if (!failure.reason.empty()) {
+            append_diagnostics_field(session_section, "Partial reason", failure.reason);
+        }
+        if (opened_from_index()) {
+            append_diagnostics_field(session_section, "Partial packets processed", "Not available in index");
+            append_diagnostics_field(session_section, "Partial bytes processed", "Not available in index");
+        } else {
+            append_diagnostics_field(session_section, "Partial packets processed", failure.packets_processed);
+            append_diagnostics_field(session_section, "Partial bytes processed", failure.bytes_processed);
+        }
+    }
+    append_diagnostics_field(
+        session_section,
+        "Index revision",
+        opened_from_index() ? std::to_string(kCaptureIndexVersion) : "Not applicable"
+    );
+    snapshot.sections.push_back(std::move(session_section));
+
+    SessionDiagnosticsSection source_section {
+        .title = "Source Capture",
+    };
+    append_diagnostics_field(source_section, "Source available", yes_no(source_capture_accessible()));
+    append_diagnostics_field(source_section, "Active source path", format_path_for_diagnostics(attached_source_capture_path()));
+    append_diagnostics_field(source_section, "Expected source path", format_path_for_diagnostics(expected_source_capture_path()));
+    snapshot.sections.push_back(std::move(source_section));
+
+    SessionDiagnosticsSection capture_section {
+        .title = "Capture",
+    };
+    append_diagnostics_field(capture_section, "Total packets", storage.total_packets_seen);
+    append_diagnostics_field(capture_section, "Flows", storage.flow_count);
+    append_diagnostics_field(capture_section, "IPv4 connection count", storage.ipv4_connection_count);
+    append_diagnostics_field(capture_section, "IPv6 connection count", storage.ipv6_connection_count);
+    append_diagnostics_field(capture_section, "Recognized packets", storage.recognized_packets);
+    append_diagnostics_field(capture_section, "Unrecognized packets", storage.unrecognized_packets);
+    append_diagnostics_field(capture_section, "Unique Protocol Paths", storage.unique_protocol_paths);
+    append_diagnostics_field(capture_section, "Protocol Path total layer count", storage.protocol_path_layers_total);
+    append_diagnostics_field(capture_section, "Maximum Protocol Path depth", storage.protocol_path_max_depth);
+    snapshot.sections.push_back(std::move(capture_section));
+
+    SessionDiagnosticsSection storage_section {
+        .title = "Storage",
+    };
+    append_diagnostics_field(
+        storage_section,
+        "Storage mode",
+        uses_v16_storage() ? "v16 lazy-index-backed session" : "resident/raw-capture session"
+    );
+    append_diagnostics_field(storage_section, "Connection PacketRef count", storage.connection_packet_refs);
+    append_diagnostics_field(storage_section, "Unrecognized PacketRef count", storage.unrecognized_packet_refs);
+    append_diagnostics_field(storage_section, "sizeof(PacketRef)", storage.sizeof_packet_ref);
+    append_diagnostics_field(storage_section, "sizeof(UnrecognizedPacketRecord)", storage.sizeof_unrecognized_packet_record);
+    append_diagnostics_field(storage_section, "sizeof(LayerKey)", storage.sizeof_layer_key);
+    const auto v16_backed = uses_v16_storage();
+    append_diagnostics_field(
+        storage_section,
+        v16_backed ? "Encoded connection PacketRef bytes in index" : "Approximate resident connection PacketRef bytes",
+        storage.approx_connection_packet_ref_bytes
+    );
+    append_diagnostics_field(
+        storage_section,
+        v16_backed ? "Encoded unrecognized record bytes in index" : "Approximate resident unrecognized record bytes",
+        storage.approx_unrecognized_record_bytes
+    );
+    append_diagnostics_field(
+        storage_section,
+        "Approximate unrecognized reason text bytes",
+        storage.approx_unrecognized_reason_text_bytes
+    );
+    append_diagnostics_field(
+        storage_section,
+        "Approximate Protocol Path layer payload bytes",
+        storage.approx_protocol_path_layer_payload_bytes
+    );
+    append_diagnostics_field(
+        storage_section,
+        "Estimate note",
+        v16_backed
+            ? "Encoded index byte estimates describe persisted v16 payloads, not process memory consumption."
+            : "Resident estimates exclude allocator, hash-node, and transient UI/frontend copy overhead."
+    );
+    snapshot.sections.push_back(std::move(storage_section));
+
+    if (uses_v16_storage()) {
+        SessionDiagnosticsSection topology_section {
+            .title = "v16 Runtime Topology",
+        };
+        append_diagnostics_field(
+            topology_section,
+            "IPv4 connection metadata rows",
+            static_cast<std::uint64_t>(v16_storage_->metadata.ipv4_connections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "IPv6 connection metadata rows",
+            static_cast<std::uint64_t>(v16_storage_->metadata.ipv6_connections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Protocol-path membership rows",
+            static_cast<std::uint64_t>(v16_storage_->metadata.protocol_path_membership.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "PacketRef directory entries",
+            static_cast<std::uint64_t>(v16_storage_->metadata.packetref_directory.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "PacketRef detail section count",
+            static_cast<std::uint64_t>(v16_storage_->metadata.packetref_detail_sections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Unrecognized directory section count",
+            static_cast<std::uint64_t>(v16_storage_->metadata.unrecognized_directory_sections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Unrecognized reason section count",
+            static_cast<std::uint64_t>(v16_storage_->metadata.unrecognized_reason_sections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Packet locator section count",
+            static_cast<std::uint64_t>(v16_storage_->metadata.packet_locator_sections.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Canonical runtime flow catalog count",
+            static_cast<std::uint64_t>(v16_storage_->flows.size())
+        );
+        append_diagnostics_field(
+            topology_section,
+            "Lazy detail payloads read for diagnostics",
+            "No"
+        );
+        snapshot.sections.push_back(std::move(topology_section));
+    }
+
+    if (const auto cache = selected_flow_packet_cache_info(); cache.has_value()) {
+        SessionDiagnosticsSection cache_section {
+            .title = "Selected-flow Cache",
+        };
+        append_diagnostics_field(cache_section, "Flow index", static_cast<std::uint64_t>(cache->flow_index));
+        append_diagnostics_field(
+            cache_section,
+            "Cached packet window count",
+            static_cast<std::uint64_t>(cache->cached_packet_window_count)
+        );
+        append_diagnostics_field(
+            cache_section,
+            "Cached packet contribution count",
+            static_cast<std::uint64_t>(cache->cached_packet_contribution_count)
+        );
+        append_diagnostics_field(cache_section, "Total cached bytes", static_cast<std::uint64_t>(cache->total_cached_bytes));
+        append_diagnostics_field(cache_section, "Limit reached", yes_no(cache->limit_reached));
+        append_diagnostics_field(cache_section, "Window fully cached", yes_no(cache->window_fully_cached));
+        snapshot.sections.push_back(std::move(cache_section));
+    } else {
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Selected-flow Cache",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No selected-flow packet cache is resident.",
+                },
+            },
+        });
+    }
+
+    if (const auto stream = selected_flow_stream_context_info(); stream.has_value()) {
+        SessionDiagnosticsSection stream_section {
+            .title = "Selected-flow Stream Context",
+        };
+        append_diagnostics_field(stream_section, "Flow index", static_cast<std::uint64_t>(stream->flow_index));
+        append_diagnostics_field(
+            stream_section,
+            "Total selected-flow packet count",
+            static_cast<std::uint64_t>(stream->total_flow_packet_count)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Materialized packet window count",
+            static_cast<std::uint64_t>(stream->materialized_packet_window_count)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Materialized cumulative item limit",
+            static_cast<std::uint64_t>(stream->materialized_cumulative_item_limit)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Materialized row count",
+            static_cast<std::uint64_t>(stream->materialized_row_count)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Committed stable row count",
+            static_cast<std::uint64_t>(stream->committed_stable_row_count)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Provisional row count",
+            static_cast<std::uint64_t>(stream->provisional_row_count)
+        );
+        append_diagnostics_field(
+            stream_section,
+            "Has window-incomplete suffix",
+            yes_no(stream->has_window_incomplete_suffix)
+        );
+        append_diagnostics_field(stream_section, "Has pagination lookahead", yes_no(stream->has_pagination_lookahead));
+        append_diagnostics_field(stream_section, "Valid", yes_no(stream->valid));
+        append_diagnostics_field(stream_section, "Generation", stream->generation);
+        snapshot.sections.push_back(std::move(stream_section));
+    } else {
+        snapshot.sections.push_back(SessionDiagnosticsSection {
+            .title = "Selected-flow Stream Context",
+            .fields = {
+                SessionDiagnosticsField {
+                    .name = "State",
+                    .value = "No selected-flow stream context is resident.",
+                },
+            },
+        });
+    }
+
+    return snapshot;
+}
+
+std::string format_session_diagnostics_text(const SessionDiagnosticsSnapshot& snapshot) {
+    std::ostringstream out {};
+    bool first_section = true;
+    for (const auto& section : snapshot.sections) {
+        if (!first_section) {
+            out << '\n';
+        }
+        first_section = false;
+
+        out << section.title << '\n';
+        for (const auto& field : section.fields) {
+            out << field.name << ": " << field.value << '\n';
+        }
+    }
+    return out.str();
 }
 
 CaptureState& CaptureSession::state() noexcept {

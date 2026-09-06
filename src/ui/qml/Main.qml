@@ -122,14 +122,9 @@ ApplicationWindow {
         onTriggered: supportedProtocolsDialog.open()
     }
 
-    Action {
-        id: showCaptureStorageDiagnosticsAction
-        text: "Capture Storage Diagnostics"
-        enabled: mainController.developerDiagnosticsAvailable
-        onTriggered: {
-            captureStorageDiagnosticsDialog.diagnosticsText = mainController.captureStorageSummaryText()
-            captureStorageDiagnosticsDialog.open()
-        }
+    function openDebugInformationDialog() {
+        debugInformationDialog.refresh()
+        debugInformationDialog.open()
     }
 
     Action {
@@ -183,64 +178,58 @@ ApplicationWindow {
         }
 
         Menu {
+            objectName: "helpMenu"
             title: "Help"
 
             MenuItem { action: showSupportedProtocolsAction }
-            MenuSeparator {
-                visible: mainController.developerDiagnosticsAvailable
-                height: visible ? implicitHeight : 0
-            }
-            MenuItem {
-                action: showCaptureStorageDiagnosticsAction
-                visible: mainController.developerDiagnosticsAvailable
-                height: visible ? implicitHeight : 0
-            }
-            MenuSeparator {
-                visible: mainController.developerDiagnosticsAvailable
-                height: visible ? implicitHeight : 0
-            }
+            MenuSeparator {}
             MenuItem { action: showAboutAction }
         }
     }
 
     Dialog {
-        id: captureStorageDiagnosticsDialog
+        id: debugInformationDialog
+        objectName: "debugInformationDialog"
         property string diagnosticsText: ""
+        function refresh() {
+            diagnosticsText = mainController.debugInformationText()
+        }
 
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
-        width: 760
-        height: 520
+        width: 840
+        height: 580
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        title: "Capture Storage Diagnostics"
+        title: "Debug Information"
 
         contentItem: ScrollView {
-            id: captureStorageDiagnosticsScroll
+            id: debugInformationScroll
             clip: true
             ScrollBar.vertical: AppScrollBar {
-                parent: captureStorageDiagnosticsScroll
-                x: captureStorageDiagnosticsScroll.mirrored ? 0 : captureStorageDiagnosticsScroll.width - width
-                y: captureStorageDiagnosticsScroll.topPadding
-                height: captureStorageDiagnosticsScroll.availableHeight
-                policy: captureStorageDiagnosticsScroll.contentHeight > captureStorageDiagnosticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                parent: debugInformationScroll
+                x: debugInformationScroll.mirrored ? 0 : debugInformationScroll.width - width
+                y: debugInformationScroll.topPadding
+                height: debugInformationScroll.availableHeight
+                policy: debugInformationScroll.contentHeight > debugInformationScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
             ScrollBar.horizontal: AppScrollBar {
-                parent: captureStorageDiagnosticsScroll
-                x: captureStorageDiagnosticsScroll.leftPadding
-                y: captureStorageDiagnosticsScroll.height - height
-                width: captureStorageDiagnosticsScroll.availableWidth
-                policy: captureStorageDiagnosticsScroll.contentWidth > captureStorageDiagnosticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                parent: debugInformationScroll
+                x: debugInformationScroll.leftPadding
+                y: debugInformationScroll.height - height
+                width: debugInformationScroll.availableWidth
+                policy: debugInformationScroll.contentWidth > debugInformationScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
 
             TextArea {
+                objectName: "debugInformationTextArea"
                 readOnly: true
                 selectByMouse: true
                 textFormat: TextEdit.PlainText
                 wrapMode: TextEdit.NoWrap
-                text: captureStorageDiagnosticsDialog.diagnosticsText
+                text: debugInformationDialog.diagnosticsText
                 font.family: "Consolas"
                 font.pixelSize: 12
                 color: "#0f172a"
@@ -254,21 +243,39 @@ ApplicationWindow {
         }
 
         footer: DialogButtonBox {
-            standardButtons: DialogButtonBox.Close
-
             Button {
+                objectName: "debugInformationCopyButton"
                 text: "Copy"
                 DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
-                enabled: captureStorageDiagnosticsDialog.diagnosticsText.length > 0
-                onClicked: mainController.copyTextToClipboard(captureStorageDiagnosticsDialog.diagnosticsText)
+                enabled: debugInformationDialog.diagnosticsText.length > 0
+                onClicked: mainController.copyTextToClipboard(debugInformationDialog.diagnosticsText)
             }
 
-            onRejected: captureStorageDiagnosticsDialog.close()
+            Button {
+                objectName: "debugInformationCloseButton"
+                text: "Close"
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                onClicked: debugInformationDialog.close()
+            }
+
+            onRejected: debugInformationDialog.close()
         }
     }
 
     Dialog {
         id: aboutDialog
+        objectName: "aboutDialog"
+        readonly property bool debugInformationHiddenActivationAvailable: true
+        function activateDebugInformationFromVersion(modifiers) {
+            const required = Qt.ControlModifier | Qt.ShiftModifier
+            if ((modifiers & required) !== required) {
+                return false
+            }
+
+            window.openDebugInformationDialog()
+            return true
+        }
+
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
@@ -315,8 +322,18 @@ ApplicationWindow {
                         }
 
                         Label {
+                            objectName: "aboutVersionLabel"
                             text: "Version " + mainController.applicationVersion
                             color: "#475569"
+
+                            MouseArea {
+                                objectName: "aboutVersionHiddenDebugInformationArea"
+                                anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton
+                                onClicked: function(mouse) {
+                                    aboutDialog.activateDebugInformationFromVersion(mouse.modifiers)
+                                }
+                            }
                         }
                     }
                 }

@@ -332,7 +332,6 @@ private:
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
     Q_PROPERTY(bool showFragmentedPacketCountColumn READ showFragmentedPacketCountColumn WRITE setShowFragmentedPacketCountColumn NOTIFY showFragmentedPacketCountColumnChanged)
-    Q_PROPERTY(bool developerDiagnosticsAvailable READ developerDiagnosticsAvailable CONSTANT)
     Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
     Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -628,7 +627,6 @@ public:
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
     [[nodiscard]] bool showFragmentedPacketCountColumn() const noexcept;
-    [[nodiscard]] bool developerDiagnosticsAvailable() const noexcept;
     [[nodiscard]] QString flowGroupingWarningText() const;
     [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
@@ -761,7 +759,7 @@ public:
     Q_INVOKABLE bool exportSelectedPacketBytes(const QString& formatId);
     Q_INVOKABLE bool exportSelectedStreamItemData(const QString& formatId);
     Q_INVOKABLE void selectUnrecognizedPackets();
-    Q_INVOKABLE QString captureStorageSummaryText() const;
+    Q_INVOKABLE QString debugInformationText() const;
 
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);

@@ -31,6 +31,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QMetaObject>
 #include <QMetaEnum>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -1516,6 +1517,99 @@ int main(int argc, char* argv[]) {
 
     UI_EXPECT(controller.statusText().isEmpty());
 
+    run_ui_section("debug_information_window", [&]() {
+        auto debug_window = load_main_qml_component(controller);
+        UI_EXPECT(named_object(debug_window.object.get(), "showDebugInformationAction") == nullptr);
+        UI_EXPECT(named_object(debug_window.object.get(), "captureStorageDiagnosticsDialog") == nullptr);
+        auto* help_menu = named_object(debug_window.object.get(), "helpMenu");
+        auto* about_dialog = named_object(debug_window.object.get(), "aboutDialog");
+        auto* about_version_label = named_object(debug_window.object.get(), "aboutVersionLabel");
+        auto* about_version_hidden_area = named_object(
+            debug_window.object.get(),
+            "aboutVersionHiddenDebugInformationArea"
+        );
+        auto* debug_dialog = named_object(debug_window.object.get(), "debugInformationDialog");
+        auto* debug_text_area = named_object(debug_window.object.get(), "debugInformationTextArea");
+        auto* debug_copy_button = named_object(debug_window.object.get(), "debugInformationCopyButton");
+        auto* debug_close_button = named_object(debug_window.object.get(), "debugInformationCloseButton");
+        auto* debug_refresh_button = named_object(debug_window.object.get(), "debugInformationRefreshButton");
+        UI_REQUIRE(help_menu != nullptr);
+        UI_REQUIRE(about_dialog != nullptr);
+        UI_REQUIRE(about_version_label != nullptr);
+        UI_REQUIRE(about_version_hidden_area != nullptr);
+        UI_REQUIRE(debug_dialog != nullptr);
+        UI_REQUIRE(debug_text_area != nullptr);
+        UI_REQUIRE(debug_copy_button != nullptr);
+        UI_REQUIRE(debug_close_button != nullptr);
+        UI_EXPECT(debug_refresh_button == nullptr);
+        UI_EXPECT(about_version_label->property("text").toString()
+            == QStringLiteral("Version ") + controller.applicationVersion());
+        UI_EXPECT(about_dialog->property("debugInformationHiddenActivationAvailable").toBool());
+
+        const auto no_capture_text = controller.debugInformationText();
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Application\n")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Application: Pcap Flow Lab")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Version: ") + controller.applicationVersion()));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Client: Qt")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Build type: ")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Qt version: ")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Operating system: ")));
+        UI_EXPECT(no_capture_text.contains(QStringLiteral("Session\nState: No capture loaded.")));
+
+        QVariant normal_activation_result;
+        UI_EXPECT(QMetaObject::invokeMethod(
+            about_dialog,
+            "activateDebugInformationFromVersion",
+            Q_RETURN_ARG(QVariant, normal_activation_result),
+            Q_ARG(QVariant, QVariant {0})
+        ));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!normal_activation_result.toBool());
+        UI_EXPECT(!debug_dialog->property("opened").toBool());
+        UI_EXPECT(debug_text_area->property("text").toString().isEmpty());
+
+        QVariant hidden_activation_result;
+        UI_EXPECT(QMetaObject::invokeMethod(
+            about_dialog,
+            "activateDebugInformationFromVersion",
+            Q_RETURN_ARG(QVariant, hidden_activation_result),
+            Q_ARG(QVariant, QVariant {static_cast<int>(Qt::ControlModifier | Qt::ShiftModifier)})
+        ));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(hidden_activation_result.toBool());
+        UI_EXPECT(debug_dialog->property("opened").toBool());
+        UI_EXPECT(debug_text_area->property("text").toString() == no_capture_text);
+        UI_EXPECT(debug_copy_button->property("enabled").toBool());
+        UI_EXPECT(debug_close_button->property("text").toString() == QStringLiteral("Close"));
+        QMetaObject::invokeMethod(debug_dialog, "close");
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        UI_EXPECT(open_capture_and_wait(app, controller, capture_path));
+        controller.setSelectedFlowIndex(0);
+        controller.loadMorePackets();
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        QVariant refreshed_activation_result;
+        UI_EXPECT(QMetaObject::invokeMethod(
+            about_dialog,
+            "activateDebugInformationFromVersion",
+            Q_RETURN_ARG(QVariant, refreshed_activation_result),
+            Q_ARG(QVariant, QVariant {static_cast<int>(Qt::ControlModifier | Qt::ShiftModifier)})
+        ));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(refreshed_activation_result.toBool());
+        const auto capture_text = debug_text_area->property("text").toString();
+        UI_EXPECT(capture_text != no_capture_text);
+        UI_EXPECT(capture_text.contains(QStringLiteral("Client: Qt")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Input type: PCAP")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Opened from index: No")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Storage mode: resident/raw-capture session")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Selected flow index: 0")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Currently loaded packet row count: ")));
+        UI_EXPECT(capture_text.contains(QStringLiteral("Selected-flow Cache")));
+        UI_EXPECT(!capture_text.contains(QStringLiteral("Capture Storage Diagnostics")));
+    });
+
     run_ui_section("analysis_pane_smoke", [&]() {
         auto pane = load_flow_analysis_pane_component();
         pane.object->setProperty("hasActiveFlow", false);
@@ -2732,6 +2826,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(partial_controller.statusText().isEmpty());
     UI_EXPECT(partial_controller.partialOpenWarningText().contains(QStringLiteral("Capture opened partially.")));
     UI_EXPECT(partial_controller.partialOpenWarningText().contains(QStringLiteral("Results are incomplete.")));
+    const auto partial_debug_text = partial_controller.debugInformationText();
+    UI_EXPECT(partial_debug_text.contains(QStringLiteral("Completeness: Partial import/open")));
+    UI_EXPECT(partial_debug_text.contains(QStringLiteral("Partial packets processed: ")));
     auto* partial_packet_model = qobject_cast<PacketListModel*>(partial_controller.packetModel());
     UI_EXPECT(partial_packet_model != nullptr);
     partial_controller.setSelectedFlowIndex(0);

@@ -2739,6 +2739,138 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     pfl_frontend_session_adapter_free(handle);
 }
 
+void expect_session_diagnostics_text_covers_runtime_states() {
+    CaptureSession empty_session {};
+    const auto empty_text = format_session_diagnostics_text(empty_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(empty_text, "Session\n"));
+    PFL_EXPECT(contains_text(empty_text, "State: No capture loaded."));
+    PFL_EXPECT(contains_text(empty_text, "Capture\nState: No capture loaded."));
+    PFL_EXPECT(contains_text(empty_text, "Storage\nState: No capture loaded."));
+
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1),
+        ipv4(10, 1, 0, 2),
+        41000,
+        443,
+        5,
+        0x12
+    );
+    const auto unrecognized_packet = unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_capture_file(
+        "pfl_session_diagnostics_capture.pcap",
+        make_classic_pcap({
+            {100, recognized_packet},
+            {200, unrecognized_packet},
+        })
+    );
+
+    CaptureSession raw_session {};
+    PFL_REQUIRE(raw_session.open_capture(capture_path));
+    raw_session.prepare_selected_flow_packet_cache(0U, 1U);
+
+    const auto raw_snapshot = raw_session.diagnostics_snapshot();
+    const auto raw_text = format_session_diagnostics_text(raw_snapshot);
+    const auto raw_storage = raw_session.storage_summary();
+    PFL_EXPECT(raw_snapshot.has_capture);
+    PFL_EXPECT(raw_storage.total_packets_seen == 2U);
+    PFL_EXPECT(raw_storage.recognized_packets == 1U);
+    PFL_EXPECT(raw_storage.unrecognized_packets == 1U);
+    PFL_EXPECT(raw_storage.recognized_packets + raw_storage.unrecognized_packets == raw_storage.total_packets_seen);
+    PFL_EXPECT(contains_text(raw_text, "Input type: PCAP"));
+    PFL_EXPECT(contains_text(raw_text, "Opened from index: No"));
+    PFL_EXPECT(contains_text(raw_text, "Completeness: Complete"));
+    PFL_EXPECT(contains_text(raw_text, "Storage mode: resident/raw-capture session"));
+    PFL_EXPECT(contains_text(raw_text, "Total packets: 2"));
+    PFL_EXPECT(contains_text(raw_text, "Flows: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Recognized packets: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Unrecognized packets: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Connection PacketRef count: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Unrecognized PacketRef count: 1"));
+    PFL_EXPECT(contains_text(raw_text, "sizeof(PacketRef): "));
+    PFL_EXPECT(contains_text(raw_text, "Approximate resident connection PacketRef bytes: "));
+    PFL_EXPECT(contains_text(raw_text, "Approximate resident unrecognized record bytes: "));
+    PFL_EXPECT(contains_text(
+        raw_text,
+        "Estimate note: Resident estimates exclude allocator, hash-node, and transient UI/frontend copy overhead."
+    ));
+    PFL_EXPECT(contains_text(raw_text, "Selected-flow Cache"));
+    PFL_EXPECT(contains_text(raw_text, "Cached packet window count: 1"));
+    PFL_EXPECT(!contains_text(raw_text, "v16 Runtime Topology"));
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_v16.idx";
+    std::error_code remove_error {};
+    std::filesystem::remove(index_path, remove_error);
+    PFL_REQUIRE(raw_session.save_index(index_path));
+
+    const auto moved_capture_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_capture.gone.pcap";
+    std::filesystem::remove(moved_capture_path, remove_error);
+    std::filesystem::rename(capture_path, moved_capture_path);
+
+    CaptureSession index_session {};
+    PFL_REQUIRE(index_session.load_index(index_path));
+    const auto index_storage = index_session.storage_summary();
+    const auto index_text = format_session_diagnostics_text(index_session.diagnostics_snapshot());
+    PFL_EXPECT(index_storage.total_packets_seen == 2U);
+    PFL_EXPECT(index_storage.recognized_packets == 1U);
+    PFL_EXPECT(index_storage.unrecognized_packets == 1U);
+    PFL_EXPECT(index_storage.recognized_packets + index_storage.unrecognized_packets == index_storage.total_packets_seen);
+    PFL_EXPECT(contains_text(index_text, "Input type: PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(index_text, "Opened from index: Yes"));
+    PFL_EXPECT(contains_text(index_text, std::string {"Index revision: "} + std::to_string(kCaptureIndexVersion)));
+    PFL_EXPECT(contains_text(index_text, "Source available: No"));
+    PFL_EXPECT(contains_text(index_text, "Storage mode: v16 lazy-index-backed session"));
+    PFL_EXPECT(contains_text(index_text, "Total packets: 2"));
+    PFL_EXPECT(contains_text(index_text, "Recognized packets: 1"));
+    PFL_EXPECT(contains_text(index_text, "Unrecognized packets: 1"));
+    PFL_EXPECT(contains_text(index_text, "Connection PacketRef count: 1"));
+    PFL_EXPECT(contains_text(index_text, "Unrecognized PacketRef count: 1"));
+    PFL_EXPECT(contains_text(index_text, "Encoded connection PacketRef bytes in index: "));
+    PFL_EXPECT(contains_text(index_text, "Encoded unrecognized record bytes in index: "));
+    PFL_EXPECT(contains_text(
+        index_text,
+        "Estimate note: Encoded index byte estimates describe persisted v16 payloads, not process memory consumption."
+    ));
+    PFL_EXPECT(contains_text(index_text, "v16 Runtime Topology"));
+    PFL_EXPECT(contains_text(index_text, "PacketRef directory entries: "));
+    PFL_EXPECT(contains_text(index_text, "Lazy detail payloads read for diagnostics: No"));
+
+    std::filesystem::rename(moved_capture_path, capture_path);
+
+    auto partial_capture_bytes = make_classic_pcap({{100U, recognized_packet}});
+    partial_capture_bytes.push_back(0xdeU);
+    partial_capture_bytes.push_back(0xadU);
+    partial_capture_bytes.push_back(0xbeU);
+    partial_capture_bytes.push_back(0xefU);
+    const auto partial_capture_path = write_temp_capture_file(
+        "pfl_session_diagnostics_partial_capture.pcap",
+        partial_capture_bytes
+    );
+
+    CaptureSession partial_raw_session {};
+    PFL_REQUIRE(partial_raw_session.open_capture(partial_capture_path));
+    const auto partial_raw_text = format_session_diagnostics_text(partial_raw_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(partial_raw_text, "Completeness: Partial import/open"));
+    PFL_EXPECT(contains_text(partial_raw_text, "Partial packets processed: 1"));
+    PFL_EXPECT(contains_text(partial_raw_text, "Partial bytes processed: "));
+    PFL_EXPECT(!contains_text(partial_raw_text, "Partial packets processed: Not available in index"));
+    PFL_EXPECT(!contains_text(partial_raw_text, "Partial bytes processed: Not available in index"));
+
+    const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_partial_v16.idx";
+    std::filesystem::remove(partial_index_path, remove_error);
+    PFL_REQUIRE(partial_raw_session.save_index(partial_index_path));
+
+    CaptureSession partial_index_session {};
+    PFL_REQUIRE(partial_index_session.load_index(partial_index_path));
+    const auto partial_index_text = format_session_diagnostics_text(partial_index_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(partial_index_text, "Input type: PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(partial_index_text, "Completeness: Partial import/open"));
+    PFL_EXPECT(contains_text(partial_index_text, "Partial packets processed: Not available in index"));
+    PFL_EXPECT(contains_text(partial_index_text, "Partial bytes processed: Not available in index"));
+    PFL_EXPECT(!contains_text(partial_index_text, "Partial packets processed: 0"));
+    PFL_EXPECT(!contains_text(partial_index_text, "Partial bytes processed: 0"));
+    PFL_EXPECT(contains_text(partial_index_text, "Lazy detail payloads read for diagnostics: No"));
+}
+
 }  // namespace
 
 void run_statistics_section_tests() {
@@ -2786,6 +2918,7 @@ void run_statistics_section_tests() {
     expect_statistics_report_bridge_export_contract();
     expect_advanced_flow_filter_text_query_bridge_contract();
     expect_protocol_path_tree_bridge_export_contract();
+    expect_session_diagnostics_text_covers_runtime_states();
 }
 
 }  // namespace pfl::tests
