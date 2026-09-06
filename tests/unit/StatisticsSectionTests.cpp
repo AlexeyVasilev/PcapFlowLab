@@ -2502,6 +2502,165 @@ void expect_protocol_path_tree_bridge_export_contract() {
     pfl_frontend_session_adapter_free(handle);
 }
 
+void expect_frontend_statistics_report_export_uses_tauri_metadata() {
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap")).opened);
+
+    const auto markdown_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_tauri_metadata.md";
+    const auto html_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_tauri_metadata.html";
+    std::filesystem::remove(markdown_path);
+    std::filesystem::remove(html_path);
+
+    const auto markdown_result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        markdown_path
+    );
+    PFL_EXPECT(markdown_result.exported);
+    PFL_EXPECT(markdown_result.error_text.empty());
+    const auto markdown = read_text_file(markdown_path);
+    PFL_EXPECT(contains_text(markdown, "| Application | Pcap Flow Lab |"));
+    PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
+    PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+
+    const auto html_result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::html,
+        html_path
+    );
+    PFL_EXPECT(html_result.exported);
+    PFL_EXPECT(html_result.error_text.empty());
+    const auto html = read_text_file(html_path);
+    PFL_EXPECT(contains_text(html, "<th>Application</th><td>Pcap Flow Lab</td>"));
+    PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Client</th><td>Tauri</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+}
+
+void expect_frontend_statistics_report_export_works_from_v16_index_without_source() {
+    const auto capture_path = write_temp_capture_file(
+        "pfl_statistics_report_index_source.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 130, 0, 1), ipv4(10, 130, 0, 2), 51001, 443)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 130, 0, 3), ipv4(10, 130, 0, 4), 53000, 53)},
+        })
+    );
+    const auto index_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source.idx";
+    const auto report_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source.md";
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(report_path);
+
+    {
+        FrontendSessionAdapter raw_adapter {};
+        PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+        PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+    }
+
+    std::filesystem::remove(capture_path);
+
+    FrontendSessionAdapter index_adapter {};
+    const auto open_result = index_adapter.open_capture(index_path);
+    PFL_REQUIRE(open_result.opened);
+    PFL_EXPECT(open_result.opened_from_index);
+    PFL_EXPECT(!open_result.source_availability.byte_backed_inspection_available);
+
+    const auto export_result = index_adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        report_path
+    );
+    PFL_EXPECT(export_result.exported);
+    PFL_EXPECT(export_result.error_text.empty());
+
+    const auto report = read_text_file(report_path);
+    PFL_EXPECT(contains_text(report, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(
+        report,
+        std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
+    ));
+    PFL_EXPECT(contains_text(report, "## Top Endpoints and Ports"));
+    PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree"));
+}
+
+void expect_frontend_statistics_report_export_reports_write_failure() {
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap")).opened);
+
+    const auto missing_directory = std::filesystem::temp_directory_path()
+        / "pfl_missing_statistics_report_dir";
+    std::filesystem::remove_all(missing_directory);
+    const auto output_path = missing_directory / "statistics.md";
+
+    const auto result = adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        output_path
+    );
+    PFL_EXPECT(!result.exported);
+    PFL_EXPECT(result.output_path.empty());
+    PFL_EXPECT(contains_text(result.error_text, "Failed to write Statistics Markdown report"));
+    PFL_EXPECT(contains_text(result.error_text, output_path.string()));
+    PFL_EXPECT(contains_text(result.error_text, "unable to open output file"));
+}
+
+void expect_statistics_report_bridge_export_contract() {
+    auto* handle = pfl_frontend_session_adapter_new();
+    PFL_REQUIRE(handle != nullptr);
+
+    const auto capture_path = fixture_path("parsing/http/http_get_1.pcap");
+    const auto open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(handle, capture_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
+
+    const auto markdown_path = std::filesystem::temp_directory_path()
+        / path_from_explicit_utf8("pfl_statistics_report_bridge_тест.md");
+    std::filesystem::remove(markdown_path);
+    const auto markdown_path_utf8 = utf8_path_string(markdown_path);
+    const auto export_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 1U, markdown_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(export_json, "\"exported\":true"));
+    PFL_EXPECT(contains_text(export_json, "\"error_text\":\"\""));
+    PFL_EXPECT(std::filesystem::exists(markdown_path));
+
+    const auto markdown = read_text_file(markdown_path);
+    PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
+    PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
+
+    const auto html_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_bridge.html";
+    std::filesystem::remove(html_path);
+    const auto html_path_utf8 = utf8_path_string(html_path);
+    const auto html_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 0U, html_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(html_json, "\"exported\":true"));
+    PFL_EXPECT(contains_text(read_text_file(html_path), "<th>Client</th><td>Tauri</td>"));
+
+    const auto invalid_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 9U, html_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(invalid_json, "\"exported\":false"));
+    PFL_EXPECT(contains_text(invalid_json, "\"error_text\":\"Invalid export request.\""));
+
+    const auto missing_directory = std::filesystem::temp_directory_path()
+        / "pfl_missing_statistics_report_bridge_dir";
+    std::filesystem::remove_all(missing_directory);
+    const auto failed_markdown_path = missing_directory / "statistics.md";
+    const auto failed_markdown_path_utf8 = utf8_path_string(failed_markdown_path);
+    const auto failed_export_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_statistics_report_json(handle, 1U, failed_markdown_path_utf8.c_str())
+    );
+    PFL_EXPECT(contains_text(failed_export_json, "\"exported\":false"));
+    PFL_EXPECT(contains_text(failed_export_json, "Failed to write Statistics Markdown report"));
+    PFL_EXPECT(contains_text(failed_export_json, "statistics.md"));
+    PFL_EXPECT(contains_text(failed_export_json, "unable to open output file"));
+
+    pfl_frontend_session_adapter_free(handle);
+}
+
 void expect_advanced_flow_filter_text_query_bridge_contract() {
     auto* handle = pfl_frontend_session_adapter_new();
     PFL_REQUIRE(handle != nullptr);
@@ -2595,6 +2754,138 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     pfl_frontend_session_adapter_free(handle);
 }
 
+void expect_session_diagnostics_text_covers_runtime_states() {
+    CaptureSession empty_session {};
+    const auto empty_text = format_session_diagnostics_text(empty_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(empty_text, "Session\n"));
+    PFL_EXPECT(contains_text(empty_text, "State: No capture loaded."));
+    PFL_EXPECT(contains_text(empty_text, "Capture\nState: No capture loaded."));
+    PFL_EXPECT(contains_text(empty_text, "Storage\nState: No capture loaded."));
+
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1),
+        ipv4(10, 1, 0, 2),
+        41000,
+        443,
+        5,
+        0x12
+    );
+    const auto unrecognized_packet = unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_capture_file(
+        "pfl_session_diagnostics_capture.pcap",
+        make_classic_pcap({
+            {100, recognized_packet},
+            {200, unrecognized_packet},
+        })
+    );
+
+    CaptureSession raw_session {};
+    PFL_REQUIRE(raw_session.open_capture(capture_path));
+    raw_session.prepare_selected_flow_packet_cache(0U, 1U);
+
+    const auto raw_snapshot = raw_session.diagnostics_snapshot();
+    const auto raw_text = format_session_diagnostics_text(raw_snapshot);
+    const auto raw_storage = raw_session.storage_summary();
+    PFL_EXPECT(raw_snapshot.has_capture);
+    PFL_EXPECT(raw_storage.total_packets_seen == 2U);
+    PFL_EXPECT(raw_storage.recognized_packets == 1U);
+    PFL_EXPECT(raw_storage.unrecognized_packets == 1U);
+    PFL_EXPECT(raw_storage.recognized_packets + raw_storage.unrecognized_packets == raw_storage.total_packets_seen);
+    PFL_EXPECT(contains_text(raw_text, "Input type: PCAP"));
+    PFL_EXPECT(contains_text(raw_text, "Opened from index: No"));
+    PFL_EXPECT(contains_text(raw_text, "Completeness: Complete"));
+    PFL_EXPECT(contains_text(raw_text, "Storage mode: resident/raw-capture session"));
+    PFL_EXPECT(contains_text(raw_text, "Total packets: 2"));
+    PFL_EXPECT(contains_text(raw_text, "Flows: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Recognized packets: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Unrecognized packets: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Connection PacketRef count: 1"));
+    PFL_EXPECT(contains_text(raw_text, "Unrecognized PacketRef count: 1"));
+    PFL_EXPECT(contains_text(raw_text, "sizeof(PacketRef): "));
+    PFL_EXPECT(contains_text(raw_text, "Approximate resident connection PacketRef bytes: "));
+    PFL_EXPECT(contains_text(raw_text, "Approximate resident unrecognized record bytes: "));
+    PFL_EXPECT(contains_text(
+        raw_text,
+        "Estimate note: Resident estimates exclude allocator, hash-node, and transient UI/frontend copy overhead."
+    ));
+    PFL_EXPECT(contains_text(raw_text, "Selected-flow Cache"));
+    PFL_EXPECT(contains_text(raw_text, "Cached packet window count: 1"));
+    PFL_EXPECT(!contains_text(raw_text, "v16 Runtime Topology"));
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_v16.idx";
+    std::error_code remove_error {};
+    std::filesystem::remove(index_path, remove_error);
+    PFL_REQUIRE(raw_session.save_index(index_path));
+
+    const auto moved_capture_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_capture.gone.pcap";
+    std::filesystem::remove(moved_capture_path, remove_error);
+    std::filesystem::rename(capture_path, moved_capture_path);
+
+    CaptureSession index_session {};
+    PFL_REQUIRE(index_session.load_index(index_path));
+    const auto index_storage = index_session.storage_summary();
+    const auto index_text = format_session_diagnostics_text(index_session.diagnostics_snapshot());
+    PFL_EXPECT(index_storage.total_packets_seen == 2U);
+    PFL_EXPECT(index_storage.recognized_packets == 1U);
+    PFL_EXPECT(index_storage.unrecognized_packets == 1U);
+    PFL_EXPECT(index_storage.recognized_packets + index_storage.unrecognized_packets == index_storage.total_packets_seen);
+    PFL_EXPECT(contains_text(index_text, "Input type: PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(index_text, "Opened from index: Yes"));
+    PFL_EXPECT(contains_text(index_text, std::string {"Index revision: "} + std::to_string(kCaptureIndexVersion)));
+    PFL_EXPECT(contains_text(index_text, "Source available: No"));
+    PFL_EXPECT(contains_text(index_text, "Storage mode: v16 lazy-index-backed session"));
+    PFL_EXPECT(contains_text(index_text, "Total packets: 2"));
+    PFL_EXPECT(contains_text(index_text, "Recognized packets: 1"));
+    PFL_EXPECT(contains_text(index_text, "Unrecognized packets: 1"));
+    PFL_EXPECT(contains_text(index_text, "Connection PacketRef count: 1"));
+    PFL_EXPECT(contains_text(index_text, "Unrecognized PacketRef count: 1"));
+    PFL_EXPECT(contains_text(index_text, "Encoded connection PacketRef bytes in index: "));
+    PFL_EXPECT(contains_text(index_text, "Encoded unrecognized record bytes in index: "));
+    PFL_EXPECT(contains_text(
+        index_text,
+        "Estimate note: Encoded index byte estimates describe persisted v16 payloads, not process memory consumption."
+    ));
+    PFL_EXPECT(contains_text(index_text, "v16 Runtime Topology"));
+    PFL_EXPECT(contains_text(index_text, "PacketRef directory entries: "));
+    PFL_EXPECT(contains_text(index_text, "Lazy detail payloads read for diagnostics: No"));
+
+    std::filesystem::rename(moved_capture_path, capture_path);
+
+    auto partial_capture_bytes = make_classic_pcap({{100U, recognized_packet}});
+    partial_capture_bytes.push_back(0xdeU);
+    partial_capture_bytes.push_back(0xadU);
+    partial_capture_bytes.push_back(0xbeU);
+    partial_capture_bytes.push_back(0xefU);
+    const auto partial_capture_path = write_temp_capture_file(
+        "pfl_session_diagnostics_partial_capture.pcap",
+        partial_capture_bytes
+    );
+
+    CaptureSession partial_raw_session {};
+    PFL_REQUIRE(partial_raw_session.open_capture(partial_capture_path));
+    const auto partial_raw_text = format_session_diagnostics_text(partial_raw_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(partial_raw_text, "Completeness: Partial import/open"));
+    PFL_EXPECT(contains_text(partial_raw_text, "Partial packets processed: 1"));
+    PFL_EXPECT(contains_text(partial_raw_text, "Partial bytes processed: "));
+    PFL_EXPECT(!contains_text(partial_raw_text, "Partial packets processed: Not available in index"));
+    PFL_EXPECT(!contains_text(partial_raw_text, "Partial bytes processed: Not available in index"));
+
+    const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_session_diagnostics_partial_v16.idx";
+    std::filesystem::remove(partial_index_path, remove_error);
+    PFL_REQUIRE(partial_raw_session.save_index(partial_index_path));
+
+    CaptureSession partial_index_session {};
+    PFL_REQUIRE(partial_index_session.load_index(partial_index_path));
+    const auto partial_index_text = format_session_diagnostics_text(partial_index_session.diagnostics_snapshot());
+    PFL_EXPECT(contains_text(partial_index_text, "Input type: PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(partial_index_text, "Completeness: Partial import/open"));
+    PFL_EXPECT(contains_text(partial_index_text, "Partial packets processed: Not available in index"));
+    PFL_EXPECT(contains_text(partial_index_text, "Partial bytes processed: Not available in index"));
+    PFL_EXPECT(!contains_text(partial_index_text, "Partial packets processed: 0"));
+    PFL_EXPECT(!contains_text(partial_index_text, "Partial bytes processed: 0"));
+    PFL_EXPECT(contains_text(partial_index_text, "Lazy detail payloads read for diagnostics: No"));
+}
+
 }  // namespace
 
 void run_statistics_section_tests() {
@@ -2636,8 +2927,13 @@ void run_statistics_section_tests() {
     expect_frontend_packet_size_statistics_preserve_captured_original_bucket_split();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
+    expect_frontend_statistics_report_export_uses_tauri_metadata();
+    expect_frontend_statistics_report_export_works_from_v16_index_without_source();
+    expect_frontend_statistics_report_export_reports_write_failure();
+    expect_statistics_report_bridge_export_contract();
     expect_advanced_flow_filter_text_query_bridge_contract();
     expect_protocol_path_tree_bridge_export_contract();
+    expect_session_diagnostics_text_covers_runtime_states();
 }
 
 }  // namespace pfl::tests

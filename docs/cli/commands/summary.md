@@ -35,6 +35,8 @@ pcap-flow-lab --input <input> [summary options]
 - `--out-index <path>`
 - `--out-flows-list <path>`
 - `--out-protocol-path-tree <path>`
+- `--out-statistics-html <path>`
+- `--out-statistics-markdown <path>`
 - `--settings <path>`
 - `--progress auto|on|off`
 - `--force`
@@ -66,9 +68,10 @@ flags, including:
 
 For current stable v16 indexes, compatible summary invocations use the
 Statistics fast tier directly. The fast path is used for the basic summary,
-`--extended`, Protocol Path Tree preview, and Protocol Path Tree export because
-those outputs are backed by the stable header, capture Statistics snapshot,
-early Protocol Path registry, and terminal Protocol Path aggregates.
+`--extended`, Protocol Path Tree preview, Protocol Path Tree export, and full
+Statistics report side outputs because those outputs are backed by the stable
+header, capture Statistics snapshot, early Protocol Path registry, and terminal
+Protocol Path aggregates.
 
 The fast path intentionally stops before later flow-metadata and packet-detail
 sections. A successful fast summary read therefore proves only the header and
@@ -223,8 +226,59 @@ that `--out-protocol-path-tree <path>` exports the complete tree.
 - `--out-index`
 - `--out-flows-list`
 - `--out-protocol-path-tree`
+- `--out-statistics-html`
+- `--out-statistics-markdown`
 
 Successful side-output notifications are written to `stderr`.
+
+Side outputs do not change the normal summary text written to `stdout`.
+Existing output files are rejected unless `--force` is supplied, and all side
+output paths in one invocation must be distinct.
+
+## Statistics reports
+
+`--out-statistics-markdown <path>` writes a UTF-8 Markdown report.
+`--out-statistics-html <path>` writes a self-contained HTML5 report with
+embedded CSS and no JavaScript or external assets.
+
+Both report formats use the shared frontend Statistics projection rather than
+CLI-specific recalculation. Reports include:
+
+- report information;
+- input/source identity;
+- overview;
+- capture time;
+- Protocol Summary with Transport and IP Family subtables;
+- unrecognized packet totals;
+- captured/original packet size distribution;
+- flow packet-count histogram;
+- detected protocol hints;
+- capture metrics;
+- flow characteristics;
+- packet and original-byte direction distributions;
+- TCP flag statistics;
+- QUIC and TLS recognition/version summaries;
+- top flows, top endpoints, and top ports;
+- Protocol Path statistics in Identity tree form at the end of the report.
+
+Report information includes:
+
+- Application: `Pcap Flow Lab`
+- Version: the current application version
+- Client: `CLI`
+- Generated at: UTC timestamp in `YYYY-MM-DD HH:MM:SS UTC` form
+- Statistics scope: `Complete` or `Partial`
+
+For fast v16 index reports, report metadata may also include the stable index
+revision already read from the index header.
+
+The full report intentionally includes only the Protocol Path Identity tree. It
+does not duplicate the standalone Protocol Path `kind-overview` or
+`terminal-paths` export views.
+
+For v16 index input, report generation can use the Statistics fast tier without
+opening the recorded source capture and without validating later flow-metadata
+or packet-detail sections.
 
 ## Help and errors
 
@@ -256,4 +310,10 @@ Export complete Protocol Path Tree:
 
 ```text
 pcap-flow-lab summary capture.pcap --out-protocol-path-tree protocol_paths.txt
+```
+
+Write full Statistics reports:
+
+```text
+pcap-flow-lab summary capture.idx --out-statistics-html statistics.html --out-statistics-markdown statistics.md
 ```

@@ -6,7 +6,7 @@ This directory contains the experimental Tauri UI for Pcap Flow Lab.
 
 Implemented slice:
 
-- compact Qt-like `File / Flow / View / Help` menu shell
+- compact Qt-like `File / Flow / Statistics / View / Help` menu shell
 - `Help -> About` dialog with Qt-like product/version/repository content, updated for `Tauri`
 - Qt-like top session shell with:
   - `Open Capture...`
@@ -21,6 +21,8 @@ Implemented slice:
 - `Flow -> Export Unselected Flows` through the existing session batch flow-export path
 - `Flow -> Export All Flows Info to CSV...` through the shared session flow-manifest CSV path
 - `Flow -> Smart Export...` through the existing session smart-export path
+- `Statistics -> Export Statistics as HTML...` and `Statistics -> Export Statistics as Markdown...`
+  through the shared C++ Statistics report renderer
 - `View -> Settings` for the currently shared safe runtime settings slice
 - that shared runtime settings slice includes `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`; both affect raw capture imports only while existing indexes keep their stored grouping
 - locate/attach source capture for index-backed or source-missing sessions
@@ -136,6 +138,7 @@ Implemented slice:
 - `Flow -> Export Unselected Flows` reuses the existing session batch flow-export path, the inverse of checked-flow selection over the full loaded flow list, and the same native `.pcap` Save dialog behavior.
 - `Flow -> Export All Flows Info to CSV...` reuses the shared backend flow-manifest CSV writer, opens a native `.csv` Save dialog, and works from the open backend session even when the Tauri shell skips eager flow-row loading for very large captures.
 - `Flow -> Smart Export...` reuses the existing smart-export session path and a compact Tauri dialog that mirrors the existing flow-scope, base-selection, and output-mode semantics.
+- `Statistics -> Export Statistics as HTML...` and `Statistics -> Export Statistics as Markdown...` reuse the shared C++ Statistics report data/renderer, open native `.html` / `.md` Save dialogs, and work from the open backend session rather than depending on which optional Statistics sections are expanded in the Tauri workspace.
 - `View -> Settings` now exposes the currently shared runtime-safe settings slice.
 - `Flow -> Export Current Flow` is selected-flow-only and requires the original source capture to be readable.
 - `Flow -> Export Selected Flows` uses checked-flow selection rather than the active selected flow and also requires the original source capture to be readable.

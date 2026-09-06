@@ -110,6 +110,7 @@ add_library(
     src/core/services/DnsInspectionParser.cpp
     src/core/services/IcmpInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
+    src/app/frontend/FrontendStatisticsReport.cpp
     src/app/frontend/FrontendStatisticsOverview.cpp
     src/app/frontend/AdvancedFlowFilterStructuredDocument.cpp
     src/app/frontend/FrontendSettingsJson.cpp

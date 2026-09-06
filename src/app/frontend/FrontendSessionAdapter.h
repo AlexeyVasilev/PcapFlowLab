@@ -54,6 +54,10 @@ public:
         ProtocolPathStatisticsMode mode,
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] FrontendExportStatisticsReportResult export_statistics_report(
+        FrontendStatisticsReportFormat format,
+        const std::filesystem::path& output_path
+    ) const;
     [[nodiscard]] std::vector<FrontendByteExportFormatDto> get_byte_export_formats() const;
     [[nodiscard]] FrontendByteExportResult export_selected_flow_packet_byte_view(
         std::uint64_t packet_index,

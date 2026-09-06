@@ -95,6 +95,7 @@ private:
     Q_PROPERTY(bool canExportSelectedFlows READ canExportSelectedFlows NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canExportUnselectedFlows READ canExportUnselectedFlows NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canExportAllFlowsInfoCsv READ canExportAllFlowsInfoCsv NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool canExportStatisticsReport READ canExportStatisticsReport NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool isOpening READ isOpening NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressPackets READ openProgressPackets NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
@@ -331,7 +332,6 @@ private:
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
     Q_PROPERTY(bool showFragmentedPacketCountColumn READ showFragmentedPacketCountColumn WRITE setShowFragmentedPacketCountColumn NOTIFY showFragmentedPacketCountColumnChanged)
-    Q_PROPERTY(bool developerDiagnosticsAvailable READ developerDiagnosticsAvailable CONSTANT)
     Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
     Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -390,6 +390,7 @@ public:
     [[nodiscard]] bool canExportSelectedFlows() const noexcept;
     [[nodiscard]] bool canExportUnselectedFlows() const noexcept;
     [[nodiscard]] bool canExportAllFlowsInfoCsv() const noexcept;
+    [[nodiscard]] bool canExportStatisticsReport() const noexcept;
     [[nodiscard]] bool isOpening() const noexcept;
     [[nodiscard]] qulonglong openProgressPackets() const noexcept;
     [[nodiscard]] qulonglong openProgressBytes() const noexcept;
@@ -626,7 +627,6 @@ public:
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
     [[nodiscard]] bool showFragmentedPacketCountColumn() const noexcept;
-    [[nodiscard]] bool developerDiagnosticsAvailable() const noexcept;
     [[nodiscard]] QString flowGroupingWarningText() const;
     [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
@@ -677,6 +677,8 @@ public:
     Q_INVOKABLE bool exportUnselectedFlows(const QString& path);
     Q_INVOKABLE bool exportAllFlowsInfoCsv(const QString& path);
     Q_INVOKABLE bool exportProtocolPathTree(const QString& path);
+    Q_INVOKABLE bool exportStatisticsReportHtml(const QString& path);
+    Q_INVOKABLE bool exportStatisticsReportMarkdown(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
     Q_INVOKABLE void browseAttachSourceCapture();
@@ -687,6 +689,8 @@ public:
     Q_INVOKABLE void browseExportUnselectedFlows();
     Q_INVOKABLE void browseExportAllFlowsInfoCsv();
     Q_INVOKABLE void browseExportProtocolPathTree();
+    Q_INVOKABLE void browseExportStatisticsHtml();
+    Q_INVOKABLE void browseExportStatisticsMarkdown();
     Q_INVOKABLE bool browseSmartExportFlows(
         int outputMode,
         int flowScopeMode,
@@ -755,7 +759,7 @@ public:
     Q_INVOKABLE bool exportSelectedPacketBytes(const QString& formatId);
     Q_INVOKABLE bool exportSelectedStreamItemData(const QString& formatId);
     Q_INVOKABLE void selectUnrecognizedPackets();
-    Q_INVOKABLE QString captureStorageSummaryText() const;
+    Q_INVOKABLE QString debugInformationText() const;
 
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
@@ -925,6 +929,7 @@ private:
     void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
     void setIndexSaveState(bool inProgress, bool cancelRequested, double progressPercent, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
+    enum class StatisticsReportFormat;
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
     QString chooseAdvancedFlowFilterOpenFile() const;
@@ -932,6 +937,7 @@ private:
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseProtocolPathTreeSaveFile() const;
+    QString chooseStatisticsReportSaveFile(StatisticsReportFormat format) const;
     QString chooseByteExportSaveFile(
         const QString& title,
         const QString& suggestedFileName,
@@ -942,6 +948,8 @@ private:
     AdvancedFlowFilterOpenUnsavedDecision confirmAdvancedFlowFilterOpenUnsaved(bool fileBackedDirty) const;
     AdvancedFlowFilterClearDecision confirmAdvancedFlowFilterClear(bool fileBackedDirty) const;
     QString advancedFlowFilterSuggestedFileName() const;
+    QString statisticsReportSuggestedFileName(const QString& extension) const;
+    bool exportStatisticsReport(const QString& path, StatisticsReportFormat format);
     bool synchronizeAdvancedFlowFilterDraft(QString* errorText);
     bool saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText = nullptr);
     bool openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText = nullptr);

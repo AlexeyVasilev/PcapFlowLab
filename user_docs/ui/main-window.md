@@ -31,10 +31,11 @@ indexes, source-capture reattachment, and open-progress behavior, see
 
 ## Main areas
 
-The Qt main window uses four top-level menu groups:
+The Qt main window uses five top-level menu groups:
 
 - `File`
 - `Flow`
+- `Statistics`
 - `View`
 - `Help`
 
@@ -51,6 +52,11 @@ The most common actions are:
 The `Flow` menu contains export actions for the current flow set, including
 selected-flow export, unselected-flow export, CSV export of all flow info, and
 Smart Export.
+
+The `Statistics` menu exports a complete whole-capture Statistics report as
+HTML or Markdown. These report exports use the shared Statistics report
+renderer and do not depend on which collapsible Statistics sections are already
+expanded in the workspace.
 
 ## Flows workspace
 

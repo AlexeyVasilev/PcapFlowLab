@@ -112,6 +112,13 @@ pub struct ExportProtocolPathTreeResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportStatisticsReportResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ByteExportFormatDto {
     pub stable_id: String,
     pub label: String,

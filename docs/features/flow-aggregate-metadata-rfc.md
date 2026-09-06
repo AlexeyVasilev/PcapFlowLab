@@ -65,8 +65,8 @@ Serialized size:
 In-memory `sizeof(PacketRef)` remains ABI- and compiler-dependent because the
 project intentionally does not use packed structs for this type.
 
-Capture Storage Diagnostics remains the authoritative runtime verification
-surface for `sizeof(PacketRef)`.
+Qt Debug Information remains the authoritative runtime verification surface
+for `sizeof(PacketRef)`.
 
 Typical x64 builds may report roughly 40 bytes, but that is not a wire-format
 or ABI contract.

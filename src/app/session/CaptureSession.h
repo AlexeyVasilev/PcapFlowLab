@@ -142,6 +142,23 @@ struct CaptureStorageSummary {
     std::uint64_t approx_protocol_path_layer_payload_bytes {0};
 };
 
+struct SessionDiagnosticsField {
+    std::string name {};
+    std::string value {};
+};
+
+struct SessionDiagnosticsSection {
+    std::string title {};
+    std::vector<SessionDiagnosticsField> fields {};
+};
+
+struct SessionDiagnosticsSnapshot {
+    bool has_capture {false};
+    std::vector<SessionDiagnosticsSection> sections {};
+};
+
+[[nodiscard]] std::string format_session_diagnostics_text(const SessionDiagnosticsSnapshot& snapshot);
+
 struct SelectedFlowPacketContext {
     PacketRef packet {};
     std::uint64_t flow_packet_index {0};
@@ -448,6 +465,7 @@ public:
         std::uint64_t packet_index
     ) const;
     [[nodiscard]] CaptureStorageSummary storage_summary() const;
+    [[nodiscard]] SessionDiagnosticsSnapshot diagnostics_snapshot() const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
 
