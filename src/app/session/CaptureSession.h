@@ -259,6 +259,10 @@ public:
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
+    [[nodiscard]] std::optional<PacketDetails> read_packet_details(
+        const PacketRef& packet,
+        std::span<const std::uint8_t> packet_bytes
+    ) const;
     [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
     [[nodiscard]] session_detail::AdvancedFlowQueryResult query_advanced_flows(
         const session_detail::AdvancedFlowFilterSpec& filter_spec,

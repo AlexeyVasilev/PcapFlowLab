@@ -1,9 +1,12 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "TestSupport.h"
 #include "app/frontend/FrontendSessionAdapter.h"
@@ -66,6 +69,41 @@ bool summary_layers_contain_value(
         }
     }
     return false;
+}
+
+bool summary_layers_equal(
+    const std::vector<session_detail::PacketSummaryLayer>& left,
+    const std::vector<session_detail::PacketSummaryLayer>& right
+) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < left.size(); ++index) {
+        const auto& left_layer = left[index];
+        const auto& right_layer = right[index];
+        if (left_layer.id != right_layer.id ||
+            left_layer.title != right_layer.title ||
+            left_layer.fields.size() != right_layer.fields.size() ||
+            left_layer.expanded_by_default != right_layer.expanded_by_default ||
+            left_layer.warning != right_layer.warning ||
+            left_layer.marker_text != right_layer.marker_text) {
+            return false;
+        }
+
+        for (std::size_t field_index = 0U; field_index < left_layer.fields.size(); ++field_index) {
+            if (left_layer.fields[field_index].label != right_layer.fields[field_index].label ||
+                left_layer.fields[field_index].value != right_layer.fields[field_index].value) {
+                return false;
+            }
+        }
+
+        if (!summary_layers_equal(left_layer.children, right_layer.children)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 const session_detail::PacketSummaryLayer* find_summary_layer(
@@ -202,8 +240,18 @@ void run_packet_metadata_tests() {
 
         const auto stale_packet_bytes = session.read_packet_data(*tcp_ref);
         const auto stale_packet_details = session.read_packet_details(*tcp_ref);
+        const auto stale_packet_details_from_bytes = session.read_packet_details(
+            *tcp_ref,
+            std::span<const std::uint8_t>(stale_packet_bytes.data(), stale_packet_bytes.size())
+        );
         PFL_REQUIRE(!stale_packet_bytes.empty());
         PFL_REQUIRE(stale_packet_details.has_value());
+        PFL_REQUIRE(stale_packet_details_from_bytes.has_value());
+        PFL_EXPECT(stale_packet_details_from_bytes->packet_index == stale_packet_details->packet_index);
+        PFL_EXPECT(stale_packet_details_from_bytes->captured_length == stale_packet_details->captured_length);
+        PFL_EXPECT(stale_packet_details_from_bytes->original_length == stale_packet_details->original_length);
+        PFL_EXPECT(stale_packet_details_from_bytes->has_tcp == stale_packet_details->has_tcp);
+        PFL_EXPECT(stale_packet_details_from_bytes->tcp.flags == stale_packet_details->tcp.flags);
         auto summary_preparation = session_detail::prepare_selected_packet_summary(
             session,
             *stale_packet_details,
@@ -214,9 +262,29 @@ void run_packet_metadata_tests() {
             tcp_metadata.captured_transport_payload_length,
             tcp_metadata.original_transport_payload_length
         );
+        auto summary_preparation_from_bytes = session_detail::prepare_selected_packet_summary(
+            session,
+            *stale_packet_details_from_bytes,
+            *tcp_ref,
+            std::span<const std::uint8_t>(stale_packet_bytes.data(), stale_packet_bytes.size()),
+            0U,
+            1U,
+            enriched_rows.size(),
+            tcp_metadata.captured_transport_payload_length,
+            tcp_metadata.original_transport_payload_length
+        );
         const auto summary_layers =
             session_detail::build_packet_summary_layers(*stale_packet_details, *tcp_ref, summary_preparation.make_options());
+        const auto summary_layers_from_bytes =
+            session_detail::build_packet_summary_layers(
+                *stale_packet_details_from_bytes,
+                *tcp_ref,
+                summary_preparation_from_bytes.make_options()
+            );
         PFL_EXPECT(!summary_preparation.make_options().is_ip_fragmented.value_or(true));
+        PFL_EXPECT(summary_preparation_from_bytes.make_options().is_ip_fragmented == summary_preparation.make_options().is_ip_fragmented);
+        PFL_EXPECT(summary_preparation_from_bytes.transport_payload == summary_preparation.transport_payload);
+        PFL_EXPECT(summary_layers_equal(summary_layers_from_bytes, summary_layers));
         PFL_EXPECT(!summary_layers_contain_value(summary_layers, "Packet is IP-fragmented"));
     }
 

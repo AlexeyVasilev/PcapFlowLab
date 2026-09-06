@@ -4210,12 +4210,19 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_s
 
 std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef& packet) const {
     const auto bytes = read_packet_data(packet);
-    if (bytes.empty()) {
+    return read_packet_details(packet, std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+}
+
+std::optional<PacketDetails> CaptureSession::read_packet_details(
+    const PacketRef& packet,
+    const std::span<const std::uint8_t> packet_bytes
+) const {
+    if (packet_bytes.empty()) {
         return std::nullopt;
     }
 
     PacketDetailsService service {};
-    return service.decode_best_effort(bytes, packet);
+    return service.decode_best_effort(packet_bytes, packet);
 }
 
 session_detail::FlowQueryResult CaptureSession::query_flows(const session_detail::FlowQuery& query) const {
@@ -4304,7 +4311,7 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
     if (packet_bytes.empty()) {
         return std::nullopt;
     }
-    const auto details = read_packet_details(packet);
+    const auto details = read_packet_details(packet, std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
     if (!details.has_value()) {
         return session_detail::build_captured_packet_fallback_presentation(packet);
     }

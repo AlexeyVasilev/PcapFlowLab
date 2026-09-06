@@ -14,7 +14,6 @@
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/HexDumpService.h"
-#include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
@@ -1157,6 +1156,7 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
         session,
         *details,
         packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         flow_index,
         internal_flow_packet_index,
         loaded_packet_window_count,
@@ -4097,7 +4097,10 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto details = session_.read_packet_details(packet);
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     return build_frontend_captured_packet_byte_view_content_from_materialized_packet(
         packet,
         packet_bytes,
@@ -4216,7 +4219,10 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
     }
 
     const auto packet_bytes = session_.read_packet_data(packet_context->packet);
-    const auto decoded_details = session_.read_packet_details(packet_context->packet);
+    const auto decoded_details = session_.read_packet_details(
+        packet_context->packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     const auto details = build_frontend_packet_details_from_materialized_packet(
         packet_context->packet,
         packet_bytes,
@@ -4282,12 +4288,11 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(
         return result;
     }
 
-    PacketDetailsService packet_details_service {};
     const auto packet = *packet_lookup.packet;
     const auto& packet_bytes = packet_lookup.source_packet->bytes;
-    const auto decoded_details = packet_details_service.decode_best_effort(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        packet
+    const auto decoded_details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
     );
 
     auto details = build_frontend_packet_details_from_materialized_packet(
@@ -4366,14 +4371,10 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    std::optional<PacketDetails> details {};
-    if (!packet_bytes.empty()) {
-        PacketDetailsService packet_details_service {};
-        details = packet_details_service.decode_best_effort(
-            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-            packet
-        );
-    }
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     return build_frontend_packet_details_from_materialized_packet(
         packet,
         packet_bytes,
@@ -4438,6 +4439,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
             session_,
             *details,
             packet,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
             flow_index,
             internal_flow_packet_index,
             loaded_packet_window_count,
@@ -4534,7 +4536,10 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto details = session_.read_packet_details(packet);
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
         session_,
         packet,

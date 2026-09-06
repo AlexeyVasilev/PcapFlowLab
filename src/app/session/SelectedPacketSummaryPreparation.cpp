@@ -444,6 +444,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     CaptureSession& session,
     const PacketDetails& details,
     const PacketRef& packet,
+    const std::span<const std::uint8_t> packet_bytes,
     const std::optional<std::size_t> flow_index,
     const std::optional<std::uint64_t> flow_packet_index,
     const std::optional<std::size_t> loaded_packet_window_count,
@@ -452,9 +453,8 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     std::vector<std::string> checksum_summary_lines,
     std::vector<std::string> checksum_warning_lines
 ) {
-    const auto packet_bytes = session.read_packet_data(packet);
     const auto is_ip_fragmented = derive_ip_fragmentation_state_from_packet_details(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet_bytes,
         packet,
         details
     );
@@ -540,7 +540,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
             }
 
             const auto disposition = detect_supported_transport_payload_ownership(
-                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                packet_bytes,
                 packet.data_link_type,
                 details,
                 preparation.make_options()
@@ -599,6 +599,34 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
 
     preparation.tls_summary_layers = build_prepared_selected_packet_tls_layers(preparation.make_options());
     return preparation;
+}
+
+SelectedPacketSummaryPreparation prepare_selected_packet_summary(
+    CaptureSession& session,
+    const PacketDetails& details,
+    const PacketRef& packet,
+    const std::optional<std::size_t> flow_index,
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count,
+    const std::optional<std::uint32_t> transport_payload_length,
+    const std::optional<std::uint32_t> original_transport_payload_length,
+    std::vector<std::string> checksum_summary_lines,
+    std::vector<std::string> checksum_warning_lines
+) {
+    const auto packet_bytes = session.read_packet_data(packet);
+    return prepare_selected_packet_summary(
+        session,
+        details,
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count,
+        transport_payload_length,
+        original_transport_payload_length,
+        std::move(checksum_summary_lines),
+        std::move(checksum_warning_lines)
+    );
 }
 
 std::vector<TlsRecordModel> inspect_tls_summary_records(
