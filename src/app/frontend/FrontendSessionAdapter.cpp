@@ -29,6 +29,7 @@
 #include <sstream>
 #include <set>
 #include <utility>
+#include <variant>
 
 #ifndef PFL_APP_VERSION
 #define PFL_APP_VERSION "0.0.0"
@@ -138,6 +139,17 @@ std::vector<FrontendByteExportFormatDto> frontend_byte_export_formats() {
         });
     }
     return result;
+}
+
+ProtocolId flow_key_protocol_id(const FlowConnectionKey& key) noexcept {
+    return std::visit([](const auto& value) noexcept {
+        return value.protocol;
+    }, key);
+}
+
+bool flow_uses_tcp_or_udp(const FlowRow& row) noexcept {
+    const auto protocol = flow_key_protocol_id(row.key);
+    return protocol == ProtocolId::tcp || protocol == ProtocolId::udp;
 }
 
 std::optional<SmartPacketRetentionOptions> build_smart_packet_retention_options(
@@ -3342,15 +3354,18 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
 
     auto rows = session_.list_flow_packets(flow_index, offset, limit);
     if (!rows.empty()) {
-        session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
-        session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
+        const auto flow_row = session_.flow_row(flow_index);
+        if (flow_row.has_value() && flow_uses_tcp_or_udp(*flow_row)) {
+            session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
+            session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
 
-        const auto scanned_packet_count = offset + rows.size();
-        const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);
-        const auto retransmission_set = std::set<std::uint64_t>(retransmission_packet_indices.begin(), retransmission_packet_indices.end());
+            const auto scanned_packet_count = offset + rows.size();
+            const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);
+            const auto retransmission_set = std::set<std::uint64_t>(retransmission_packet_indices.begin(), retransmission_packet_indices.end());
 
-        for (auto& row : rows) {
-            row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
+            for (auto& row : rows) {
+                row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
+            }
         }
     }
 

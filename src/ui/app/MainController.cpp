@@ -874,6 +874,21 @@ bool selected_flow_uses_tcp(const FlowListModel& flow_model, const int selected_
         .compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0;
 }
 
+bool selected_flow_uses_tcp_or_udp(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return false;
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return false;
+    }
+
+    const auto protocol = flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolRole).toString();
+    return protocol.compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0 ||
+           protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0;
+}
+
 QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -7081,9 +7096,11 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     }
 
     if (!rows.empty()) {
-        session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
+        if (selected_flow_uses_tcp_or_udp(flow_model_, selected_flow_index_)) {
+            session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
+            apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
+        }
         prepareSelectedFlowTcpContributionState(offset + rows.size());
-        apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
     }
 
     for (auto& packet_row : rows) {
