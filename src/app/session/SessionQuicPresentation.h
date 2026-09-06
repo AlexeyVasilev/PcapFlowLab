@@ -155,6 +155,38 @@ struct QuicStreamPacketPresentation {
     std::vector<QuicStreamPacketItem> items {};
 };
 
+enum class QuicInitialConnectionIdDiscoveryStatus : std::uint8_t {
+    found,
+    not_found,
+    access_failed,
+};
+
+struct QuicInitialConnectionIdDiscoveryResult {
+    QuicInitialConnectionIdDiscoveryStatus status {QuicInitialConnectionIdDiscoveryStatus::not_found};
+    std::vector<std::uint8_t> connection_id {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == QuicInitialConnectionIdDiscoveryStatus::found;
+    }
+};
+
+class QuicInitialConnectionIdDiscoveryCache final {
+public:
+    [[nodiscard]] std::optional<QuicInitialConnectionIdDiscoveryResult> lookup(std::size_t flow_index) const;
+    void store_authoritative_result(std::size_t flow_index, const QuicInitialConnectionIdDiscoveryResult& result);
+    void clear() noexcept;
+
+private:
+    struct Entry {
+        std::size_t flow_index {0};
+        QuicInitialConnectionIdDiscoveryStatus status {QuicInitialConnectionIdDiscoveryStatus::not_found};
+        std::vector<std::uint8_t> connection_id {};
+    };
+
+    std::optional<Entry> entry_ {};
+};
+
 std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_connection(
     const CaptureSession& session,
     const ConnectionV4& connection,
@@ -174,6 +206,12 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
 );
 
 std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_packet_source(
+    const CaptureSession& session,
+    const SelectedFlowPacketAccessSource& source,
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
+QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_for_packet_source_result(
     const CaptureSession& session,
     const SelectedFlowPacketAccessSource& source,
     std::optional<std::size_t> flow_index = std::nullopt

@@ -617,6 +617,10 @@ private:
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const noexcept;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> cached_quic_client_initial_connection_id_for_packet_source(
+        std::size_t flow_index,
+        const session_detail::SelectedFlowPacketAccessSource& source
+    ) const;
     [[nodiscard]] const std::vector<session_detail::ListedConnectionRef>& listed_connections(bool* cache_hit = nullptr) const;
     void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;
     [[nodiscard]] std::optional<PacketRef> selected_flow_cached_packet_at(
@@ -655,6 +659,7 @@ private:
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
     mutable std::optional<CaptureGeneralStatistics> general_statistics_cache_ {};
     mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
+    mutable session_detail::QuicInitialConnectionIdDiscoveryCache quic_initial_connection_id_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
     mutable std::uint64_t selected_flow_stream_context_generation_ {0};
 };

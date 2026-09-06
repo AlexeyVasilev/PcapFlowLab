@@ -350,6 +350,28 @@ private:
     mutable std::uint64_t total_requested_packets_ {0};
 };
 
+class FailingSelectedFlowPacketAccessSource final : public session_detail::SelectedFlowPacketAccessSource {
+public:
+    [[nodiscard]] session_detail::SelectedFlowDirectionalPacketCountResult directional_packet_count(
+        Direction
+    ) const override {
+        return session_detail::SelectedFlowDirectionalPacketCountResult {
+            .packet_count = 1U,
+        };
+    }
+
+    [[nodiscard]] session_detail::SelectedFlowDirectionalPacketReadResult read_direction(
+        Direction,
+        std::uint64_t,
+        std::uint64_t
+    ) const override {
+        return session_detail::SelectedFlowDirectionalPacketReadResult {
+            .status = session_detail::SelectedFlowPacketAccessStatus::source_read_failed,
+            .error_detail = "synthetic read failure",
+        };
+    }
+};
+
 struct SyntheticDirectionalSequence {
     std::uint64_t packet_count {0};
     std::uint64_t first_packet_index {0};
@@ -1322,10 +1344,11 @@ void run_selected_flow_packet_access_tests() {
             ipv4_connections.front()->flow_a.packets,
             {}
         );
-        const auto connection_id =
-            session_detail::find_quic_client_initial_connection_id_for_packet_source(session, source, 0U);
-        PFL_REQUIRE(connection_id.has_value());
-        PFL_EXPECT(*connection_id == expected_quic_client_initial_dcid());
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source_result(session, source, 0U);
+        PFL_REQUIRE(static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::found);
+        PFL_EXPECT(result.connection_id == expected_quic_client_initial_dcid());
         PFL_EXPECT(source.read_call_count() > 1U);
     }
 
@@ -1347,10 +1370,71 @@ void run_selected_flow_packet_access_tests() {
             ipv4_connections.front()->flow_a.packets,
             {}
         );
-        const auto connection_id =
-            session_detail::find_quic_client_initial_connection_id_for_packet_source(session, source, 0U);
-        PFL_EXPECT(!connection_id.has_value());
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source_result(session, source, 0U);
+        PFL_EXPECT(!static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::not_found);
+        PFL_EXPECT(result.connection_id.empty());
         PFL_EXPECT(source.read_call_count() > 1U);
+    }
+
+    {
+        ScopedTestContext context {"quic_client_initial_connection_id_provider_keeps_access_failure_distinct"};
+
+        CaptureSession session {};
+        FailingSelectedFlowPacketAccessSource source {};
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source_result(session, source, 0U);
+        PFL_EXPECT(!static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::access_failed);
+        PFL_EXPECT(result.connection_id.empty());
+        PFL_EXPECT(result.error_detail == "synthetic read failure");
+    }
+
+    {
+        ScopedTestContext context {"quic_client_initial_connection_id_cache_distinguishes_states"};
+
+        session_detail::QuicInitialConnectionIdDiscoveryCache cache {};
+        PFL_EXPECT(!cache.lookup(0U).has_value());
+
+        cache.store_authoritative_result(
+            0U,
+            session_detail::QuicInitialConnectionIdDiscoveryResult {
+                .status = session_detail::QuicInitialConnectionIdDiscoveryStatus::found,
+                .connection_id = expected_quic_client_initial_dcid(),
+            }
+        );
+        const auto positive = cache.lookup(0U);
+        PFL_REQUIRE(positive.has_value());
+        PFL_EXPECT(positive->status == session_detail::QuicInitialConnectionIdDiscoveryStatus::found);
+        PFL_EXPECT(positive->connection_id == expected_quic_client_initial_dcid());
+        PFL_EXPECT(!cache.lookup(1U).has_value());
+
+        cache.store_authoritative_result(
+            1U,
+            session_detail::QuicInitialConnectionIdDiscoveryResult {
+                .status = session_detail::QuicInitialConnectionIdDiscoveryStatus::not_found,
+            }
+        );
+        PFL_EXPECT(!cache.lookup(0U).has_value());
+        const auto negative = cache.lookup(1U);
+        PFL_REQUIRE(negative.has_value());
+        PFL_EXPECT(negative->status == session_detail::QuicInitialConnectionIdDiscoveryStatus::not_found);
+        PFL_EXPECT(negative->connection_id.empty());
+
+        cache.store_authoritative_result(
+            1U,
+            session_detail::QuicInitialConnectionIdDiscoveryResult {
+                .status = session_detail::QuicInitialConnectionIdDiscoveryStatus::access_failed,
+                .error_detail = "transient",
+            }
+        );
+        const auto still_negative = cache.lookup(1U);
+        PFL_REQUIRE(still_negative.has_value());
+        PFL_EXPECT(still_negative->status == session_detail::QuicInitialConnectionIdDiscoveryStatus::not_found);
+
+        cache.clear();
+        PFL_EXPECT(!cache.lookup(1U).has_value());
     }
 
     {

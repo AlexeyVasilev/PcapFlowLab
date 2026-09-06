@@ -83,10 +83,11 @@ using session_detail::packet_count;
 using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
 using session_detail::find_quic_client_initial_connection_id_for_packets;
-using session_detail::find_quic_client_initial_connection_id_for_packet_source;
+using session_detail::find_quic_client_initial_connection_id_for_packet_source_result;
 using session_detail::has_confirming_quic_long_header_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
 using session_detail::build_quic_stream_packet_presentation;
+using session_detail::QuicInitialConnectionIdDiscoveryStatus;
 using session_detail::QuicPresentationResult;
 using session_detail::analyze_selected_flow_tcp_payload_suppression;
 using session_detail::collect_suspected_tcp_retransmission_packet_indices;
@@ -2574,6 +2575,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     listed_connections_cache_.reset();
     general_statistics_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_initial_connection_id_cache_.clear();
     selected_flow_tcp_payload_suppression_.reset();
     selected_flow_stream_context_generation_ = 0U;
 }
@@ -2621,6 +2623,7 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(listed_connections_cache_, other.listed_connections_cache_);
     swap(general_statistics_cache_, other.general_statistics_cache_);
     swap(protocol_path_summary_cache_, other.protocol_path_summary_cache_);
+    swap(quic_initial_connection_id_cache_, other.quic_initial_connection_id_cache_);
     swap(selected_flow_tcp_payload_suppression_, other.selected_flow_tcp_payload_suppression_);
     swap(selected_flow_stream_context_generation_, other.selected_flow_stream_context_generation_);
 }
@@ -2694,6 +2697,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     listed_connections_cache_.reset();
     general_statistics_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_initial_connection_id_cache_.clear();
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
@@ -3101,6 +3105,7 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     selected_flow_stream_context_.reset();
+    quic_initial_connection_id_cache_.clear();
     selected_flow_tcp_payload_suppression_.reset();
     return true;
 }
@@ -3111,6 +3116,7 @@ void CaptureSession::clear_source_capture_attachment() noexcept {
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     selected_flow_stream_context_.reset();
+    quic_initial_connection_id_cache_.clear();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
@@ -3313,6 +3319,7 @@ void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
     listed_connections_cache_.reset();
     general_statistics_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_initial_connection_id_cache_.clear();
     selected_flow_tcp_payload_suppression_.reset();
     selected_flow_stream_context_generation_ = 0U;
 }
@@ -3968,6 +3975,7 @@ void CaptureSession::clear_selected_flow_packet_cache() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    quic_initial_connection_id_cache_.clear();
     clear_selected_flow_stream_context();
 }
 
@@ -4898,8 +4906,10 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         return std::nullopt;
     }
 
-    const auto initial_secret_connection_id =
-        find_quic_client_initial_connection_id_for_packet_source(*this, *packet_source, flow_index);
+    const auto initial_secret_connection_id = cached_quic_client_initial_connection_id_for_packet_source(
+        flow_index,
+        *packet_source
+    );
     const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
         ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
         : std::span<const std::uint8_t> {};
@@ -4918,6 +4928,23 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         },
         *selected_flow_key
     );
+}
+
+std::optional<std::vector<std::uint8_t>> CaptureSession::cached_quic_client_initial_connection_id_for_packet_source(
+    const std::size_t flow_index,
+    const session_detail::SelectedFlowPacketAccessSource& source
+) const {
+    if (const auto cached = quic_initial_connection_id_cache_.lookup(flow_index); cached.has_value()) {
+        return cached->status == QuicInitialConnectionIdDiscoveryStatus::found
+            ? std::optional<std::vector<std::uint8_t>> {cached->connection_id}
+            : std::nullopt;
+    }
+
+    const auto result = find_quic_client_initial_connection_id_for_packet_source_result(*this, source, flow_index);
+    quic_initial_connection_id_cache_.store_authoritative_result(flow_index, result);
+    return result.status == QuicInitialConnectionIdDiscoveryStatus::found
+        ? std::optional<std::vector<std::uint8_t>> {result.connection_id}
+        : std::nullopt;
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_context(

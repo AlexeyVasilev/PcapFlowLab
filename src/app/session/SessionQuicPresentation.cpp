@@ -1029,8 +1029,15 @@ bool is_confirming_quic_long_header_type(const QuicPresentationShellType shell_t
     }
 }
 
+QuicInitialConnectionIdDiscoveryResult quic_initial_connection_id_access_failed_result() {
+    return QuicInitialConnectionIdDiscoveryResult {
+        .status = QuicInitialConnectionIdDiscoveryStatus::access_failed,
+        .error_detail = "packet bytes unavailable during QUIC Initial CID discovery",
+    };
+}
+
 template <typename PacketList>
-std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_impl(
+QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_impl_result(
     const CaptureSession& session,
     const PacketList& packets,
     const std::optional<std::size_t> flow_index = std::nullopt
@@ -1051,6 +1058,9 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
                 return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
             }();
         if (udp_payload.empty()) {
+            if (packet.captured_length > 0U && session.read_packet_data(packet).empty()) {
+                return quic_initial_connection_id_access_failed_result();
+            }
             continue;
         }
 
@@ -1065,12 +1075,29 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
             if (parsed_packet.shell_type == QuicPresentationShellType::initial &&
                 parsed_packet.is_client_initial &&
                 !parsed_packet.shell.dcid.empty()) {
-                return parsed_packet.shell.dcid;
+                return QuicInitialConnectionIdDiscoveryResult {
+                    .status = QuicInitialConnectionIdDiscoveryStatus::found,
+                    .connection_id = parsed_packet.shell.dcid,
+                };
             }
         }
     }
 
-    return std::nullopt;
+    return QuicInitialConnectionIdDiscoveryResult {
+        .status = QuicInitialConnectionIdDiscoveryStatus::not_found,
+    };
+}
+
+template <typename PacketList>
+std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_impl(
+    const CaptureSession& session,
+    const PacketList& packets,
+    const std::optional<std::size_t> flow_index = std::nullopt
+) {
+    const auto result = find_quic_client_initial_connection_id_impl_result(session, packets, flow_index);
+    return result.status == QuicInitialConnectionIdDiscoveryStatus::found
+        ? std::optional<std::vector<std::uint8_t>> {result.connection_id}
+        : std::nullopt;
 }
 
 template <typename PacketList>
@@ -2057,6 +2084,40 @@ std::vector<TlsHandshakeModel> select_tls_handshakes_for_quic_crypto_frames(
     return selected;
 }
 
+std::optional<QuicInitialConnectionIdDiscoveryResult> QuicInitialConnectionIdDiscoveryCache::lookup(
+    const std::size_t flow_index
+) const {
+    if (!entry_.has_value() || entry_->flow_index != flow_index) {
+        return std::nullopt;
+    }
+
+    return QuicInitialConnectionIdDiscoveryResult {
+        .status = entry_->status,
+        .connection_id = entry_->connection_id,
+    };
+}
+
+void QuicInitialConnectionIdDiscoveryCache::store_authoritative_result(
+    const std::size_t flow_index,
+    const QuicInitialConnectionIdDiscoveryResult& result
+) {
+    if (result.status == QuicInitialConnectionIdDiscoveryStatus::access_failed) {
+        return;
+    }
+
+    entry_ = Entry {
+        .flow_index = flow_index,
+        .status = result.status,
+        .connection_id = result.status == QuicInitialConnectionIdDiscoveryStatus::found
+            ? result.connection_id
+            : std::vector<std::uint8_t> {},
+    };
+}
+
+void QuicInitialConnectionIdDiscoveryCache::clear() noexcept {
+    entry_.reset();
+}
+
 std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_connection(
     const CaptureSession& session,
     const ConnectionV4& connection,
@@ -2086,12 +2147,26 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     const SelectedFlowPacketAccessSource& source,
     const std::optional<std::size_t> flow_index
 ) {
+    const auto result = find_quic_client_initial_connection_id_for_packet_source_result(session, source, flow_index);
+    return result.status == QuicInitialConnectionIdDiscoveryStatus::found
+        ? std::optional<std::vector<std::uint8_t>> {result.connection_id}
+        : std::nullopt;
+}
+
+QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_for_packet_source_result(
+    const CaptureSession& session,
+    const SelectedFlowPacketAccessSource& source,
+    const std::optional<std::size_t> flow_index
+) {
     constexpr std::uint64_t kMergedReadChunkSize = 64U;
 
     for (std::uint64_t offset = 0U; ; ) {
         const auto read_result = read_selected_flow_merged_range(source, offset, kMergedReadChunkSize);
         if (!read_result) {
-            return std::nullopt;
+            return QuicInitialConnectionIdDiscoveryResult {
+                .status = QuicInitialConnectionIdDiscoveryStatus::access_failed,
+                .error_detail = read_result.error_detail,
+            };
         }
         if (read_result.packets.empty()) {
             break;
@@ -2102,15 +2177,18 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
         for (const auto& merged_packet : read_result.packets) {
             packets.push_back(merged_packet.packet);
         }
-        if (const auto connection_id = find_quic_client_initial_connection_id_impl(session, packets, flow_index);
-            connection_id.has_value()) {
-            return connection_id;
+        const auto discovery_result = find_quic_client_initial_connection_id_impl_result(session, packets, flow_index);
+        if (discovery_result.status == QuicInitialConnectionIdDiscoveryStatus::found ||
+            discovery_result.status == QuicInitialConnectionIdDiscoveryStatus::access_failed) {
+            return discovery_result;
         }
 
         offset += static_cast<std::uint64_t>(read_result.packets.size());
     }
 
-    return std::nullopt;
+    return QuicInitialConnectionIdDiscoveryResult {
+        .status = QuicInitialConnectionIdDiscoveryStatus::not_found,
+    };
 }
 
 bool has_confirming_quic_long_header_for_packets(
