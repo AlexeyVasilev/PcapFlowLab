@@ -142,6 +142,7 @@ fn main() {
         "src/core/dissection/DissectionRegistry.cpp",
         "src/core/dissection/DissectionEngine.cpp",
         "src/core/dissection/CommonDirectDissection.cpp",
+        "src/core/dissection/RuntimeDissection.cpp",
         "src/core/dissection/modules/ArpModule.cpp",
         "src/core/dissection/modules/ControlMessageModules.cpp",
         "src/core/dissection/modules/EoipModule.cpp",

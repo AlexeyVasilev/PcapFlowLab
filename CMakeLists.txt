@@ -55,6 +55,7 @@ add_library(
     src/core/dissection/DissectionRegistry.cpp
     src/core/dissection/DissectionEngine.cpp
     src/core/dissection/CommonDirectDissection.cpp
+    src/core/dissection/RuntimeDissection.cpp
     src/core/dissection/modules/EthernetVlanModules.cpp
     src/core/dissection/modules/LinuxCookedModules.cpp
     src/core/dissection/modules/LlcSnapModule.cpp

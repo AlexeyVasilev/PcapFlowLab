@@ -198,10 +198,24 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(*udp_metadata.captured_transport_payload_length == 7U);
         PFL_EXPECT(!udp_metadata.tcp_flags.has_value());
 
+        const auto flow_rows = session.list_flows();
+        const auto tcp_flow_it = std::find_if(flow_rows.begin(), flow_rows.end(), [](const FlowRow& row) {
+            return row.protocol_text == "TCP";
+        });
+        const auto udp_flow_it = std::find_if(flow_rows.begin(), flow_rows.end(), [](const FlowRow& row) {
+            return row.protocol_text == "UDP";
+        });
+        PFL_REQUIRE(tcp_flow_it != flow_rows.end());
+        PFL_REQUIRE(udp_flow_it != flow_rows.end());
+
         const auto rows = session.list_flow_packets(0);
         PFL_REQUIRE(!rows.empty());
         PFL_EXPECT(rows.front().payload_length == 0U);
         PFL_EXPECT(rows.front().tcp_flags_text.empty());
+        PFL_EXPECT(session.read_selected_flow_transport_payload(tcp_flow_it->index, *tcp_ref) ==
+            std::vector<std::uint8_t>({'A', 'B', 'C', 'D', 'E'}));
+        PFL_EXPECT(session.read_selected_flow_transport_payload(udp_flow_it->index, *udp_ref) ==
+            std::vector<std::uint8_t>({'a', 'b', 'c', 'd', 'e', 'f', 'g'}));
 
         auto uncached_rows = rows;
         session_detail::populate_transient_packet_row_metadata(session, 0U, uncached_rows);
