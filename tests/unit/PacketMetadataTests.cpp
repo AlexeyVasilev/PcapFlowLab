@@ -1,9 +1,15 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -63,6 +69,81 @@ bool summary_layers_contain_value(
         }
     }
     return false;
+}
+
+bool summary_layers_equal(
+    const std::vector<session_detail::PacketSummaryLayer>& left,
+    const std::vector<session_detail::PacketSummaryLayer>& right
+) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < left.size(); ++index) {
+        const auto& left_layer = left[index];
+        const auto& right_layer = right[index];
+        if (left_layer.id != right_layer.id ||
+            left_layer.title != right_layer.title ||
+            left_layer.fields.size() != right_layer.fields.size() ||
+            left_layer.expanded_by_default != right_layer.expanded_by_default ||
+            left_layer.warning != right_layer.warning ||
+            left_layer.marker_text != right_layer.marker_text) {
+            return false;
+        }
+
+        for (std::size_t field_index = 0U; field_index < left_layer.fields.size(); ++field_index) {
+            if (left_layer.fields[field_index].label != right_layer.fields[field_index].label ||
+                left_layer.fields[field_index].value != right_layer.fields[field_index].value) {
+                return false;
+            }
+        }
+
+        if (!summary_layers_equal(left_layer.children, right_layer.children)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+const session_detail::PacketSummaryLayer* find_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string_view id
+) {
+    const auto it = std::find_if(layers.begin(), layers.end(), [&](const session_detail::PacketSummaryLayer& layer) {
+        return layer.id == id;
+    });
+    return it == layers.end() ? nullptr : &(*it);
+}
+
+const FrontendFlowDto& require_frontend_flow_with_protocol(
+    const std::vector<FrontendFlowDto>& flows,
+    const std::string_view protocol
+) {
+    const auto it = std::find_if(flows.begin(), flows.end(), [&](const FrontendFlowDto& flow) {
+        return flow.protocol_text == std::string {protocol};
+    });
+    PFL_REQUIRE(it != flows.end());
+    return *it;
+}
+
+void expect_frontend_packet_preserves_metadata_row(
+    const FrontendPacketDto& packet,
+    const PacketRow& expected
+) {
+    PFL_EXPECT(packet.row_number == expected.row_number);
+    PFL_EXPECT(packet.packet_index == expected.packet_index);
+    PFL_EXPECT(packet.direction_text == expected.direction_text);
+    PFL_EXPECT(packet.timestamp_text == expected.timestamp_text);
+    PFL_EXPECT(packet.captured_length == expected.captured_length);
+    PFL_EXPECT(packet.original_length == expected.original_length);
+}
+
+void expect_frontend_packet_has_no_source_derived_row_metadata(const FrontendPacketDto& packet) {
+    PFL_EXPECT(!packet.payload_length.has_value());
+    PFL_EXPECT(!packet.is_ip_fragmented.has_value());
+    PFL_EXPECT(!packet.tcp_flags_text.has_value());
+    PFL_EXPECT(!packet.suspected_tcp_retransmission);
 }
 
 }  // namespace
@@ -159,8 +240,18 @@ void run_packet_metadata_tests() {
 
         const auto stale_packet_bytes = session.read_packet_data(*tcp_ref);
         const auto stale_packet_details = session.read_packet_details(*tcp_ref);
+        const auto stale_packet_details_from_bytes = session.read_packet_details(
+            *tcp_ref,
+            std::span<const std::uint8_t>(stale_packet_bytes.data(), stale_packet_bytes.size())
+        );
         PFL_REQUIRE(!stale_packet_bytes.empty());
         PFL_REQUIRE(stale_packet_details.has_value());
+        PFL_REQUIRE(stale_packet_details_from_bytes.has_value());
+        PFL_EXPECT(stale_packet_details_from_bytes->packet_index == stale_packet_details->packet_index);
+        PFL_EXPECT(stale_packet_details_from_bytes->captured_length == stale_packet_details->captured_length);
+        PFL_EXPECT(stale_packet_details_from_bytes->original_length == stale_packet_details->original_length);
+        PFL_EXPECT(stale_packet_details_from_bytes->has_tcp == stale_packet_details->has_tcp);
+        PFL_EXPECT(stale_packet_details_from_bytes->tcp.flags == stale_packet_details->tcp.flags);
         auto summary_preparation = session_detail::prepare_selected_packet_summary(
             session,
             *stale_packet_details,
@@ -171,9 +262,29 @@ void run_packet_metadata_tests() {
             tcp_metadata.captured_transport_payload_length,
             tcp_metadata.original_transport_payload_length
         );
+        auto summary_preparation_from_bytes = session_detail::prepare_selected_packet_summary(
+            session,
+            *stale_packet_details_from_bytes,
+            *tcp_ref,
+            std::span<const std::uint8_t>(stale_packet_bytes.data(), stale_packet_bytes.size()),
+            0U,
+            1U,
+            enriched_rows.size(),
+            tcp_metadata.captured_transport_payload_length,
+            tcp_metadata.original_transport_payload_length
+        );
         const auto summary_layers =
             session_detail::build_packet_summary_layers(*stale_packet_details, *tcp_ref, summary_preparation.make_options());
+        const auto summary_layers_from_bytes =
+            session_detail::build_packet_summary_layers(
+                *stale_packet_details_from_bytes,
+                *tcp_ref,
+                summary_preparation_from_bytes.make_options()
+            );
         PFL_EXPECT(!summary_preparation.make_options().is_ip_fragmented.value_or(true));
+        PFL_EXPECT(summary_preparation_from_bytes.make_options().is_ip_fragmented == summary_preparation.make_options().is_ip_fragmented);
+        PFL_EXPECT(summary_preparation_from_bytes.transport_payload == summary_preparation.transport_payload);
+        PFL_EXPECT(summary_layers_equal(summary_layers_from_bytes, summary_layers));
         PFL_EXPECT(!summary_layers_contain_value(summary_layers, "Packet is IP-fragmented"));
     }
 
@@ -220,6 +331,79 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(*rows.front().derived_tcp_flags_text == "ACK|SYN");
         PFL_REQUIRE(rows.front().derived_is_ip_fragmented.has_value());
         PFL_EXPECT(*rows.front().derived_is_ip_fragmented);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_packet_metadata_frontend_tcp_udp_enrichment.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(path);
+        PFL_EXPECT(open_result.opened);
+
+        const auto flows = adapter.get_flows();
+        const auto& tcp_flow = require_frontend_flow_with_protocol(flows, "TCP");
+        PFL_EXPECT(adapter.select_flow(tcp_flow.flow_index).selected);
+        const auto tcp_packets = adapter.get_selected_flow_packets(0U, 1U);
+        PFL_REQUIRE(tcp_packets.packets.size() == 1U);
+        PFL_EXPECT(tcp_packets.packets.front().payload_length == std::optional<std::uint32_t> {5U});
+        PFL_EXPECT(tcp_packets.packets.front().is_ip_fragmented == std::optional<bool> {false});
+        PFL_EXPECT(tcp_packets.packets.front().tcp_flags_text == std::optional<std::string> {"ACK|SYN"});
+
+        const auto& udp_flow = require_frontend_flow_with_protocol(flows, "UDP");
+        PFL_EXPECT(adapter.select_flow(udp_flow.flow_index).selected);
+        const auto udp_packets = adapter.get_selected_flow_packets(0U, 1U);
+        PFL_REQUIRE(udp_packets.packets.size() == 1U);
+        PFL_EXPECT(udp_packets.packets.front().payload_length == std::optional<std::uint32_t> {7U});
+        PFL_EXPECT(udp_packets.packets.front().is_ip_fragmented == std::optional<bool> {false});
+        PFL_EXPECT(!udp_packets.packets.front().tcp_flags_text.has_value());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_packet_metadata_frontend_non_tcp_udp_metadata_first.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U)},
+                {200, make_ethernet_arp_packet(ipv4(10, 10, 12, 1), ipv4(10, 10, 12, 2), 2U)},
+            })
+        );
+
+        CaptureSession expected_session {};
+        PFL_EXPECT(expected_session.open_capture(path));
+        const auto expected_rows = expected_session.list_flow_packets(0U);
+        PFL_REQUIRE(expected_rows.size() == 2U);
+
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(path);
+        PFL_EXPECT(open_result.opened);
+
+        const auto flows = adapter.get_flows();
+        const auto& arp_flow = require_frontend_flow_with_protocol(flows, "ARP");
+        PFL_EXPECT(adapter.select_flow(arp_flow.flow_index).selected);
+
+        const auto first_window = adapter.get_selected_flow_packets(0U, 1U);
+        PFL_REQUIRE(first_window.packets.size() == 1U);
+        PFL_EXPECT(first_window.total_count == expected_rows.size());
+        expect_frontend_packet_preserves_metadata_row(first_window.packets.front(), expected_rows[0]);
+        expect_frontend_packet_has_no_source_derived_row_metadata(first_window.packets.front());
+
+        const auto second_window = adapter.get_selected_flow_packets(1U, 1U);
+        PFL_REQUIRE(second_window.packets.size() == 1U);
+        PFL_EXPECT(second_window.total_count == expected_rows.size());
+        expect_frontend_packet_preserves_metadata_row(second_window.packets.front(), expected_rows[1]);
+        expect_frontend_packet_has_no_source_derived_row_metadata(second_window.packets.front());
+
+        const auto details = adapter.get_selected_flow_packet_details(
+            first_window.packets.front().packet_index,
+            first_window.packets.front().row_number,
+            first_window.packets.size()
+        );
+        PFL_EXPECT(details.error_text.empty());
+        PFL_EXPECT(details.packet_found);
+        PFL_EXPECT(details.details_available);
+        PFL_EXPECT(find_summary_layer(details.summary_layers, "arp") != nullptr);
     }
 
     {

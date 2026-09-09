@@ -874,6 +874,21 @@ bool selected_flow_uses_tcp(const FlowListModel& flow_model, const int selected_
         .compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0;
 }
 
+bool selected_flow_uses_tcp_or_udp(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return false;
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return false;
+    }
+
+    const auto protocol = flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolRole).toString();
+    return protocol.compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0 ||
+           protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0;
+}
+
 QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -6661,7 +6676,8 @@ void MainController::refreshSelectedPacketByteView() {
     const auto& packet = packet_resolution->packet;
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto details = session_.read_packet_details(packet);
+    const auto packet_bytes_span = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size());
+    const auto details = session_.read_packet_details(packet, packet_bytes_span);
     if (packet_bytes.empty()) {
         packet_details_model_.clearPacketBytePresentation();
         selected_packet_byte_view_stable_id_.clear();
@@ -6672,13 +6688,14 @@ void MainController::refreshSelectedPacketByteView() {
     if (details.has_value()) {
         const auto payload_lengths = resolve_transport_payload_lengths(
             *details,
-            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            packet_bytes_span,
             packet
         );
         auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
             *details,
             packet,
+            packet_bytes_span,
             packet_resolution->zero_based_flow_packet_index.has_value() && selected_flow_index_ >= 0
                 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)}
                 : std::nullopt,
@@ -6691,7 +6708,7 @@ void MainController::refreshSelectedPacketByteView() {
             *details,
             packet,
             session_detail::SelectedPacketByteBuildOptions {
-                .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                .packet_bytes = packet_bytes_span,
                 .flow_packet_index = packet_summary_preparation.flow_packet_index,
                 .packet_data = packet_summary_preparation.packet_data,
                 .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
@@ -6699,8 +6716,8 @@ void MainController::refreshSelectedPacketByteView() {
                 .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
             }
         );
-    } else if (unrecognized_packets_selected_) {
-        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(packet);
+    } else if (unrecognized_packets_selected_ && !packet_bytes.empty()) {
+        packet_byte_presentation = session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
     if (!packet_byte_presentation.has_value()) {
@@ -6721,7 +6738,7 @@ void MainController::refreshSelectedPacketByteView() {
     const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
         *packet_byte_presentation,
         *selected_view_id,
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet_bytes_span,
         hex_dump_service
     );
     if (!packet_byte_content.has_value()) {
@@ -7081,9 +7098,11 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     }
 
     if (!rows.empty()) {
-        session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
+        if (selected_flow_uses_tcp_or_udp(flow_model_, selected_flow_index_)) {
+            session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
+            apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
+        }
         prepareSelectedFlowTcpContributionState(offset + rows.size());
-        apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
     }
 
     for (auto& packet_row : rows) {
@@ -8192,8 +8211,9 @@ void MainController::reloadSelectedPacketDetails() {
         return;
     }
 
-    const auto details = session_.read_packet_details(packet);
     const auto packetBytes = session_.read_packet_data(packet);
+    const auto packetBytesSpan = std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size());
+    const auto details = session_.read_packet_details(packet, packetBytesSpan);
     const auto unrecognized_reason_text = [&]() -> QString {
         if (!unrecognized_packets_selected_) {
             return {};
@@ -8211,7 +8231,7 @@ void MainController::reloadSelectedPacketDetails() {
         checksum_sections = build_packet_checksum_sections(
             *details,
             packet,
-            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size())
+            packetBytesSpan
         );
     }
 
@@ -8222,13 +8242,14 @@ void MainController::reloadSelectedPacketDetails() {
     if (details.has_value()) {
         const auto payload_lengths = resolve_transport_payload_lengths(
             *details,
-            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            packetBytesSpan,
             packet
         );
         packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
             *details,
             packet,
+            packetBytesSpan,
             packet_resolution->zero_based_flow_packet_index.has_value() && selected_flow_index_ >= 0
                 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)}
                 : std::nullopt,
@@ -8259,7 +8280,7 @@ void MainController::reloadSelectedPacketDetails() {
         ));
     } else {
         const auto metadata = session_detail::derive_transient_packet_metadata(
-            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            packetBytesSpan,
             packet
         );
         packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(
@@ -8284,7 +8305,7 @@ void MainController::reloadSelectedPacketDetails() {
             *details,
             packet,
             session_detail::SelectedPacketByteBuildOptions {
-                .packet_bytes = std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+                .packet_bytes = packetBytesSpan,
                 .flow_packet_index = packet_summary_preparation->flow_packet_index,
                 .packet_data = packet_summary_preparation->packet_data,
                 .tls_initial_parser_context = packet_summary_preparation->tls_initial_parser_context,
@@ -8292,8 +8313,8 @@ void MainController::reloadSelectedPacketDetails() {
                 .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
             }
         );
-    } else if (unrecognized_packets_selected_) {
-        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(packet);
+    } else if (unrecognized_packets_selected_ && !packetBytes.empty()) {
+        packet_byte_presentation = session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
     if (packet_byte_presentation.has_value()) {
@@ -8304,7 +8325,7 @@ void MainController::reloadSelectedPacketDetails() {
             if (const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
                     *packet_byte_presentation,
                     *selected_view_id,
-                    std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+                    packetBytesSpan,
                     hex_dump_service);
                 packet_byte_content.has_value()) {
                 selected_packet_byte_view_stable_id_ = QString::fromStdString(packet_byte_content->stable_id);

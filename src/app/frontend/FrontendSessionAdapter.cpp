@@ -14,7 +14,6 @@
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/HexDumpService.h"
-#include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
@@ -29,6 +28,7 @@
 #include <sstream>
 #include <set>
 #include <utility>
+#include <variant>
 
 #ifndef PFL_APP_VERSION
 #define PFL_APP_VERSION "0.0.0"
@@ -138,6 +138,12 @@ std::vector<FrontendByteExportFormatDto> frontend_byte_export_formats() {
         });
     }
     return result;
+}
+
+ProtocolId flow_key_protocol_id(const FlowConnectionKey& key) noexcept {
+    return std::visit([](const auto& value) noexcept {
+        return value.protocol;
+    }, key);
 }
 
 std::optional<SmartPacketRetentionOptions> build_smart_packet_retention_options(
@@ -1145,6 +1151,7 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
         session,
         *details,
         packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         flow_index,
         internal_flow_packet_index,
         loaded_packet_window_count,
@@ -3342,15 +3349,23 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
 
     auto rows = session_.list_flow_packets(flow_index, offset, limit);
     if (!rows.empty()) {
-        session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
-        session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
+        const auto flow_row = session_.flow_row(flow_index);
+        const auto flow_protocol = flow_row.has_value()
+            ? std::optional<ProtocolId> {flow_key_protocol_id(flow_row->key)}
+            : std::nullopt;
+        if (flow_protocol == ProtocolId::tcp || flow_protocol == ProtocolId::udp) {
+            session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
+            session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
 
-        const auto scanned_packet_count = offset + rows.size();
-        const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);
-        const auto retransmission_set = std::set<std::uint64_t>(retransmission_packet_indices.begin(), retransmission_packet_indices.end());
+            if (flow_protocol == ProtocolId::tcp) {
+                const auto scanned_packet_count = offset + rows.size();
+                const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);
+                const auto retransmission_set = std::set<std::uint64_t>(retransmission_packet_indices.begin(), retransmission_packet_indices.end());
 
-        for (auto& row : rows) {
-            row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
+                for (auto& row : rows) {
+                    row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
+                }
+            }
         }
     }
 
@@ -4082,7 +4097,10 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto details = session_.read_packet_details(packet);
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     return build_frontend_captured_packet_byte_view_content_from_materialized_packet(
         packet,
         packet_bytes,
@@ -4201,7 +4219,10 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
     }
 
     const auto packet_bytes = session_.read_packet_data(packet_context->packet);
-    const auto decoded_details = session_.read_packet_details(packet_context->packet);
+    const auto decoded_details = session_.read_packet_details(
+        packet_context->packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     const auto details = build_frontend_packet_details_from_materialized_packet(
         packet_context->packet,
         packet_bytes,
@@ -4267,12 +4288,11 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(
         return result;
     }
 
-    PacketDetailsService packet_details_service {};
     const auto packet = *packet_lookup.packet;
     const auto& packet_bytes = packet_lookup.source_packet->bytes;
-    const auto decoded_details = packet_details_service.decode_best_effort(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        packet
+    const auto decoded_details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
     );
 
     auto details = build_frontend_packet_details_from_materialized_packet(
@@ -4351,14 +4371,10 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    std::optional<PacketDetails> details {};
-    if (!packet_bytes.empty()) {
-        PacketDetailsService packet_details_service {};
-        details = packet_details_service.decode_best_effort(
-            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-            packet
-        );
-    }
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     return build_frontend_packet_details_from_materialized_packet(
         packet,
         packet_bytes,
@@ -4423,6 +4439,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
             session_,
             *details,
             packet,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
             flow_index,
             internal_flow_packet_index,
             loaded_packet_window_count,
@@ -4519,7 +4536,10 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto details = session_.read_packet_details(packet);
+    const auto details = session_.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
         session_,
         packet,
