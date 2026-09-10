@@ -14,29 +14,11 @@
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFlowHelpers.h"
-#include "core/decode/PacketDecoder.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
 
 namespace {
-
-std::vector<std::uint8_t> make_pppoe_session_packet(
-    const std::uint16_t ppp_protocol,
-    const std::vector<std::uint8_t>& payload
-) {
-    std::vector<std::uint8_t> bytes {
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
-        0x88, 0x64,
-        0x11, 0x00,
-        0x00, 0x01,
-    };
-    append_be16(bytes, static_cast<std::uint16_t>(2U + payload.size()));
-    append_be16(bytes, ppp_protocol);
-    bytes.insert(bytes.end(), payload.begin(), payload.end());
-    return bytes;
-}
 
 std::vector<std::uint8_t> make_ipv4_tcp_first_fragment_with_complete_header(
     const std::uint32_t src_addr,
@@ -195,13 +177,29 @@ void run_packet_metadata_tests() {
 
         const auto udp_metadata = session_detail::derive_transient_packet_metadata(session, *udp_ref);
         PFL_REQUIRE(udp_metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(udp_metadata.original_transport_payload_length.has_value());
         PFL_EXPECT(*udp_metadata.captured_transport_payload_length == 7U);
+        PFL_EXPECT(*udp_metadata.original_transport_payload_length == 7U);
         PFL_EXPECT(!udp_metadata.tcp_flags.has_value());
+
+        const auto flow_rows = session.list_flows();
+        const auto tcp_flow_it = std::find_if(flow_rows.begin(), flow_rows.end(), [](const FlowRow& row) {
+            return row.protocol_text == "TCP";
+        });
+        const auto udp_flow_it = std::find_if(flow_rows.begin(), flow_rows.end(), [](const FlowRow& row) {
+            return row.protocol_text == "UDP";
+        });
+        PFL_REQUIRE(tcp_flow_it != flow_rows.end());
+        PFL_REQUIRE(udp_flow_it != flow_rows.end());
 
         const auto rows = session.list_flow_packets(0);
         PFL_REQUIRE(!rows.empty());
         PFL_EXPECT(rows.front().payload_length == 0U);
         PFL_EXPECT(rows.front().tcp_flags_text.empty());
+        PFL_EXPECT(session.read_selected_flow_transport_payload(tcp_flow_it->index, *tcp_ref) ==
+            std::vector<std::uint8_t>({'A', 'B', 'C', 'D', 'E'}));
+        PFL_EXPECT(session.read_selected_flow_transport_payload(udp_flow_it->index, *udp_ref) ==
+            std::vector<std::uint8_t>({'a', 'b', 'c', 'd', 'e', 'f', 'g'}));
 
         auto uncached_rows = rows;
         session_detail::populate_transient_packet_row_metadata(session, 0U, uncached_rows);
@@ -435,7 +433,9 @@ void run_packet_metadata_tests() {
 
         const auto udp_metadata = session_detail::derive_transient_packet_metadata(loaded_session, *udp_ref);
         PFL_REQUIRE(udp_metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(udp_metadata.original_transport_payload_length.has_value());
         PFL_EXPECT(*udp_metadata.captured_transport_payload_length == 7U);
+        PFL_EXPECT(*udp_metadata.original_transport_payload_length == 7U);
     }
 
     {
@@ -456,78 +456,6 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(enriched_rows.front().payload_length == 290U);
     }
 
-    {
-        PacketDecoder decoder {};
-
-        auto malformed_tcp = tcp_packet;
-        malformed_tcp[16] = 0x00;
-        malformed_tcp[17] = 0x10;
-
-        const RawPcapPacket raw_tcp {
-            .packet_index = 0,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(malformed_tcp.size()),
-            .original_length = static_cast<std::uint32_t>(malformed_tcp.size()),
-            .data_offset = 40,
-            .bytes = malformed_tcp,
-        };
-        PFL_EXPECT(!decoder.decode_ethernet(raw_tcp).has_value());
-
-        auto malformed_udp = udp_packet;
-        malformed_udp[38] = 0x00;
-        malformed_udp[39] = 0x06;
-
-        const RawPcapPacket raw_udp {
-            .packet_index = 1,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(malformed_udp.size()),
-            .original_length = static_cast<std::uint32_t>(malformed_udp.size()),
-            .data_offset = 80,
-            .bytes = malformed_udp,
-        };
-        PFL_EXPECT(!decoder.decode_ethernet(raw_udp).has_value());
-
-        const auto bounded_udp = make_pppoe_session_packet(0x0021U, strip_ethernet_header(malformed_udp));
-        const RawPcapPacket raw_bounded_udp {
-            .packet_index = 2,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(bounded_udp.size()),
-            .original_length = static_cast<std::uint32_t>(bounded_udp.size()),
-            .data_offset = 120,
-            .bytes = bounded_udp,
-        };
-        PFL_EXPECT(!decoder.decode_ethernet(raw_bounded_udp).has_value());
-
-        auto malformed_ipv6_udp = ipv6_udp_packet;
-        malformed_ipv6_udp[66] = 0x00;
-        malformed_ipv6_udp[67] = 0x06;
-
-        const RawPcapPacket raw_ipv6_udp {
-            .packet_index = 3,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
-            .original_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
-            .data_offset = 160,
-            .bytes = malformed_ipv6_udp,
-        };
-        PFL_EXPECT(!decoder.decode_ethernet(raw_ipv6_udp).has_value());
-
-        const auto bounded_ipv6_udp = make_pppoe_session_packet(0x0057U, strip_ethernet_header(malformed_ipv6_udp));
-        const RawPcapPacket raw_bounded_ipv6_udp {
-            .packet_index = 4,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(bounded_ipv6_udp.size()),
-            .original_length = static_cast<std::uint32_t>(bounded_ipv6_udp.size()),
-            .data_offset = 200,
-            .bytes = bounded_ipv6_udp,
-        };
-        PFL_EXPECT(!decoder.decode_ethernet(raw_bounded_ipv6_udp).has_value());
-    }
 }
 
 }  // namespace pfl::tests

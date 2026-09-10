@@ -154,48 +154,7 @@ std::string shadow_flow_identity_text(const ImportDissectionFacts& facts) {
     return builder.str();
 }
 
-std::string legacy_flow_identity_text(const LegacyDirectFacts& facts) {
-    auto canonicalize_endpoints = [](std::string first, std::string second) {
-        if (second < first) {
-            std::swap(first, second);
-        }
-        return std::pair {std::move(first), std::move(second)};
-    };
-
-    std::ostringstream builder {};
-    builder << static_cast<int>(facts.family) << '|'
-            << static_cast<int>(facts.protocol) << '|'
-            << format_protocol_path(facts.path) << '|';
-
-    std::string first_endpoint {};
-    std::string second_endpoint {};
-    if (facts.family == DissectionAddressFamily::ipv4) {
-        first_endpoint = std::to_string(facts.src_addr_v4) + ":" + std::to_string(facts.src_port);
-        second_endpoint = std::to_string(facts.dst_addr_v4) + ":" + std::to_string(facts.dst_port);
-    } else {
-        std::ostringstream first_builder {};
-        for (const auto byte : facts.src_addr_v6) {
-            first_builder << static_cast<int>(byte) << '.';
-        }
-        first_builder << ':' << facts.src_port;
-
-        std::ostringstream second_builder {};
-        for (const auto byte : facts.dst_addr_v6) {
-            second_builder << static_cast<int>(byte) << '.';
-        }
-        second_builder << ':' << facts.dst_port;
-
-        first_endpoint = std::move(first_builder).str();
-        second_endpoint = std::move(second_builder).str();
-    }
-
-    const auto [canonical_first, canonical_second] =
-        canonicalize_endpoints(std::move(first_endpoint), std::move(second_endpoint));
-    builder << canonical_first << '|' << canonical_second;
-    return builder.str();
-}
-
-void expect_packet_shadow_matches_legacy(
+void expect_packet_shadow_contract(
     const DissectionRegistry& registry,
     const FixturePacketExpectation& expectation
 ) {
@@ -207,10 +166,11 @@ void expect_packet_shadow_matches_legacy(
     PFL_REQUIRE(expectation.packet_index < packets.size());
     const auto& packet = packets[expectation.packet_index];
 
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
 
-    if (!legacy.recognized_flow) {
+    const auto expected_stop_reason = expectation.expected_stop_reason.value_or(StopReason::terminal_protocol);
+    const auto recognized = expectation.expected_path.has_value() && expected_stop_reason != StopReason::truncated;
+    if (!recognized) {
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         if (expectation.expected_path.has_value()) {
             PFL_EXPECT(format_shadow_path(shadow) == *expectation.expected_path);
@@ -221,39 +181,11 @@ void expect_packet_shadow_matches_legacy(
         return;
     }
 
-    const auto expected_path = expectation.expected_path.has_value()
-        ? std::string(*expectation.expected_path)
-        : format_protocol_path(legacy.path);
-    const auto expected_stop_reason = expectation.expected_stop_reason.value_or(
-        legacy.is_ip_fragmented ? StopReason::needs_reassembly : StopReason::terminal_protocol
-    );
-
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
-    PFL_EXPECT(format_shadow_path(shadow) == expected_path);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
-    PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    if (legacy.family == DissectionAddressFamily::ipv4) {
-        PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-        PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-        PFL_EXPECT(shadow.has_ipv4_fragmentation);
-        PFL_EXPECT(shadow.ipv4_fragmentation.is_fragmented == legacy.is_ip_fragmented);
-    } else if (legacy.family == DissectionAddressFamily::ipv6) {
-        PFL_EXPECT(shadow.src_addr_v6 == legacy.src_addr_v6);
-        PFL_EXPECT(shadow.dst_addr_v6 == legacy.dst_addr_v6);
-        PFL_EXPECT(shadow.has_ipv6_fragmentation);
-        PFL_EXPECT(shadow.ipv6_fragmentation.has_fragment_header == legacy.is_ip_fragmented);
+    if (expectation.expected_path.has_value()) {
+        PFL_EXPECT(format_shadow_path(shadow) == *expectation.expected_path);
     }
-    PFL_EXPECT(shadow.has_ports == legacy.has_ports);
-    PFL_EXPECT(shadow.src_port == legacy.src_port);
-    PFL_EXPECT(shadow.dst_port == legacy.dst_port);
-    PFL_EXPECT(shadow.has_transport_payload_length == legacy.has_payload_length);
-    PFL_EXPECT(shadow.captured_transport_payload_length == legacy.captured_payload_length);
-    PFL_EXPECT(shadow.has_tcp_flags == legacy.has_tcp_flags);
-    PFL_EXPECT(shadow.tcp_flags == legacy.tcp_flags);
 }
 
 void expect_geneve_direct_parser_and_udp_dispatch() {
@@ -486,7 +418,7 @@ void expect_geneve_registry_mappings() {
     }) == dissect_sctp);
 }
 
-void expect_geneve_fixture_packet_parity() {
+void expect_geneve_fixture_packet_contract() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
@@ -494,7 +426,7 @@ void expect_geneve_fixture_packet_parity() {
     for (const auto fixture : kGeneveFixtures) {
         const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
         for (std::size_t packet_index = 0U; packet_index < packets.size(); ++packet_index) {
-            expect_packet_shadow_matches_legacy(registry, FixturePacketExpectation {
+            expect_packet_shadow_contract(registry, FixturePacketExpectation {
                 .fixture = fixture,
                 .packet_index = packet_index,
             });
@@ -613,32 +545,27 @@ void expect_geneve_identity_behavior() {
 
     auto expect_identity_cardinality = [&registry](
         const std::string_view fixture,
-        const std::size_t expected_shadow_count,
-        const std::size_t expected_legacy_count
+        const std::size_t expected_count
     ) {
         const auto context_text = "fixture=" + std::string(fixture) + " | identity";
         const ScopedTestContext fixture_context {context_text.c_str()};
 
         const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
         std::set<std::string> shadow_identities {};
-        std::set<std::string> legacy_identities {};
         for (const auto& packet : packets) {
             shadow_identities.emplace(shadow_flow_identity_text(run_shadow(packet, registry)));
-            legacy_identities.emplace(legacy_flow_identity_text(decode_legacy_direct(packet)));
         }
 
-        PFL_EXPECT(shadow_identities.size() == expected_shadow_count);
-        PFL_EXPECT(legacy_identities.size() == expected_legacy_count);
-        PFL_EXPECT(shadow_identities == legacy_identities);
+        PFL_EXPECT(shadow_identities.size() == expected_count);
     };
 
-    expect_identity_cardinality("parsing/geneve/11_geneve_inner_ipv4_tcp_bidirectional.pcap", 1U, 1U);
-    expect_identity_cardinality("parsing/geneve/12_geneve_same_outer_tuple_different_inner_flows.pcap", 2U, 2U);
-    expect_identity_cardinality("parsing/geneve/16_geneve_vni_boundary_values.pcap", 2U, 2U);
-    expect_identity_cardinality("parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap", 2U, 2U);
-    expect_identity_cardinality("parsing/geneve/21_geneve_identity_outer_carrier_variation_same_flow.pcap", 1U, 1U);
-    expect_identity_cardinality("parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap", 3U, 3U);
-    expect_identity_cardinality("parsing/geneve/30_geneve_vni_byte_order_distinct_values.pcap", 2U, 2U);
+    expect_identity_cardinality("parsing/geneve/11_geneve_inner_ipv4_tcp_bidirectional.pcap", 1U);
+    expect_identity_cardinality("parsing/geneve/12_geneve_same_outer_tuple_different_inner_flows.pcap", 2U);
+    expect_identity_cardinality("parsing/geneve/16_geneve_vni_boundary_values.pcap", 2U);
+    expect_identity_cardinality("parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap", 2U);
+    expect_identity_cardinality("parsing/geneve/21_geneve_identity_outer_carrier_variation_same_flow.pcap", 1U);
+    expect_identity_cardinality("parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap", 3U);
+    expect_identity_cardinality("parsing/geneve/30_geneve_vni_byte_order_distinct_values.pcap", 2U);
 }
 
 void expect_geneve_declared_bounds_and_fallback_contracts() {
@@ -648,13 +575,13 @@ void expect_geneve_declared_bounds_and_fallback_contracts() {
 
     {
         const auto packets = require_raw_fixture_packets("parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap");
-        expect_packet_shadow_matches_legacy(registry, FixturePacketExpectation {
+        expect_packet_shadow_contract(registry, FixturePacketExpectation {
             .fixture = "parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap",
             .packet_index = 0U,
             .expected_path = "EthernetII -> IPv4 -> UDP",
             .expected_stop_reason = StopReason::terminal_protocol,
         });
-        expect_packet_shadow_matches_legacy(registry, FixturePacketExpectation {
+        expect_packet_shadow_contract(registry, FixturePacketExpectation {
             .fixture = "parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap",
             .packet_index = 1U,
             .expected_path = "EthernetII -> IPv4 -> UDP",
@@ -697,7 +624,7 @@ void expect_geneve_declared_bounds_and_fallback_contracts() {
         PFL_EXPECT(packet2_registry.size() == 0U);
         PFL_EXPECT(packet2_protocol_path_id == kInvalidProtocolPathId);
 
-        expect_packet_shadow_matches_legacy(registry, FixturePacketExpectation {
+        expect_packet_shadow_contract(registry, FixturePacketExpectation {
             .fixture = "parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap",
             .packet_index = 3U,
             .expected_path = "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP",
@@ -758,7 +685,7 @@ void expect_geneve_unsupported_inner_and_nonrecursive_behavior() {
 void run_common_direct_geneve_dissection_tests() {
     expect_geneve_direct_parser_and_udp_dispatch();
     expect_geneve_registry_mappings();
-    expect_geneve_fixture_packet_parity();
+    expect_geneve_fixture_packet_contract();
     expect_geneve_selected_step_sequences_and_facts();
     expect_geneve_identity_behavior();
     expect_geneve_declared_bounds_and_fallback_contracts();

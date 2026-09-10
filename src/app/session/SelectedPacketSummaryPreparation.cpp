@@ -487,11 +487,22 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
             ? session.derive_quic_presentation_for_packet(*flow_index, packet.packet_index)
             : std::optional<QuicPresentationResult> {};
 
+    const auto top_level_summary_accepts_payload_lengths =
+        top_level_transport_summary_accepts_payload_lengths(details);
+    const auto summary_transport_payload_length =
+        top_level_summary_accepts_payload_lengths
+            ? transport_payload_length
+            : std::optional<std::uint32_t> {};
+    const auto summary_original_transport_payload_length =
+        top_level_summary_accepts_payload_lengths
+            ? original_transport_payload_length
+            : std::optional<std::uint32_t> {};
+
     SelectedPacketSummaryPreparation preparation {
         .flow_packet_index = flow_packet_index,
         .is_ip_fragmented = is_ip_fragmented,
-        .transport_payload_length = transport_payload_length,
-        .original_transport_payload_length = original_transport_payload_length,
+        .transport_payload_length = summary_transport_payload_length,
+        .original_transport_payload_length = summary_original_transport_payload_length,
         .transport_payload = std::move(transport_payload),
         .checksum_summary_lines = std::move(checksum_summary_lines),
         .checksum_warning_lines = std::move(checksum_warning_lines),

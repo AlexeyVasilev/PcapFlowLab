@@ -356,7 +356,7 @@ void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
     };
 
     for (const auto& expectation : supported_flow_expectations) {
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             require_raw_fixture_packet(expectation.first),
             expectation.second,
@@ -364,13 +364,13 @@ void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
         );
     }
 
-    expect_shadow_matches_legacy_arp_flow(
+    expect_shadow_recognizes_arp_flow(
         registry,
         require_raw_fixture_packet("parsing/linux_cooked/03_sll_arp.pcap"),
         "LinuxSll",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_arp_flow(
+    expect_shadow_recognizes_arp_flow(
         registry,
         require_raw_fixture_packet("parsing/linux_cooked/07_sll2_arp.pcap"),
         "LinuxSll2",
@@ -395,9 +395,7 @@ void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
 
     for (const auto& expectation : unsupported_expectations) {
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(format_shadow_path(shadow).empty());
@@ -567,14 +565,14 @@ void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : supported_expectations) {
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
         if (expectation.is_arp_flow) {
-            expect_shadow_matches_legacy_arp_flow(
+            expect_shadow_recognizes_arp_flow(
                 registry,
                 packet,
                 expectation.expected_path,
                 expectation.expected_stop_reason
             );
         } else {
-            expect_shadow_matches_legacy_flow(
+            expect_shadow_recognizes_flow(
                 registry,
                 packet,
                 expectation.expected_path,
@@ -620,9 +618,7 @@ void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
 
     for (const auto& expectation : unsupported_expectations) {
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
@@ -854,7 +850,7 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
 
     for (const auto& expectation : supported_expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             require_raw_fixture_packet(expectation.relative_path),
             expectation.expected_shadow_path,
@@ -883,7 +879,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : control_expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
         const auto steps = collect_shadow_steps(packet, registry);
         std::vector<DissectionLayerKind> kinds {};
@@ -891,7 +886,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
             kinds.push_back(step.layer);
         }
 
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
@@ -930,7 +924,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : unsupported_expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
         const auto steps = collect_shadow_steps(packet, registry);
         std::vector<DissectionLayerKind> kinds {};
@@ -938,7 +931,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
             kinds.push_back(step.layer);
         }
 
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
@@ -948,7 +940,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
     {
         const ScopedTestContext fixture_context {"fixture=parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap"};
         const auto packet = require_raw_fixture_packet("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap");
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
         const auto steps = collect_shadow_steps(packet, registry);
         std::vector<DissectionLayerKind> kinds {};
@@ -957,17 +948,9 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         }
 
         // PPPoE declared payload length is 33 bytes while the inner IPv4 Total
-        // Length field is 37 bytes. Legacy import now matches the strict
-        // declared-boundary policy already enforced by the shadow PacketSlice
-        // model, so neither path recovers a UDP flow from bytes beyond the
-        // bounded PPPoE payload.
-        PFL_EXPECT(!legacy.recognized_flow);
-        PFL_EXPECT(legacy.protocol == ProtocolId::unknown);
-        PFL_EXPECT(legacy.family == DissectionAddressFamily::unknown);
-        PFL_EXPECT(!legacy.has_addresses);
-        PFL_EXPECT(!legacy.has_ports);
-        PFL_EXPECT(!legacy.has_payload_length);
-        PFL_EXPECT(legacy.path.empty());
+        // Length field is 37 bytes. The PacketSlice model enforces the
+        // declared boundary and does not recover a UDP flow from bytes beyond
+        // the bounded PPPoE payload.
 
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == StopReason::malformed);
@@ -985,7 +968,7 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         const auto packets = require_raw_fixture_packets("parsing/pppoe/21_pppoe_session_same_tuple_same_session_id.pcap");
         PFL_EXPECT(packets.size() == 2U);
         for (const auto& packet : packets) {
-            expect_shadow_matches_legacy_flow(
+            expect_shadow_recognizes_flow(
                 registry,
                 packet,
                 "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
@@ -1004,7 +987,7 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         PFL_EXPECT(packets.size() == 2U);
         const std::vector<std::uint16_t> expected_session_ids {0x3333U, 0x4444U};
         for (std::size_t index = 0U; index < packets.size(); ++index) {
-            expect_shadow_matches_legacy_flow(
+            expect_shadow_recognizes_flow(
                 registry,
                 packets[index],
                 "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
@@ -1022,7 +1005,7 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         const auto packets = require_raw_fixture_packets("parsing/pppoe/33_pppoe_same_session_id_supported_and_unsupported_code.pcap");
         PFL_EXPECT(packets.size() == 2U);
 
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             packets[0],
             "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
@@ -1030,7 +1013,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         );
 
         {
-            const auto legacy = decode_legacy_direct(packets[1]);
             const auto shadow = run_shadow(packets[1], registry);
             const auto steps = collect_shadow_steps(packets[1], registry);
             std::vector<DissectionLayerKind> kinds {};
@@ -1038,7 +1020,6 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
                 kinds.push_back(step.layer);
             }
 
-            PFL_EXPECT(!legacy.recognized_flow);
             PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
             PFL_EXPECT(shadow.stop_reason == StopReason::unsupported_variant);
             PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
@@ -1175,7 +1156,7 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : supported_expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             packet,
             expectation.expected_shadow_path,
@@ -1192,7 +1173,7 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
     {
         const ScopedTestContext fixture_context {"fixture=parsing/pbb/05_pbb_arp.pcap"};
         const auto packet = require_raw_fixture_packet("parsing/pbb/05_pbb_arp.pcap");
-        expect_shadow_matches_legacy_arp_flow(
+        expect_shadow_recognizes_arp_flow(
             registry,
             packet,
             "EthernetII -> PBB(isid=0x123456) -> EthernetII",
@@ -1205,7 +1186,7 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
         const auto packets = require_raw_fixture_packets("parsing/pbb/16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap");
         PFL_EXPECT(packets.size() == 2U);
         for (const auto& packet : packets) {
-            expect_shadow_matches_legacy_flow(
+            expect_shadow_recognizes_flow(
                 registry,
                 packet,
                 "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
@@ -1223,7 +1204,7 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
             "EthernetII -> PBB(isid=0x123457) -> EthernetII -> IPv4 -> UDP",
         };
         for (std::size_t index = 0U; index < packets.size(); ++index) {
-            expect_shadow_matches_legacy_flow(
+            expect_shadow_recognizes_flow(
                 registry,
                 packets[index],
                 expected_paths[index],
@@ -1252,12 +1233,10 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : unsupported_expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
         const auto steps = collect_shadow_steps(packet, registry);
         const auto kinds = collect_step_kinds(steps);
 
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
@@ -1655,13 +1634,11 @@ void expect_macsec_shadow_parsers_bounds_and_fixture_parity() {
     for (const auto& expectation : expectations) {
         const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        const auto legacy = decode_legacy_direct(packet);
         const auto shadow = run_shadow(packet, registry);
         const auto steps = collect_shadow_steps(packet, registry);
         const auto kinds = collect_step_kinds(steps);
         const auto* macsec = find_macsec_facts(steps);
 
-        PFL_EXPECT(!legacy.recognized_flow);
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
         PFL_EXPECT(shadow.terminal_protocol == ProtocolId::unknown);

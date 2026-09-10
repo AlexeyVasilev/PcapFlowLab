@@ -3,7 +3,6 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
-#include "core/decode/PacketDecoder.h"
 #include "core/services/PacketDetailsService.h"
 #include "PcapTestUtils.h"
 
@@ -129,17 +128,7 @@ void run_protocol_coverage_tests() {
     }
 
     {
-        PacketDecoder decoder {};
         PacketDetailsService details_service {};
-        const RawPcapPacket raw_packet {
-            .packet_index = 10,
-            .ts_sec = 1,
-            .ts_usec = 10,
-            .captured_length = static_cast<std::uint32_t>(truncated_ipv6_packet.size()),
-            .original_length = static_cast<std::uint32_t>(truncated_ipv6_packet.size()),
-            .data_offset = 100,
-            .bytes = truncated_ipv6_packet,
-        };
         const PacketRef packet_ref {
             .packet_index = 10,
             .byte_offset = 100,
@@ -147,8 +136,6 @@ void run_protocol_coverage_tests() {
             .original_length = static_cast<std::uint32_t>(truncated_ipv6_packet.size()),
         };
 
-        const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_EXPECT(!decoded.has_value());
         PFL_EXPECT(!details_service.decode(truncated_ipv6_packet, packet_ref).has_value());
 
         const auto path = write_temp_pcap("pfl_ipv6_ext_truncated.pcap", make_classic_pcap({{100, truncated_ipv6_packet}}));

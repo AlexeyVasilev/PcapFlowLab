@@ -1,6 +1,9 @@
 Synthetic EoIP parsing fixtures for production-contract regression tests.
 
-This directory defines the exact current production contract for MikroTik-style EoIP handling in `PacketDecoder` and packet-details code. These fixtures are intentionally source-of-truth tests for both production-regression checks and the shadow-engine parity suite.
+This directory defines the exact current production contract for MikroTik-style
+EoIP handling in the registry-driven dissection/import path and
+packet-details code. These fixtures are intentionally source-of-truth tests for
+production-regression checks.
 
 ## Scope
 

@@ -5673,6 +5673,28 @@ PacketSummaryLayer build_tls_reassembled_metadata_layer_impl(
 
 }  // namespace
 
+bool top_level_transport_summary_accepts_payload_lengths(const PacketDetails& details) noexcept {
+    if (!details.has_tcp && !details.has_udp) {
+        return false;
+    }
+
+    if (!details.effective_transport_payload.has_value()) {
+        return true;
+    }
+
+    switch (details.effective_transport_payload->summary_placement) {
+    case EffectiveTransportSummaryPlacement::after_tcp:
+        return details.has_tcp;
+    case EffectiveTransportSummaryPlacement::after_udp:
+        return details.has_udp;
+    case EffectiveTransportSummaryPlacement::after_inner_tcp:
+    case EffectiveTransportSummaryPlacement::after_inner_udp:
+    case EffectiveTransportSummaryPlacement::none:
+    default:
+        return false;
+    }
+}
+
 std::string format_packet_timestamp(const PacketRef& packet) {
     const auto seconds_of_day = packet.ts_sec % 86400U;
     const auto hours = seconds_of_day / 3600U;
@@ -6855,16 +6877,12 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (const auto tcp_options = build_tcp_options_summary_layer(details.tcp.options_bytes); tcp_options.has_value()) {
             tcp_children.push_back(*tcp_options);
         }
-        if (options.original_transport_payload_length.has_value()) {
-            if (options.transport_payload_length.has_value() &&
-                *options.transport_payload_length != *options.original_transport_payload_length) {
-                tcp_fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
-                tcp_fields.push_back(make_summary_field("Original Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
-            } else {
-                tcp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
-            }
-        } else if (options.transport_payload_length.has_value()) {
-            tcp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+        if (top_level_transport_summary_accepts_payload_lengths(details)) {
+            append_transport_payload_summary_fields(
+                tcp_fields,
+                options.transport_payload_length,
+                options.original_transport_payload_length
+            );
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "tcp",
@@ -6886,16 +6904,12 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (details.udp.payload_truncated) {
             udp_fields.push_back(make_summary_field("Warning", "UDP length exceeds available packet bytes"));
         }
-        if (options.original_transport_payload_length.has_value()) {
-            if (options.transport_payload_length.has_value() &&
-                *options.transport_payload_length != *options.original_transport_payload_length) {
-                udp_fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
-                udp_fields.push_back(make_summary_field("Original Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
-            } else {
-                udp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
-            }
-        } else if (options.transport_payload_length.has_value()) {
-            udp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+        if (top_level_transport_summary_accepts_payload_lengths(details)) {
+            append_transport_payload_summary_fields(
+                udp_fields,
+                options.transport_payload_length,
+                options.original_transport_payload_length
+            );
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "udp",

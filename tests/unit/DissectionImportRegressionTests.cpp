@@ -312,45 +312,26 @@ CaptureStateSnapshot snapshot_state(const CaptureState& state) {
     return snapshot;
 }
 
-void record_mismatch(std::string_view field, std::string legacy, std::string unified) {
+void record_mismatch(std::string_view field, std::string production, std::string unified) {
     std::ostringstream builder {};
     const auto context = current_test_context();
     if (!context.empty()) {
         builder << '[' << context << "] ";
     }
-    builder << field << " mismatch: legacy=" << legacy << " unified=" << unified;
+    builder << field << " mismatch: production=" << production << " unified=" << unified;
     record_failure_message(builder.str());
 }
 
-void expect_equal(std::string_view field, const std::string& legacy, const std::string& unified) {
-    if (legacy != unified) {
-        record_mismatch(field, legacy, unified);
+void expect_equal(std::string_view field, const std::string& production, const std::string& unified) {
+    if (production != unified) {
+        record_mismatch(field, production, unified);
     }
 }
 
 template <typename T>
-void expect_equal(std::string_view field, const T& legacy, const T& unified) {
-    if (!(legacy == unified)) {
-        record_mismatch(field, std::to_string(legacy), std::to_string(unified));
-    }
-}
-
-template <typename Reader>
-void import_reader_with_legacy_decoder(
-    Reader& reader,
-    CaptureState& state,
-    const FlowHintService& hint_service
-) {
-    PacketDecoder decoder {};
-    while (auto packet = reader.read_next()) {
-        auto decoded = decoder.decode(*packet);
-        if (decoded.has_value()) {
-            static_cast<void>(apply_decoded_packet_import(*packet, decoded, state, hint_service));
-            continue;
-        }
-
-        const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
-        static_cast<void>(apply_legacy_unrecognized_packet_import(*packet, packet_bytes, state, hint_service));
+void expect_equal(std::string_view field, const T& production, const T& unified) {
+    if (!(production == unified)) {
+        record_mismatch(field, std::to_string(production), std::to_string(unified));
     }
 }
 
@@ -369,35 +350,6 @@ void import_reader_with_unified_dissection(
             hint_service
         ));
     }
-}
-
-CaptureState import_capture_with_legacy_decoder_for_test(
-    const std::filesystem::path& capture_path,
-    const CaptureImportOptions& options = {}
-) {
-    CaptureState state {};
-    const FlowHintService hint_service {options.settings, true};
-
-    switch (detect_capture_source_format(capture_path)) {
-    case CaptureSourceFormat::classic_pcap: {
-        PcapReader reader {};
-        PFL_REQUIRE(reader.open(capture_path));
-        import_reader_with_legacy_decoder(reader, state, hint_service);
-        PFL_EXPECT(!reader.has_error());
-        break;
-    }
-    case CaptureSourceFormat::pcapng: {
-        PcapNgReader reader {};
-        PFL_REQUIRE(reader.open(capture_path));
-        import_reader_with_legacy_decoder(reader, state, hint_service);
-        PFL_EXPECT(!reader.has_error());
-        break;
-    }
-    default:
-        PFL_REQUIRE(false);
-    }
-
-    return state;
 }
 
 CaptureState import_capture_with_production_import_for_test(
@@ -443,158 +395,144 @@ CaptureState import_capture_with_unified_dissection_for_test(
 
 void expect_packet_refs_equal(
     const std::string& label,
-    const std::vector<PacketRef>& legacy,
+    const std::vector<PacketRef>& production,
     const std::vector<PacketRef>& unified
 ) {
-    expect_equal(label + ".packet_count", legacy.size(), unified.size());
-    const auto shared_size = std::min(legacy.size(), unified.size());
+    expect_equal(label + ".packet_count", production.size(), unified.size());
+    const auto shared_size = std::min(production.size(), unified.size());
     for (std::size_t index = 0U; index < shared_size; ++index) {
-        if (legacy[index] != unified[index]) {
+        if (production[index] != unified[index]) {
             record_mismatch(
                 label + ".packet[" + std::to_string(index) + ']',
-                format_packet_ref(legacy[index]),
+                format_packet_ref(production[index]),
                 format_packet_ref(unified[index])
             );
         }
     }
 }
 
-void expect_flow_equal(const std::string& label, const FlowSnapshotV4& legacy, const FlowSnapshotV4& unified) {
-    if (legacy.key != unified.key) {
-        record_mismatch(label + ".key", format_flow_key(legacy.key, legacy.protocol_path), format_flow_key(unified.key, unified.protocol_path));
+void expect_flow_equal(const std::string& label, const FlowSnapshotV4& production, const FlowSnapshotV4& unified) {
+    if (production.key != unified.key) {
+        record_mismatch(label + ".key", format_flow_key(production.key, production.protocol_path), format_flow_key(unified.key, unified.protocol_path));
     }
-    expect_equal(label + ".protocol_path", legacy.protocol_path, unified.protocol_path);
-    expect_equal(label + ".packet_count", legacy.packet_count, unified.packet_count);
-    expect_equal(label + ".total_bytes", legacy.total_bytes, unified.total_bytes);
-    expect_packet_refs_equal(label + ".packets", legacy.packets, unified.packets);
+    expect_equal(label + ".protocol_path", production.protocol_path, unified.protocol_path);
+    expect_equal(label + ".packet_count", production.packet_count, unified.packet_count);
+    expect_equal(label + ".total_bytes", production.total_bytes, unified.total_bytes);
+    expect_packet_refs_equal(label + ".packets", production.packets, unified.packets);
 }
 
-void expect_flow_equal(const std::string& label, const FlowSnapshotV6& legacy, const FlowSnapshotV6& unified) {
-    if (legacy.key != unified.key) {
-        record_mismatch(label + ".key", format_flow_key(legacy.key, legacy.protocol_path), format_flow_key(unified.key, unified.protocol_path));
+void expect_flow_equal(const std::string& label, const FlowSnapshotV6& production, const FlowSnapshotV6& unified) {
+    if (production.key != unified.key) {
+        record_mismatch(label + ".key", format_flow_key(production.key, production.protocol_path), format_flow_key(unified.key, unified.protocol_path));
     }
-    expect_equal(label + ".protocol_path", legacy.protocol_path, unified.protocol_path);
-    expect_equal(label + ".packet_count", legacy.packet_count, unified.packet_count);
-    expect_equal(label + ".total_bytes", legacy.total_bytes, unified.total_bytes);
-    expect_packet_refs_equal(label + ".packets", legacy.packets, unified.packets);
+    expect_equal(label + ".protocol_path", production.protocol_path, unified.protocol_path);
+    expect_equal(label + ".packet_count", production.packet_count, unified.packet_count);
+    expect_equal(label + ".total_bytes", production.total_bytes, unified.total_bytes);
+    expect_packet_refs_equal(label + ".packets", production.packets, unified.packets);
 }
 
 void expect_connection_equal(
     const std::string& label,
-    const ConnectionSnapshotV4& legacy,
+    const ConnectionSnapshotV4& production,
     const ConnectionSnapshotV4& unified
 ) {
-    if (legacy.key != unified.key) {
+    if (production.key != unified.key) {
         record_mismatch(
             label + ".key",
-            format_connection_key(legacy.key, legacy.protocol_path),
+            format_connection_key(production.key, production.protocol_path),
             format_connection_key(unified.key, unified.protocol_path)
         );
     }
-    expect_equal(label + ".protocol_path", legacy.protocol_path, unified.protocol_path);
-    expect_equal(label + ".packet_count", legacy.packet_count, unified.packet_count);
-    expect_equal(label + ".total_bytes", legacy.total_bytes, unified.total_bytes);
-    expect_equal(label + ".has_fragmented_packets", legacy.has_fragmented_packets ? 1 : 0, unified.has_fragmented_packets ? 1 : 0);
-    expect_equal(label + ".fragmented_packet_count", legacy.fragmented_packet_count, unified.fragmented_packet_count);
-    expect_equal(label + ".protocol_hint", static_cast<int>(legacy.protocol_hint), static_cast<int>(unified.protocol_hint));
-    expect_equal(label + ".service_hint", legacy.service_hint, unified.service_hint);
-    expect_equal(label + ".quic_version", static_cast<int>(legacy.quic_version), static_cast<int>(unified.quic_version));
-    expect_equal(label + ".tls_version", static_cast<int>(legacy.tls_version), static_cast<int>(unified.tls_version));
+    expect_equal(label + ".protocol_path", production.protocol_path, unified.protocol_path);
+    expect_equal(label + ".packet_count", production.packet_count, unified.packet_count);
+    expect_equal(label + ".total_bytes", production.total_bytes, unified.total_bytes);
+    expect_equal(label + ".has_fragmented_packets", production.has_fragmented_packets ? 1 : 0, unified.has_fragmented_packets ? 1 : 0);
+    expect_equal(label + ".fragmented_packet_count", production.fragmented_packet_count, unified.fragmented_packet_count);
+    expect_equal(label + ".protocol_hint", static_cast<int>(production.protocol_hint), static_cast<int>(unified.protocol_hint));
+    expect_equal(label + ".service_hint", production.service_hint, unified.service_hint);
+    expect_equal(label + ".quic_version", static_cast<int>(production.quic_version), static_cast<int>(unified.quic_version));
+    expect_equal(label + ".tls_version", static_cast<int>(production.tls_version), static_cast<int>(unified.tls_version));
     expect_equal(
         label + ".hint_search_count",
-        static_cast<unsigned int>(legacy.hint_search_state.unresolved_payload_attempt_count),
+        static_cast<unsigned int>(production.hint_search_state.unresolved_payload_attempt_count),
         static_cast<unsigned int>(unified.hint_search_state.unresolved_payload_attempt_count)
     );
     expect_equal(
         label + ".hint_search_exhausted",
-        legacy.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0,
+        production.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0,
         unified.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0
     );
 
-    expect_equal(label + ".has_flow_a", legacy.flow_a.has_value() ? 1 : 0, unified.flow_a.has_value() ? 1 : 0);
-    expect_equal(label + ".has_flow_b", legacy.flow_b.has_value() ? 1 : 0, unified.flow_b.has_value() ? 1 : 0);
-    if (legacy.flow_a.has_value() && unified.flow_a.has_value()) {
-        expect_flow_equal(label + ".flow_a", *legacy.flow_a, *unified.flow_a);
+    expect_equal(label + ".has_flow_a", production.flow_a.has_value() ? 1 : 0, unified.flow_a.has_value() ? 1 : 0);
+    expect_equal(label + ".has_flow_b", production.flow_b.has_value() ? 1 : 0, unified.flow_b.has_value() ? 1 : 0);
+    if (production.flow_a.has_value() && unified.flow_a.has_value()) {
+        expect_flow_equal(label + ".flow_a", *production.flow_a, *unified.flow_a);
     }
-    if (legacy.flow_b.has_value() && unified.flow_b.has_value()) {
-        expect_flow_equal(label + ".flow_b", *legacy.flow_b, *unified.flow_b);
+    if (production.flow_b.has_value() && unified.flow_b.has_value()) {
+        expect_flow_equal(label + ".flow_b", *production.flow_b, *unified.flow_b);
     }
 }
 
 void expect_connection_equal(
     const std::string& label,
-    const ConnectionSnapshotV6& legacy,
+    const ConnectionSnapshotV6& production,
     const ConnectionSnapshotV6& unified
 ) {
-    if (legacy.key != unified.key) {
+    if (production.key != unified.key) {
         record_mismatch(
             label + ".key",
-            format_connection_key(legacy.key, legacy.protocol_path),
+            format_connection_key(production.key, production.protocol_path),
             format_connection_key(unified.key, unified.protocol_path)
         );
     }
-    expect_equal(label + ".protocol_path", legacy.protocol_path, unified.protocol_path);
-    expect_equal(label + ".packet_count", legacy.packet_count, unified.packet_count);
-    expect_equal(label + ".total_bytes", legacy.total_bytes, unified.total_bytes);
-    expect_equal(label + ".has_fragmented_packets", legacy.has_fragmented_packets ? 1 : 0, unified.has_fragmented_packets ? 1 : 0);
-    expect_equal(label + ".fragmented_packet_count", legacy.fragmented_packet_count, unified.fragmented_packet_count);
-    expect_equal(label + ".protocol_hint", static_cast<int>(legacy.protocol_hint), static_cast<int>(unified.protocol_hint));
-    expect_equal(label + ".service_hint", legacy.service_hint, unified.service_hint);
-    expect_equal(label + ".quic_version", static_cast<int>(legacy.quic_version), static_cast<int>(unified.quic_version));
-    expect_equal(label + ".tls_version", static_cast<int>(legacy.tls_version), static_cast<int>(unified.tls_version));
+    expect_equal(label + ".protocol_path", production.protocol_path, unified.protocol_path);
+    expect_equal(label + ".packet_count", production.packet_count, unified.packet_count);
+    expect_equal(label + ".total_bytes", production.total_bytes, unified.total_bytes);
+    expect_equal(label + ".has_fragmented_packets", production.has_fragmented_packets ? 1 : 0, unified.has_fragmented_packets ? 1 : 0);
+    expect_equal(label + ".fragmented_packet_count", production.fragmented_packet_count, unified.fragmented_packet_count);
+    expect_equal(label + ".protocol_hint", static_cast<int>(production.protocol_hint), static_cast<int>(unified.protocol_hint));
+    expect_equal(label + ".service_hint", production.service_hint, unified.service_hint);
+    expect_equal(label + ".quic_version", static_cast<int>(production.quic_version), static_cast<int>(unified.quic_version));
+    expect_equal(label + ".tls_version", static_cast<int>(production.tls_version), static_cast<int>(unified.tls_version));
     expect_equal(
         label + ".hint_search_count",
-        static_cast<unsigned int>(legacy.hint_search_state.unresolved_payload_attempt_count),
+        static_cast<unsigned int>(production.hint_search_state.unresolved_payload_attempt_count),
         static_cast<unsigned int>(unified.hint_search_state.unresolved_payload_attempt_count)
     );
     expect_equal(
         label + ".hint_search_exhausted",
-        legacy.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0,
+        production.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0,
         unified.hint_search_state.unresolved_payload_attempt_budget_exhausted ? 1 : 0
     );
 
-    expect_equal(label + ".has_flow_a", legacy.flow_a.has_value() ? 1 : 0, unified.flow_a.has_value() ? 1 : 0);
-    expect_equal(label + ".has_flow_b", legacy.flow_b.has_value() ? 1 : 0, unified.flow_b.has_value() ? 1 : 0);
-    if (legacy.flow_a.has_value() && unified.flow_a.has_value()) {
-        expect_flow_equal(label + ".flow_a", *legacy.flow_a, *unified.flow_a);
+    expect_equal(label + ".has_flow_a", production.flow_a.has_value() ? 1 : 0, unified.flow_a.has_value() ? 1 : 0);
+    expect_equal(label + ".has_flow_b", production.flow_b.has_value() ? 1 : 0, unified.flow_b.has_value() ? 1 : 0);
+    if (production.flow_a.has_value() && unified.flow_a.has_value()) {
+        expect_flow_equal(label + ".flow_a", *production.flow_a, *unified.flow_a);
     }
-    if (legacy.flow_b.has_value() && unified.flow_b.has_value()) {
-        expect_flow_equal(label + ".flow_b", *legacy.flow_b, *unified.flow_b);
+    if (production.flow_b.has_value() && unified.flow_b.has_value()) {
+        expect_flow_equal(label + ".flow_b", *production.flow_b, *unified.flow_b);
     }
 }
 
-void expect_fixture_import_parity(
+void expect_fixture_import_regression(
     const std::filesystem::path& capture_path,
     const std::string& context_label,
     const CaptureImportOptions& options = {}
 ) {
     const ScopedTestContext fixture_context {context_label};
 
-    const auto legacy_state = import_capture_with_legacy_decoder_for_test(capture_path, options);
     const auto production_state = import_capture_with_production_import_for_test(capture_path, options);
     const auto unified_state = import_capture_with_unified_dissection_for_test(capture_path, options);
 
-    const auto legacy = snapshot_state(legacy_state);
     const auto production = snapshot_state(production_state);
     const auto unified = snapshot_state(unified_state);
 
-    if (!(legacy.summary == unified.summary)) {
-        record_mismatch("summary", format_summary(legacy.summary), format_summary(unified.summary));
-    }
     if (!(production.summary == unified.summary)) {
         record_mismatch("production.summary", format_summary(production.summary), format_summary(unified.summary));
     }
 
-    expect_equal("protocol_registry.size", legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
     expect_equal("production.protocol_registry.size", production.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
-    const auto shared_path_count = std::min(legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
-    for (std::size_t index = 0U; index < shared_path_count; ++index) {
-        expect_equal(
-            "protocol_registry.path[" + std::to_string(index + 1U) + ']',
-            legacy.protocol_registry_paths[index],
-            unified.protocol_registry_paths[index]
-        );
-    }
     const auto shared_production_path_count = std::min(production.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
     for (std::size_t index = 0U; index < shared_production_path_count; ++index) {
         expect_equal(
@@ -604,11 +542,6 @@ void expect_fixture_import_parity(
         );
     }
 
-    expect_equal("ipv4_connection_count", legacy.ipv4_connections.size(), unified.ipv4_connections.size());
-    const auto shared_ipv4 = std::min(legacy.ipv4_connections.size(), unified.ipv4_connections.size());
-    for (std::size_t index = 0U; index < shared_ipv4; ++index) {
-        expect_connection_equal("ipv4_connection[" + std::to_string(index) + ']', legacy.ipv4_connections[index], unified.ipv4_connections[index]);
-    }
     expect_equal("production.ipv4_connection_count", production.ipv4_connections.size(), unified.ipv4_connections.size());
     const auto shared_production_ipv4 = std::min(production.ipv4_connections.size(), unified.ipv4_connections.size());
     for (std::size_t index = 0U; index < shared_production_ipv4; ++index) {
@@ -619,11 +552,6 @@ void expect_fixture_import_parity(
         );
     }
 
-    expect_equal("ipv6_connection_count", legacy.ipv6_connections.size(), unified.ipv6_connections.size());
-    const auto shared_ipv6 = std::min(legacy.ipv6_connections.size(), unified.ipv6_connections.size());
-    for (std::size_t index = 0U; index < shared_ipv6; ++index) {
-        expect_connection_equal("ipv6_connection[" + std::to_string(index) + ']', legacy.ipv6_connections[index], unified.ipv6_connections[index]);
-    }
     expect_equal("production.ipv6_connection_count", production.ipv6_connections.size(), unified.ipv6_connections.size());
     const auto shared_production_ipv6 = std::min(production.ipv6_connections.size(), unified.ipv6_connections.size());
     for (std::size_t index = 0U; index < shared_production_ipv6; ++index) {
@@ -634,24 +562,6 @@ void expect_fixture_import_parity(
         );
     }
 
-    expect_equal("unrecognized_count", legacy.unrecognized_packets.size(), unified.unrecognized_packets.size());
-    const auto shared_unrecognized = std::min(legacy.unrecognized_packets.size(), unified.unrecognized_packets.size());
-    for (std::size_t index = 0U; index < shared_unrecognized; ++index) {
-        const auto& legacy_record = legacy.unrecognized_packets[index];
-        const auto& unified_record = unified.unrecognized_packets[index];
-        if (legacy_record.packet != unified_record.packet) {
-            record_mismatch(
-                "unrecognized[" + std::to_string(index) + "].packet",
-                format_packet_ref(legacy_record.packet),
-                format_packet_ref(unified_record.packet)
-            );
-        }
-        expect_equal(
-            "unrecognized[" + std::to_string(index) + "].reason",
-            legacy_record.reason_text,
-            unified_record.reason_text
-        );
-    }
     expect_equal("production.unrecognized_count", production.unrecognized_packets.size(), unified.unrecognized_packets.size());
     const auto shared_production_unrecognized = std::min(production.unrecognized_packets.size(), unified.unrecognized_packets.size());
     for (std::size_t index = 0U; index < shared_production_unrecognized; ++index) {
@@ -672,60 +582,60 @@ void expect_fixture_import_parity(
     }
 }
 
-void expect_fixture_import_parity(
+void expect_fixture_import_regression(
     const std::filesystem::path& relative_path,
     const CaptureImportOptions& options = {}
 ) {
-    expect_fixture_import_parity(
+    expect_fixture_import_regression(
         fixture_path(relative_path),
         "fixture=" + relative_path.generic_string(),
         options
     );
 }
 
-void expect_direct_and_hint_fixture_parity() {
-    expect_fixture_import_parity("parsing/http/http_multi_message_3.pcap");
-    expect_fixture_import_parity("parsing/tls/ipv4_tls_constricted_1.pcap");
-    expect_fixture_import_parity("parsing/sctp/15_sctp_ipv4_bidirectional_flow.pcap");
+void expect_direct_and_hint_fixture_regressions() {
+    expect_fixture_import_regression("parsing/http/http_multi_message_3.pcap");
+    expect_fixture_import_regression("parsing/tls/ipv4_tls_constricted_1.pcap");
+    expect_fixture_import_regression("parsing/sctp/15_sctp_ipv4_bidirectional_flow.pcap");
 }
 
-void expect_portless_and_link_fixture_parity() {
-    expect_fixture_import_parity("parsing/arp/03_arp_request_reply_ipv4.pcap");
-    expect_fixture_import_parity("parsing/igmp/01_igmpv1_membership_report_mdns_group.pcap");
-    expect_fixture_import_parity("parsing/linux_cooked/17_sll2_addrlen_8_ipv4_udp.pcap");
-    expect_fixture_import_parity("parsing/llc_snap/07_qinq_llc_snap_ipv4_udp.pcap");
-    expect_fixture_import_parity("parsing/vlan/06_qinq_arp.pcap");
+void expect_portless_and_link_fixture_regressions() {
+    expect_fixture_import_regression("parsing/arp/03_arp_request_reply_ipv4.pcap");
+    expect_fixture_import_regression("parsing/igmp/01_igmpv1_membership_report_mdns_group.pcap");
+    expect_fixture_import_regression("parsing/linux_cooked/17_sll2_addrlen_8_ipv4_udp.pcap");
+    expect_fixture_import_regression("parsing/llc_snap/07_qinq_llc_snap_ipv4_udp.pcap");
+    expect_fixture_import_regression("parsing/vlan/06_qinq_arp.pcap");
 }
 
-void expect_encapsulation_fixture_parity() {
-    expect_fixture_import_parity("parsing/ip_encapsulation/14_same_inner_tuple_same_outer_ipv4_two_packets.pcap");
-    expect_fixture_import_parity("parsing/gre/22_gre_same_inner_tuple_same_key_two_packets.pcap");
-    expect_fixture_import_parity("parsing/gre/23_gre_key_ipv4_icmp.pcap");
-    expect_fixture_import_parity("parsing/eoip/10_same_tunnel_id_two_packets.pcap");
-    expect_fixture_import_parity("parsing/mpls_pw/16_mpls_pw_outer_vlan_inner_qinq_ipv4_udp_cw.pcap");
-    expect_fixture_import_parity("parsing/ah/06_ipv4_ah_same_spi_two_packets.pcap");
-    expect_fixture_import_parity("parsing/esp/04_ipv4_esp_same_spi_two_packets.pcap");
-    expect_fixture_import_parity("parsing/pbb/21_pbb_outer_legacy_vlan_ipv4_udp.pcap");
+void expect_encapsulation_fixture_regressions() {
+    expect_fixture_import_regression("parsing/ip_encapsulation/14_same_inner_tuple_same_outer_ipv4_two_packets.pcap");
+    expect_fixture_import_regression("parsing/gre/22_gre_same_inner_tuple_same_key_two_packets.pcap");
+    expect_fixture_import_regression("parsing/gre/23_gre_key_ipv4_icmp.pcap");
+    expect_fixture_import_regression("parsing/eoip/10_same_tunnel_id_two_packets.pcap");
+    expect_fixture_import_regression("parsing/mpls_pw/16_mpls_pw_outer_vlan_inner_qinq_ipv4_udp_cw.pcap");
+    expect_fixture_import_regression("parsing/ah/06_ipv4_ah_same_spi_two_packets.pcap");
+    expect_fixture_import_regression("parsing/esp/04_ipv4_esp_same_spi_two_packets.pcap");
+    expect_fixture_import_regression("parsing/pbb/21_pbb_outer_legacy_vlan_ipv4_udp.pcap");
 }
 
-void expect_overlay_and_fragmentation_fixture_parity() {
-    expect_fixture_import_parity("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap");
-    expect_fixture_import_parity("parsing/vxlan/23_vxlan_identity_outer_and_inner_vlan_splits.pcap");
-    expect_fixture_import_parity("parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap");
-    expect_fixture_import_parity("parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap");
-    expect_fixture_import_parity("parsing/vxlan/24_vxlan_outer_ipv4_fragmentation.pcap");
-    expect_fixture_import_parity("parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap");
-    expect_fixture_import_parity("parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap");
+void expect_overlay_and_fragmentation_fixture_regressions() {
+    expect_fixture_import_regression("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap");
+    expect_fixture_import_regression("parsing/vxlan/23_vxlan_identity_outer_and_inner_vlan_splits.pcap");
+    expect_fixture_import_regression("parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap");
+    expect_fixture_import_regression("parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap");
+    expect_fixture_import_regression("parsing/vxlan/24_vxlan_outer_ipv4_fragmentation.pcap");
+    expect_fixture_import_regression("parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap");
+    expect_fixture_import_regression("parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap");
 }
 
-void expect_negative_fixture_parity() {
-    expect_fixture_import_parity("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap");
-    expect_fixture_import_parity("parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap");
-    expect_fixture_import_parity("parsing/vxlan/29_vxlan_capture_truncation_matrix.pcap");
-    expect_fixture_import_parity("parsing/linux_cooked/11_sll_unknown_protocol.pcap");
+void expect_negative_fixture_regressions() {
+    expect_fixture_import_regression("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap");
+    expect_fixture_import_regression("parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap");
+    expect_fixture_import_regression("parsing/vxlan/29_vxlan_capture_truncation_matrix.pcap");
+    expect_fixture_import_regression("parsing/linux_cooked/11_sll_unknown_protocol.pcap");
 }
 
-void expect_classic_pcap_staged_prefix_session_parity() {
+void expect_classic_pcap_staged_prefix_import_regression() {
     constexpr std::size_t kMinCapturedLengthForStagedImportBytes = 16U * 1024U;
 
     std::vector<std::uint8_t> long_hop_by_hop_header {
@@ -758,7 +668,7 @@ void expect_classic_pcap_staged_prefix_session_parity() {
         })
     );
 
-    expect_fixture_import_parity(
+    expect_fixture_import_regression(
         capture_path,
         "fixture=synthetic/classic_pcap_staged_prefix_ipv6_udp",
         {}
@@ -784,24 +694,18 @@ void expect_overlay_terminal_payload_length_regression() {
 
         const auto packet = require_raw_fixture_packet(std::filesystem::path {std::string(test_case.fixture)});
 
-        auto decoded = PacketDecoder {}.decode(packet);
-        PFL_REQUIRE(decoded.ipv4.has_value());
-        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
-        PFL_EXPECT(decoded.ipv4->import_metadata.transport_payload_length == test_case.expected_inner_payload_length);
-        PFL_REQUIRE(decoded.terminal_transport_payload_bounds.has_value());
-        const auto legacy_recovered_payload_length = derive_captured_terminal_transport_payload_length(
-            packet,
-            *decoded.terminal_transport_payload_bounds
-        );
-        PFL_REQUIRE(legacy_recovered_payload_length.has_value());
-        PFL_EXPECT(*legacy_recovered_payload_length == test_case.expected_inner_payload_length);
-
         const auto facts = run_shadow(packet, require_common_direct_registry());
         PFL_EXPECT(facts.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(facts.terminal_protocol == ProtocolId::udp);
         PFL_EXPECT(facts.has_transport_payload_length);
         PFL_EXPECT(facts.captured_transport_payload_length == test_case.expected_inner_payload_length);
         PFL_REQUIRE(facts.terminal_transport_payload_bounds.has_value());
-        PFL_EXPECT(*facts.terminal_transport_payload_bounds == *decoded.terminal_transport_payload_bounds);
+        const auto recovered_payload_length = derive_captured_terminal_transport_payload_length(
+            packet,
+            *facts.terminal_transport_payload_bounds
+        );
+        PFL_REQUIRE(recovered_payload_length.has_value());
+        PFL_EXPECT(*recovered_payload_length == test_case.expected_inner_payload_length);
 
         const auto decision = adapt_dissection_import_facts(facts);
         PFL_REQUIRE(decision.has_decoded_packet());
@@ -811,20 +715,17 @@ void expect_overlay_terminal_payload_length_regression() {
             test_case.expected_inner_payload_length
         );
         PFL_REQUIRE(decision.decoded_packet->terminal_transport_payload_bounds.has_value());
-        PFL_EXPECT(*decision.decoded_packet->terminal_transport_payload_bounds == *decoded.terminal_transport_payload_bounds);
+        PFL_EXPECT(*decision.decoded_packet->terminal_transport_payload_bounds == *facts.terminal_transport_payload_bounds);
 
-        CaptureState legacy_state {};
         const FlowHintService hint_service {AnalysisSettings {}, true};
-        auto legacy_imported = decoded;
-        static_cast<void>(apply_decoded_packet_import(packet, legacy_imported, legacy_state, hint_service));
-        const auto legacy_snapshot = snapshot_state(legacy_state);
-
         auto imported = *decision.decoded_packet;
         CaptureState unified_state {};
         static_cast<void>(apply_decoded_packet_import(packet, imported, unified_state, hint_service));
         const auto unified_snapshot = snapshot_state(unified_state);
 
-        PFL_EXPECT(unified_snapshot == legacy_snapshot);
+        PFL_EXPECT(unified_snapshot.summary.packet_count == 1U);
+        PFL_EXPECT(unified_snapshot.summary.flow_count == 1U);
+        PFL_EXPECT(unified_snapshot.unrecognized_packets.empty());
     }
 }
 
@@ -883,13 +784,13 @@ void expect_production_import_matches_unified_on_geneve_packet2() {
 
 }  // namespace
 
-void run_dissection_import_session_parity_tests() {
-    expect_direct_and_hint_fixture_parity();
-    expect_portless_and_link_fixture_parity();
-    expect_encapsulation_fixture_parity();
-    expect_overlay_and_fragmentation_fixture_parity();
-    expect_negative_fixture_parity();
-    expect_classic_pcap_staged_prefix_session_parity();
+void run_dissection_import_regression_tests() {
+    expect_direct_and_hint_fixture_regressions();
+    expect_portless_and_link_fixture_regressions();
+    expect_encapsulation_fixture_regressions();
+    expect_overlay_and_fragmentation_fixture_regressions();
+    expect_negative_fixture_regressions();
+    expect_classic_pcap_staged_prefix_import_regression();
     expect_overlay_terminal_payload_length_regression();
     expect_geneve_packet2_keeps_only_diagnostic_path();
     expect_production_import_matches_unified_on_geneve_packet2();

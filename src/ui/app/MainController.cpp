@@ -1032,7 +1032,7 @@ TransportPayloadLengths resolve_transport_payload_lengths(
 ) {
     const auto metadata = session_detail::derive_transient_packet_metadata(packet_bytes, packet);
 
-    if (!details.has_tcp && !details.has_udp) {
+    if (!session_detail::top_level_transport_summary_accepts_payload_lengths(details)) {
         return TransportPayloadLengths {
             .is_ip_fragmented = metadata.is_ip_fragmented,
         };

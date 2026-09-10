@@ -1,9 +1,7 @@
 Synthetic PPPoE / PPP parsing fixtures for regression tests.
 
-This directory defines the migration contract for the current production
-`PacketDecoder` and related production-selected-packet paths.
-
-It does not define any shadow dissection behavior.
+This directory defines the current production registry-driven dissection/import
+contract and related production selected-packet paths.
 
 ## Exact production contract
 

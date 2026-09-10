@@ -100,6 +100,7 @@ struct PacketSummaryOptions {
     std::optional<PacketDataPresentation> packet_data {};
 };
 
+bool top_level_transport_summary_accepts_payload_lengths(const PacketDetails& details) noexcept;
 std::string format_packet_timestamp(const PacketRef& packet);
 std::string format_packet_timestamp_full(const PacketRef& packet);
 std::string format_tcp_flags_text(std::uint8_t flags);

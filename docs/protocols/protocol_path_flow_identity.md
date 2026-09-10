@@ -128,9 +128,9 @@ Current builder/storage boundaries:
 - current hot-path logic avoids materializing owned `ProtocolPath` objects more
   often than necessary.
 
-Legacy `PacketDecoder` still exists in production and still has consumers
-outside the import path, but it is no longer the authoritative raw-import
-grouping path.
+The retired legacy packet decoder is no longer part of production flow
+identity. Raw-import grouping and protocol-path identity are owned by the
+registry-driven dissection path.
 
 ## Grouping Normalization Settings
 

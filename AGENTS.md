@@ -42,8 +42,6 @@ documentation is authoritative.
   compatibility contract
 - `docs/features/flow-aggregate-metadata-rfc.md` -> retained flow metadata and
   compact persistent packet metadata foundation
-- `docs/dissection-import-validation.md` -> import-validation and parity-tool
-  behavior for diagnostics and cutover work
 
 ### Flow identity and Protocol Path
 

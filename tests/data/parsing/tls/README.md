@@ -83,7 +83,7 @@ Current structured-parser limitations and boundaries:
 
 | Fixture | Category | Current consumers | Current contract strength | Unique role | Manual verification | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ipv4_tls_constricted_1.pcap` | Constricted/truncated | `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests`, `DissectionImportSessionParityTests` | Strong | Exact IPv4 constricted stream and UI contract | Yes | Keep for now |
+| `ipv4_tls_constricted_1.pcap` | Constricted/truncated | `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests`, `DissectionImportRegressionTests` | Strong | Exact IPv4 constricted stream and UI contract | Yes | Keep for now |
 | `ipv6_tls_constricted_1.pcap` | Constricted/truncated | `FlowHintsRealFixturesTests`, `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests` | Strong | Exact IPv6 constricted stream contract | Yes | Keep for now |
 | `ipv6_tls_strong_constrict_1.pcap` | Constricted/truncated | `FlowHintsRealFixturesTests`, `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests` | Strong | Exact strong-constriction contribution contract | Yes | Keep for now |
 | `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.2 ApplicationData record contract with no handshake interpretation | Complete | Keep for now |
@@ -167,8 +167,8 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - no `TLS Gap` row is present.
 - `tests/unit/ProtocolPathTests.cpp`
   - fixture remains a single flow/path family under current protocol-path rules.
-- `tests/unit/DissectionImportSessionParityTests.cpp`
-  - fixture participates in current import parity coverage.
+- `tests/unit/DissectionImportRegressionTests.cpp`
+  - fixture participates in current import regression coverage.
 
 #### Unique purpose
 

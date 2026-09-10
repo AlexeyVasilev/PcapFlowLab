@@ -10,8 +10,6 @@ and selected-flow reconstruction remain on-demand.
 - `core/io`
   - classic PCAP and current PCAPNG readers, packet seek/read helpers, and
     packet-writing export support
-- `core/decode`
-  - legacy packet-oriented decode helpers, including `PacketDecoder`
 - `core/dissection`
   - unified registry-driven dissection engine used by current production import
 - `core/domain`
@@ -219,26 +217,26 @@ This boundary is central to the product:
 - byte-backed packet inspection, Stream reconstruction/materialization, and
   packet-writing export cannot.
 
-## PacketDecoder and unified dissection status
+## Unified dissection status
 
-Production import has already cut over to the unified registry-driven
-dissection engine.
+Production import and runtime-derived transient packet facts use the unified
+registry-driven dissection engine. The former legacy packet-oriented
+`PacketDecoder` has been retired and is no longer a production component or
+validation oracle.
 
-However, the repository is not yet in a state where `PacketDecoder` is merely a
-dead compatibility stub or validation-only oracle. Current production/session
-code still uses `PacketDecoder` in non-import paths, including packet metadata
-recovery and terminal transport payload related paths.
-
-`PacketDetailsService` also remains a production selected-packet/details
-consumer separate from the import-time engine path.
+`PacketDetailsService` remains a production selected-packet/details consumer
+separate from the import-time engine path. It should stay aligned with shared
+dissection semantics, but it is still a selected-packet presentation service
+rather than the raw-capture grouping authority.
 
 The correct architectural description today is therefore:
 
 - unified dissection owns the production import/open path;
-- legacy decoder/details code still has real production consumers outside that
-  import path;
-- the architecture is partially consolidated, but not yet reduced to one single
-  packet-decoding implementation for every runtime use.
+- runtime dissection helpers reuse the same registry-driven traversal for
+  selected-flow transient packet facts;
+- packet details remain a selected-packet presentation service over source
+  bytes;
+- there is no retained legacy decoder target or validation oracle.
 
 ## Stream and reassembly boundaries
 

@@ -10,6 +10,7 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
+#include "core/domain/TerminalTransportPayloadBounds.h"
 
 namespace pfl {
 
@@ -22,6 +23,7 @@ namespace pfl::session_detail {
 struct TransientPacketDerivedMetadata {
     std::optional<std::uint32_t> captured_transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
+    std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
     std::optional<std::uint8_t> tcp_flags {};
     std::optional<bool> is_ip_fragmented {};
 };

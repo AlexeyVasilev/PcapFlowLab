@@ -161,48 +161,7 @@ std::string shadow_flow_identity_text(const ImportDissectionFacts& facts) {
     return builder.str();
 }
 
-std::string legacy_flow_identity_text(const LegacyDirectFacts& facts) {
-    auto canonicalize_endpoints = [](std::string first, std::string second) {
-        if (second < first) {
-            std::swap(first, second);
-        }
-        return std::pair {std::move(first), std::move(second)};
-    };
-
-    std::ostringstream builder {};
-    builder << static_cast<int>(facts.family) << '|'
-            << static_cast<int>(facts.protocol) << '|'
-            << format_protocol_path(facts.path) << '|';
-
-    std::string first_endpoint {};
-    std::string second_endpoint {};
-    if (facts.family == DissectionAddressFamily::ipv4) {
-        first_endpoint = std::to_string(facts.src_addr_v4) + ":" + std::to_string(facts.src_port);
-        second_endpoint = std::to_string(facts.dst_addr_v4) + ":" + std::to_string(facts.dst_port);
-    } else {
-        std::ostringstream first_builder {};
-        for (const auto byte : facts.src_addr_v6) {
-            first_builder << static_cast<int>(byte) << '.';
-        }
-        first_builder << ':' << facts.src_port;
-
-        std::ostringstream second_builder {};
-        for (const auto byte : facts.dst_addr_v6) {
-            second_builder << static_cast<int>(byte) << '.';
-        }
-        second_builder << ':' << facts.dst_port;
-
-        first_endpoint = std::move(first_builder).str();
-        second_endpoint = std::move(second_builder).str();
-    }
-
-    const auto [canonical_first, canonical_second] =
-        canonicalize_endpoints(std::move(first_endpoint), std::move(second_endpoint));
-    builder << canonical_first << '|' << canonical_second;
-    return builder.str();
-}
-
-void expect_packet_shadow_matches_legacy(
+void expect_packet_shadow_contract(
     const DissectionRegistry& registry,
     const FixturePacketExpectation& expectation
 ) {
@@ -214,10 +173,11 @@ void expect_packet_shadow_matches_legacy(
     PFL_REQUIRE(expectation.packet_index < packets.size());
     const auto& packet = packets[expectation.packet_index];
 
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
 
-    if (!legacy.recognized_flow) {
+    const auto expected_stop_reason = expectation.expected_stop_reason.value_or(StopReason::terminal_protocol);
+    const auto recognized = expectation.expected_path.has_value() && expected_stop_reason != StopReason::truncated;
+    if (!recognized) {
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         if (expectation.expected_path.has_value()) {
             PFL_EXPECT(format_shadow_path(shadow) == *expectation.expected_path);
@@ -228,39 +188,11 @@ void expect_packet_shadow_matches_legacy(
         return;
     }
 
-    const auto expected_path = expectation.expected_path.has_value()
-        ? std::string(*expectation.expected_path)
-        : format_protocol_path(legacy.path);
-    const auto expected_stop_reason = expectation.expected_stop_reason.value_or(
-        legacy.is_ip_fragmented ? StopReason::needs_reassembly : StopReason::terminal_protocol
-    );
-
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
-    PFL_EXPECT(format_shadow_path(shadow) == expected_path);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
-    PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    if (legacy.family == DissectionAddressFamily::ipv4) {
-        PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-        PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-        PFL_EXPECT(shadow.has_ipv4_fragmentation);
-        PFL_EXPECT(shadow.ipv4_fragmentation.is_fragmented == legacy.is_ip_fragmented);
-    } else if (legacy.family == DissectionAddressFamily::ipv6) {
-        PFL_EXPECT(shadow.src_addr_v6 == legacy.src_addr_v6);
-        PFL_EXPECT(shadow.dst_addr_v6 == legacy.dst_addr_v6);
-        PFL_EXPECT(shadow.has_ipv6_fragmentation);
-        PFL_EXPECT(shadow.ipv6_fragmentation.has_fragment_header == legacy.is_ip_fragmented);
+    if (expectation.expected_path.has_value()) {
+        PFL_EXPECT(format_shadow_path(shadow) == *expectation.expected_path);
     }
-    PFL_EXPECT(shadow.has_ports == legacy.has_ports);
-    PFL_EXPECT(shadow.src_port == legacy.src_port);
-    PFL_EXPECT(shadow.dst_port == legacy.dst_port);
-    PFL_EXPECT(shadow.has_transport_payload_length == legacy.has_payload_length);
-    PFL_EXPECT(shadow.captured_transport_payload_length == legacy.captured_payload_length);
-    PFL_EXPECT(shadow.has_tcp_flags == legacy.has_tcp_flags);
-    PFL_EXPECT(shadow.tcp_flags == legacy.tcp_flags);
 }
 
 void expect_gtpu_direct_parser_and_udp_dispatch() {
@@ -422,7 +354,7 @@ void expect_gtpu_registry_mappings() {
     }) == nullptr);
 }
 
-void expect_all_gtpu_fixture_packets_shadow_match_legacy() {
+void expect_all_gtpu_fixture_packets_shadow_contract() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
@@ -430,7 +362,7 @@ void expect_all_gtpu_fixture_packets_shadow_match_legacy() {
     for (const auto fixture : kGtpuFixtures) {
         const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
         for (std::size_t packet_index = 0U; packet_index < packets.size(); ++packet_index) {
-            expect_packet_shadow_matches_legacy(
+            expect_packet_shadow_contract(
                 registry,
                 FixturePacketExpectation {
                     .fixture = fixture,
@@ -447,11 +379,11 @@ void expect_selected_gtpu_negative_semantics() {
     const auto& registry = *built.registry;
 
     for (const auto& expectation : kSelectedExpectations) {
-        expect_packet_shadow_matches_legacy(registry, expectation);
+        expect_packet_shadow_contract(registry, expectation);
     }
 }
 
-void expect_gtpu_identity_splits_match_legacy() {
+void expect_gtpu_identity_splits() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
@@ -468,23 +400,15 @@ void expect_gtpu_identity_splits_match_legacy() {
         };
         const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
         std::set<std::string> shadow_identities {};
-        std::set<std::string> legacy_identities {};
 
         for (const auto& packet : packets) {
             const auto shadow = run_shadow(packet, registry);
             if (shadow.outcome == ImportDissectionOutcome::recognized_flow) {
                 shadow_identities.emplace(shadow_flow_identity_text(shadow));
             }
-
-            const auto legacy = decode_legacy_direct(packet);
-            if (legacy.recognized_flow) {
-                legacy_identities.emplace(legacy_flow_identity_text(legacy));
-            }
         }
 
         PFL_EXPECT(shadow_identities.size() == expected_count);
-        PFL_EXPECT(legacy_identities.size() == expected_count);
-        PFL_EXPECT(shadow_identities == legacy_identities);
     }
 }
 
@@ -524,9 +448,9 @@ void expect_gtpu_nested_inner_udp_remains_terminal() {
 void run_common_direct_gtpu_dissection_tests() {
     expect_gtpu_direct_parser_and_udp_dispatch();
     expect_gtpu_registry_mappings();
-    expect_all_gtpu_fixture_packets_shadow_match_legacy();
+    expect_all_gtpu_fixture_packets_shadow_contract();
     expect_selected_gtpu_negative_semantics();
-    expect_gtpu_identity_splits_match_legacy();
+    expect_gtpu_identity_splits();
     expect_gtpu_nested_inner_udp_remains_terminal();
 }
 

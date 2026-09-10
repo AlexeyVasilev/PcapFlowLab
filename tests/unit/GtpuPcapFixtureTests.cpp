@@ -2,6 +2,7 @@
 #include <array>
 #include <filesystem>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <set>
 #include <string>
@@ -11,6 +12,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
 
@@ -266,6 +268,10 @@ std::string format_hex_value(const std::uint32_t value, const int width = 0) {
     return builder.str();
 }
 
+std::vector<std::uint8_t> ascii_bytes(const std::string_view text) {
+    return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
 void expect_inner_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
@@ -304,6 +310,101 @@ void expect_inner_flow_absent(
     const auto rows = session.list_flows();
     const auto* flow = find_flow_by_tuple(rows, family, protocol, address_a, port_a, address_b, port_b);
     PFL_EXPECT(flow == nullptr);
+}
+
+void expect_runtime_terminal_payload_for_session(
+    CaptureSession& session,
+    const std::string& protocol,
+    const std::uint16_t port_a,
+    const std::uint16_t port_b,
+    const std::string_view expected_payload_text,
+    const std::optional<std::uint8_t> expected_tcp_flags
+) {
+    const auto rows = session.list_flows();
+    const auto* flow = require_flow_by_tuple(
+        rows,
+        FlowAddressFamily::ipv4,
+        protocol,
+        "10.0.0.10",
+        port_a,
+        "10.0.0.20",
+        port_b
+    );
+    const auto flow_index = flow->index;
+    const auto packets = session.flow_packets(flow_index);
+    PFL_REQUIRE(packets.has_value());
+    PFL_REQUIRE(packets->size() == 1U);
+
+    const auto& packet = packets->front();
+    const auto expected_payload = ascii_bytes(expected_payload_text);
+    const auto expected_payload_length = static_cast<std::uint32_t>(expected_payload.size());
+    const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+    PFL_EXPECT(metadata.captured_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(metadata.original_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(metadata.tcp_flags == expected_tcp_flags);
+    PFL_EXPECT(metadata.is_ip_fragmented == false);
+
+    PFL_EXPECT(session.read_selected_flow_transport_payload(flow_index, packet) == expected_payload);
+    PFL_EXPECT(session.read_selected_flow_transport_payload_prefix(flow_index, packet, 9U) ==
+        std::vector<std::uint8_t>(expected_payload.begin(), expected_payload.begin() + 9));
+    PFL_EXPECT(session.read_selected_flow_transport_payload_slice(flow_index, packet, 10U, 4U) ==
+        std::vector<std::uint8_t>(expected_payload.begin() + 10, expected_payload.begin() + 14));
+
+    session.prepare_selected_flow_packet_cache(flow_index, 1U);
+    const auto cache_info = session.selected_flow_packet_cache_info();
+    PFL_REQUIRE(cache_info.has_value());
+    PFL_EXPECT(cache_info->flow_index == flow_index);
+    PFL_EXPECT(cache_info->cached_packet_window_count == 1U);
+    PFL_EXPECT(cache_info->cached_packet_contribution_count == 1U);
+    PFL_EXPECT(cache_info->total_cached_bytes == expected_payload.size());
+    PFL_EXPECT(cache_info->window_fully_cached);
+    const auto cached_metadata = session.selected_flow_cached_packet_metadata(flow_index, packet.packet_index);
+    PFL_REQUIRE(cached_metadata.has_value());
+    PFL_EXPECT(cached_metadata->captured_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(cached_metadata->original_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(cached_metadata->tcp_flags == expected_tcp_flags);
+    PFL_EXPECT(cached_metadata->is_ip_fragmented == false);
+    PFL_EXPECT(session.read_selected_flow_transport_payload(flow_index, packet) == expected_payload);
+    PFL_EXPECT(session.read_selected_flow_transport_payload_slice(flow_index, packet, 15U, 10U) ==
+        std::vector<std::uint8_t>(expected_payload.begin() + 15, expected_payload.begin() + 25));
+}
+
+void expect_runtime_terminal_payload_for_inner_flow(
+    const std::filesystem::path& relative_path,
+    const std::string& protocol,
+    const std::uint16_t port_a,
+    const std::uint16_t port_b,
+    const std::string_view expected_payload_text,
+    const std::optional<std::uint8_t> expected_tcp_flags = std::nullopt
+) {
+    const auto capture_path = fixture_path(relative_path);
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+    expect_runtime_terminal_payload_for_session(
+        session,
+        protocol,
+        port_a,
+        port_b,
+        expected_payload_text,
+        expected_tcp_flags
+    );
+
+    const auto index_path = std::filesystem::temp_directory_path() /
+        ("pfl_gtpu_runtime_terminal_payload_" + relative_path.filename().string() + ".idx");
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    expect_runtime_terminal_payload_for_session(
+        loaded_session,
+        protocol,
+        port_a,
+        port_b,
+        expected_payload_text,
+        expected_tcp_flags
+    );
 }
 
 void expect_gtpu_packet_details_present(
@@ -1394,6 +1495,25 @@ void run_gtpu_packet_details_contract_tests() {
     }
 }
 
+void run_gtpu_runtime_terminal_payload_tests() {
+    expect_runtime_terminal_payload_for_inner_flow(
+        "parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap",
+        "UDP",
+        40000U,
+        40001U,
+        "INNER-UDP-DATA|0123456789|ABCDEFGHIJKLMNOPQRSTUV"
+    );
+
+    expect_runtime_terminal_payload_for_inner_flow(
+        "parsing/gtpu/33_gtpu_inner_ipv4_tcp_data.pcap",
+        "TCP",
+        41000U,
+        41001U,
+        "INNER-TCP-DATA|0123456789|abcdefghijklmnopqrstuv",
+        static_cast<std::uint8_t>(0x18U)
+    );
+}
+
 }  // namespace
 
 void run_gtpu_pcap_fixture_tests() {
@@ -1404,6 +1524,7 @@ void run_gtpu_pcap_fixture_tests() {
     run_gtpu_outer_udp_fallback_tests();
     run_gtpu_fragmentation_contract_tests();
     run_gtpu_packet_details_contract_tests();
+    run_gtpu_runtime_terminal_payload_tests();
 }
 
 }  // namespace pfl::tests

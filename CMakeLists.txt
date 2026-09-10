@@ -55,6 +55,7 @@ add_library(
     src/core/dissection/DissectionRegistry.cpp
     src/core/dissection/DissectionEngine.cpp
     src/core/dissection/CommonDirectDissection.cpp
+    src/core/dissection/RuntimeDissection.cpp
     src/core/dissection/modules/EthernetVlanModules.cpp
     src/core/dissection/modules/LinuxCookedModules.cpp
     src/core/dissection/modules/LlcSnapModule.cpp
@@ -85,7 +86,6 @@ add_library(
     src/core/index/Serialization.cpp
     src/core/index/CaptureIndexWriter.cpp
     src/core/index/CaptureIndexReader.cpp
-    src/core/decode/PacketDecoder.cpp
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImportPrefixPolicy.cpp
@@ -171,42 +171,6 @@ set_target_properties(pcap_flow_lab_cli PROPERTIES OUTPUT_NAME "pcap-flow-lab")
 target_link_libraries(
     pcap_flow_lab_cli
     PRIVATE
-        pcap_flow_lab_core
-)
-
-# Developer-only legacy-vs-unified import validation tooling. This does not
-# change production import behavior or add a runtime decoder selector.
-add_library(
-    pcap_flow_lab_import_validation_lib
-    tools/import_validation/ImportValidation.cpp
-    tools/import_validation/ImportValidationDiagnostics.cpp
-)
-
-target_link_libraries(
-    pcap_flow_lab_import_validation_lib
-    PRIVATE
-        pcap_flow_lab_core
-)
-
-target_include_directories(
-    pcap_flow_lab_import_validation_lib
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-if(WIN32)
-    target_link_libraries(pcap_flow_lab_import_validation_lib PRIVATE psapi)
-endif()
-
-add_executable(
-    pcap_flow_lab_import_validation
-    tools/import_validation/main.cpp
-)
-
-target_link_libraries(
-    pcap_flow_lab_import_validation
-    PRIVATE
-        pcap_flow_lab_import_validation_lib
         pcap_flow_lab_core
 )
 
@@ -411,8 +375,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectDissectionTests.cpp
         tests/unit/CommonDirectDissectionTestSupport.cpp
         tests/unit/DissectionImportAdapterTests.cpp
-        tests/unit/DissectionImportSessionParityTests.cpp
-        tests/unit/ImportValidationTests.cpp
+        tests/unit/DissectionImportRegressionTests.cpp
         tests/unit/CommonDirectCoreDissectionTests.cpp
         tests/unit/CommonDirectRegistryEngineTests.cpp
         tests/unit/CommonDirectCollectorTests.cpp
@@ -512,7 +475,6 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         PRIVATE
             pcap_flow_lab_core
-            pcap_flow_lab_import_validation_lib
     )
 
     # Keep only the core test executable unoptimized in optimized configs to
