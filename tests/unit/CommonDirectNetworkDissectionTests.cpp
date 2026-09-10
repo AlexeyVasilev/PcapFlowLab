@@ -7,26 +7,15 @@ using namespace dissection;
 
 namespace {
 
-void expect_shadow_matches_legacy_igmp_flow(
+void expect_shadow_recognizes_igmp_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_shadow_path,
-    const std::string& expected_legacy_path,
     const StopReason expected_stop_reason,
     const std::uint32_t expected_source,
     const std::uint32_t expected_destination
 ) {
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
-
-    PFL_REQUIRE(legacy.recognized_flow);
-    PFL_EXPECT(legacy.protocol == ProtocolId::igmp);
-    PFL_EXPECT(legacy.family == DissectionAddressFamily::ipv4);
-    PFL_EXPECT(legacy.src_addr_v4 == expected_source);
-    PFL_EXPECT(legacy.dst_addr_v4 == expected_destination);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_legacy_path);
-    PFL_EXPECT(legacy.src_port == 0U);
-    PFL_EXPECT(legacy.dst_port == 0U);
 
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
@@ -53,10 +42,7 @@ void expect_shadow_only_nested_igmp_flow(
     const std::uint32_t expected_source,
     const std::uint32_t expected_destination
 ) {
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
-
-    PFL_EXPECT(!legacy.recognized_flow);
 
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
@@ -287,7 +273,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(options_facts->options.has_router_alert);
         PFL_EXPECT(options_facts->options.router_alert_value == 0x1234U);
         PFL_EXPECT(!options_facts->options.has_malformed_offset);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             options_packet,
             "EthernetII -> IPv4 -> UDP",
@@ -318,7 +304,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(malformed_facts->options.has_router_alert == false);
         PFL_EXPECT(malformed_facts->options.has_malformed_offset);
         PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             malformed_router_alert_packet,
             "EthernetII -> IPv4 -> UDP",
@@ -346,7 +332,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(malformed_facts->options.parsed_option_count == 3U);
         PFL_EXPECT(malformed_facts->options.has_malformed_offset);
         PFL_EXPECT(malformed_facts->options.malformed_offset == 3U);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             malformed_missing_length_packet,
             "EthernetII -> IPv4 -> TCP",
@@ -373,7 +359,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(malformed_facts->options.parsed_option_count == 0U);
         PFL_EXPECT(malformed_facts->options.has_malformed_offset);
         PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             malformed_short_length_packet,
             "EthernetII -> IPv4 -> UDP",
@@ -400,7 +386,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(malformed_facts->options.parsed_option_count == 0U);
         PFL_EXPECT(malformed_facts->options.has_malformed_offset);
         PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             malformed_past_end_packet,
             "EthernetII -> IPv4 -> UDP",
@@ -428,7 +414,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
         PFL_EXPECT(malformed_facts->options.has_nonzero_padding);
         PFL_EXPECT(malformed_facts->options.has_malformed_offset);
         PFL_EXPECT(malformed_facts->options.malformed_offset == 1U);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             malformed_padding_packet,
             "EthernetII -> IPv4 -> UDP",
@@ -474,7 +460,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
             detail::kIpProtocolIpv4Encapsulation,
             nested_inner_ipv4
         ));
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             nested_ipv6_packet,
             "EthernetII -> IPv6 -> IPv4 -> UDP",
@@ -494,7 +480,7 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
             0U,
             nested_inner_ipv4
         ));
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             *registry.registry,
             nested_ipv4_packet,
             "EthernetII -> IPv4 -> IPv4 -> TCP",
@@ -1286,10 +1272,9 @@ void expect_igmp_fragmentation_preserves_selector_only_handoff() {
     };
     PFL_EXPECT(recorder.kinds == expected_kinds);
 
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         ipv4_fragment_packet,
-        "EthernetII -> IPv4",
         "EthernetII -> IPv4",
         StopReason::needs_reassembly,
         ipv4(10, 46, 0, 1),
@@ -1326,10 +1311,9 @@ void expect_igmp_shadow_only_flow_behavior() {
         DissectionLayerKind::igmp,
     };
     PFL_EXPECT(direct_recorder.kinds == expected_direct_kinds);
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         direct_packet,
-        "EthernetII -> IPv4",
         "EthernetII -> IPv4",
         StopReason::terminal_protocol,
         ipv4(192, 0, 2, 10),
@@ -1344,10 +1328,9 @@ void expect_igmp_shadow_only_flow_behavior() {
         0x1919U,
         0xEF090909U
     ));
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         group_specific_query_packet,
-        "EthernetII -> IPv4",
         "EthernetII -> IPv4",
         StopReason::terminal_protocol,
         ipv4(192, 0, 2, 13),
@@ -1362,10 +1345,9 @@ void expect_igmp_shadow_only_flow_behavior() {
         0x2121U,
         0xEF010101U
     ));
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         v1_report_packet,
-        "EthernetII -> IPv4",
         "EthernetII -> IPv4",
         StopReason::terminal_protocol,
         ipv4(192, 0, 2, 14),
@@ -1383,10 +1365,9 @@ void expect_igmp_shadow_only_flow_behavior() {
         ),
         {{0x8100U, 405U}}
     ));
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         vlan_packet,
-        "EthernetII -> VLAN(vid=405) -> IPv4",
         "EthernetII -> VLAN(vid=405) -> IPv4",
         StopReason::terminal_protocol,
         ipv4(192, 0, 2, 11),
@@ -1507,10 +1488,9 @@ void expect_igmp_shadow_only_flow_behavior() {
         0x9999U,
         0xEF010204U
     ));
-    expect_shadow_matches_legacy_igmp_flow(
+    expect_shadow_recognizes_igmp_flow(
         registry,
         unknown_type_packet,
-        "EthernetII -> IPv4",
         "EthernetII -> IPv4",
         StopReason::terminal_protocol,
         ipv4(192, 0, 2, 12),

@@ -23,26 +23,6 @@ namespace pfl::tests::common_direct_test {
 
 using namespace dissection;
 
-struct LegacyDirectFacts {
-    bool recognized_flow {false};
-    ProtocolId protocol {ProtocolId::unknown};
-    DissectionAddressFamily family {DissectionAddressFamily::unknown};
-    bool has_addresses {false};
-    std::uint32_t src_addr_v4 {0U};
-    std::uint32_t dst_addr_v4 {0U};
-    std::array<std::uint8_t, 16> src_addr_v6 {};
-    std::array<std::uint8_t, 16> dst_addr_v6 {};
-    bool has_ports {false};
-    std::uint16_t src_port {0U};
-    std::uint16_t dst_port {0U};
-    bool has_payload_length {false};
-    std::uint32_t captured_payload_length {0U};
-    bool has_tcp_flags {false};
-    std::uint8_t tcp_flags {0U};
-    bool is_ip_fragmented {false};
-    ProtocolPath path {};
-};
-
 struct StepKindRecorder {
     std::vector<DissectionLayerKind> kinds {};
 };
@@ -76,26 +56,25 @@ PacketSlice require_child_slice(const PacketSlice& parent, std::size_t payload_o
 ByteRange require_range(std::size_t begin, std::size_t end);
 std::string format_shadow_path(const ImportDissectionFacts& facts);
 ProtocolPath shadow_path(const ImportDissectionFacts& facts);
-LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet);
 ImportDissectionFacts run_shadow(const RawPcapPacket& packet, const DissectionRegistry& registry);
 std::vector<DissectionStep> collect_shadow_steps(const RawPcapPacket& packet, const DissectionRegistry& registry);
 std::vector<DissectionLayerKind> collect_step_kinds(const std::vector<DissectionStep>& steps);
 const PppoeFacts* find_pppoe_facts(const std::vector<DissectionStep>& steps);
 const PbbFacts* find_pbb_facts(const std::vector<DissectionStep>& steps);
 const MacsecFacts* find_macsec_facts(const std::vector<DissectionStep>& steps);
-void expect_shadow_matches_legacy_flow(
+void expect_shadow_recognizes_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,
     StopReason expected_stop_reason
 );
-void expect_shadow_matches_legacy_portless_terminal_flow(
+void expect_shadow_recognizes_portless_terminal_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,
     StopReason expected_stop_reason
 );
-void expect_shadow_matches_legacy_arp_flow(
+void expect_shadow_recognizes_arp_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,

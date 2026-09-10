@@ -79,26 +79,6 @@ std::string shadow_flow_identity_text(const ImportDissectionFacts& facts) {
     return builder.str();
 }
 
-std::string legacy_flow_identity_text(const LegacyDirectFacts& facts) {
-    std::ostringstream builder {};
-    builder << static_cast<int>(facts.family) << '|'
-            << static_cast<int>(facts.protocol) << '|'
-            << format_protocol_path(facts.path) << '|';
-    if (facts.family == DissectionAddressFamily::ipv4) {
-        builder << facts.src_addr_v4 << '|' << facts.dst_addr_v4;
-    } else {
-        for (const auto byte : facts.src_addr_v6) {
-            builder << static_cast<int>(byte) << '.';
-        }
-        builder << '|';
-        for (const auto byte : facts.dst_addr_v6) {
-            builder << static_cast<int>(byte) << '.';
-        }
-    }
-    builder << '|' << facts.src_port << '|' << facts.dst_port;
-    return builder.str();
-}
-
 void expect_direct_eoip_parser_and_variant_dispatch() {
     const auto inner_ipv4_udp = make_ethernet_frame_with_payload(
         detail::kEtherTypeIpv4,
@@ -268,7 +248,7 @@ void expect_direct_eoip_inner_boundary_classification() {
     }
 }
 
-void expect_supported_eoip_fixtures_match_legacy_paths(const DissectionRegistry& registry) {
+void expect_supported_eoip_fixtures_use_expected_paths(const DissectionRegistry& registry) {
     struct PositiveFixtureExpectation {
         const char* file_name;
         const char* expected_path;
@@ -298,7 +278,7 @@ void expect_supported_eoip_fixtures_match_legacy_paths(const DissectionRegistry&
             std::string {"fixture="} + std::string {test_case.file_name}
         };
         const auto packet = require_raw_fixture_packet(test_case.file_name);
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             packet,
             std::string {test_case.expected_path},
@@ -333,39 +313,32 @@ void expect_eoip_identity_grouping_contract(const DissectionRegistry& registry) 
         const auto packets = require_raw_fixture_packets(test_case.file_name);
 
         std::set<std::string> shadow_identities {};
-        std::set<std::string> legacy_identities {};
         for (const auto& packet : packets) {
             const auto shadow = run_shadow(packet, registry);
-            const auto legacy = decode_legacy_direct(packet);
 
-            PFL_REQUIRE(legacy.recognized_flow);
             PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
-            PFL_EXPECT(format_shadow_path(shadow) == format_protocol_path(legacy.path));
 
             shadow_identities.insert(shadow_flow_identity_text(shadow));
-            legacy_identities.insert(legacy_flow_identity_text(legacy));
         }
 
         PFL_EXPECT(shadow_identities.size() == test_case.expected_unique_flow_count);
-        PFL_EXPECT(legacy_identities.size() == test_case.expected_unique_flow_count);
-        PFL_EXPECT(shadow_identities == legacy_identities);
     }
 }
 
 void expect_gre_eoip_ambiguity_contract(const DissectionRegistry& registry) {
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         require_raw_fixture_packet("parsing/eoip/21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap"),
         "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         require_raw_fixture_packet("parsing/eoip/22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap"),
         "EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         require_raw_fixture_packet("parsing/eoip/23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap"),
         "EthernetII -> IPv4 -> GRE(key=0x002e0019) -> IPv4 -> UDP",
@@ -566,7 +539,7 @@ void run_common_direct_eoip_dissection_tests() {
     expect_direct_eoip_parser_and_variant_dispatch();
     expect_direct_eoip_header_boundary_classification();
     expect_direct_eoip_inner_boundary_classification();
-    expect_supported_eoip_fixtures_match_legacy_paths(registry);
+    expect_supported_eoip_fixtures_use_expected_paths(registry);
     expect_eoip_identity_grouping_contract(registry);
     expect_gre_eoip_ambiguity_contract(registry);
     expect_strict_eoip_no_flow_contract(registry);

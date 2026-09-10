@@ -4,7 +4,6 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
-#include "core/decode/PacketDecoder.h"
 #include "core/domain/PacketRef.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketDetailsService.h"
@@ -142,28 +141,30 @@ void run_linux_cooked_tests() {
     }
 
     {
-        PacketDecoder decoder {};
         const auto sll2_tcp_packet = make_linux_cooked_sll2_packet(
             0x0800U,
             strip_ethernet_header(make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 2222, 80))
         );
-        const RawPcapPacket raw_packet {
-            .packet_index = 9,
-            .ts_sec = 1,
-            .ts_usec = 0,
-            .captured_length = static_cast<std::uint32_t>(sll2_tcp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(sll2_tcp_packet.size()),
-            .data_offset = 0,
-            .data_link_type = kLinkTypeLinuxSll2,
-            .bytes = sll2_tcp_packet,
-        };
 
-        const auto decoded = decoder.decode(raw_packet);
-        PFL_EXPECT(decoded.ipv4.has_value());
-        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::tcp);
-        PFL_EXPECT(decoded.ipv4->flow_key.src_port == 2222);
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 80);
-        PFL_EXPECT(decoded.ipv4->packet_ref.data_link_type == kLinkTypeLinuxSll2);
+        CaptureSession session {};
+        const auto path = write_temp_pcap(
+            "pfl_sll2_tcp_packet.pcap",
+            make_classic_pcap({{100, sll2_tcp_packet}}, kLinkTypeLinuxSll2)
+        );
+        PFL_EXPECT(session.open_capture(path));
+        PFL_EXPECT(session.summary().packet_count == 1);
+        PFL_EXPECT(session.summary().flow_count == 1);
+
+        const auto packet_ref = require_packet(session, 0U);
+        PFL_EXPECT(packet_ref.data_link_type == kLinkTypeLinuxSll2);
+
+        PacketDetailsService details_service {};
+        const auto details = details_service.decode(sll2_tcp_packet, packet_ref);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_tcp);
+        PFL_EXPECT(details->tcp.src_port == 2222);
+        PFL_EXPECT(details->tcp.dst_port == 80);
     }
 }
 

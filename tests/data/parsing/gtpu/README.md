@@ -1,10 +1,10 @@
 Synthetic production-contract fixtures for current GTP-U behavior.
 
-This directory defines the exact production `PacketDecoder` contract for GTP-U on
-branch `feature/unified-packet-dissection`.
+This directory defines the exact production registry-driven dissection/import
+contract for GTP-U.
 
 This is not a 3GPP feature matrix. The source of truth is current production
-decoding plus production fixture tests.
+dissection/import behavior plus production fixture tests.
 
 ## Exact production rules captured here
 

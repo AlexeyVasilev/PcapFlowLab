@@ -5,7 +5,6 @@
 #include <variant>
 
 #include "core/decode/PacketDecodeSupport.h"
-#include "core/decode/PacketDecoder.h"
 
 namespace pfl::tests::common_direct_test {
 
@@ -23,12 +22,6 @@ std::vector<std::vector<std::uint8_t>>& declared_root_slice_storage() {
 std::string format_builder_path(const ProtocolPathBuilder& builder) {
     PFL_EXPECT(!builder.overflowed());
     return format_protocol_path(builder.to_path());
-}
-
-bool protocol_uses_ports(const ProtocolId protocol) {
-    return protocol == ProtocolId::tcp ||
-           protocol == ProtocolId::udp ||
-           protocol == ProtocolId::sctp;
 }
 
 }  // namespace
@@ -117,51 +110,6 @@ std::string format_shadow_path(const ImportDissectionFacts& facts) {
 ProtocolPath shadow_path(const ImportDissectionFacts& facts) {
     PFL_EXPECT(!facts.physical_path.overflowed());
     return facts.physical_path.to_path();
-}
-
-LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet) {
-    PacketDecoder decoder {};
-    const auto decoded = decoder.decode(packet);
-
-    LegacyDirectFacts facts {};
-    if (!decoded.has_value()) {
-        return facts;
-    }
-
-    facts.recognized_flow = true;
-    facts.path = decoded.protocol_path_builder.to_path();
-
-    if (decoded.ipv4.has_value()) {
-        facts.family = DissectionAddressFamily::ipv4;
-        facts.protocol = decoded.ipv4->flow_key.protocol;
-        facts.has_addresses = true;
-        facts.src_addr_v4 = decoded.ipv4->flow_key.src_addr;
-        facts.dst_addr_v4 = decoded.ipv4->flow_key.dst_addr;
-        facts.is_ip_fragmented = decoded.ipv4->import_metadata.is_ip_fragmented;
-        facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
-        facts.src_port = decoded.ipv4->flow_key.src_port;
-        facts.dst_port = decoded.ipv4->flow_key.dst_port;
-        facts.has_payload_length = decoded.ipv4->import_metadata.transport_payload_length.has_value();
-        facts.captured_payload_length = decoded.ipv4->import_metadata.transport_payload_length.value_or(0U);
-        facts.has_tcp_flags = facts.protocol == ProtocolId::tcp && !facts.is_ip_fragmented;
-        facts.tcp_flags = decoded.ipv4->import_metadata.tcp_flags.value_or(0U);
-    } else if (decoded.ipv6.has_value()) {
-        facts.family = DissectionAddressFamily::ipv6;
-        facts.protocol = decoded.ipv6->flow_key.protocol;
-        facts.has_addresses = true;
-        facts.src_addr_v6 = decoded.ipv6->flow_key.src_addr;
-        facts.dst_addr_v6 = decoded.ipv6->flow_key.dst_addr;
-        facts.is_ip_fragmented = decoded.ipv6->import_metadata.is_ip_fragmented;
-        facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
-        facts.src_port = decoded.ipv6->flow_key.src_port;
-        facts.dst_port = decoded.ipv6->flow_key.dst_port;
-        facts.has_payload_length = decoded.ipv6->import_metadata.transport_payload_length.has_value();
-        facts.captured_payload_length = decoded.ipv6->import_metadata.transport_payload_length.value_or(0U);
-        facts.has_tcp_flags = facts.protocol == ProtocolId::tcp && !facts.is_ip_fragmented;
-        facts.tcp_flags = decoded.ipv6->import_metadata.tcp_flags.value_or(0U);
-    }
-
-    return facts;
 }
 
 ImportDissectionFacts run_shadow(const RawPcapPacket& packet, const DissectionRegistry& registry) {
@@ -255,75 +203,36 @@ const MacsecFacts* find_macsec_facts(const std::vector<DissectionStep>& steps) {
     return nullptr;
 }
 
-void expect_shadow_matches_legacy_flow(
+void expect_shadow_recognizes_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,
     const StopReason expected_stop_reason
 ) {
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
 
-    PFL_REQUIRE(legacy.recognized_flow);
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
     PFL_EXPECT(format_shadow_path(shadow) == expected_path);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
-    PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    if (legacy.family == DissectionAddressFamily::ipv4) {
-        PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-        PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-        PFL_EXPECT(shadow.has_ipv4_fragmentation);
-        PFL_EXPECT(shadow.ipv4_fragmentation.is_fragmented == legacy.is_ip_fragmented);
-    } else if (legacy.family == DissectionAddressFamily::ipv6) {
-        PFL_EXPECT(shadow.src_addr_v6 == legacy.src_addr_v6);
-        PFL_EXPECT(shadow.dst_addr_v6 == legacy.dst_addr_v6);
-        PFL_EXPECT(shadow.has_ipv6_fragmentation);
-        PFL_EXPECT(shadow.ipv6_fragmentation.has_fragment_header == legacy.is_ip_fragmented);
-    }
-    PFL_EXPECT(shadow.has_ports == legacy.has_ports);
-    PFL_EXPECT(shadow.src_port == legacy.src_port);
-    PFL_EXPECT(shadow.dst_port == legacy.dst_port);
-    PFL_EXPECT(shadow.has_transport_payload_length == legacy.has_payload_length);
-    PFL_EXPECT(shadow.captured_transport_payload_length == legacy.captured_payload_length);
-    PFL_EXPECT(shadow.has_tcp_flags == legacy.has_tcp_flags);
-    PFL_EXPECT(shadow.tcp_flags == legacy.tcp_flags);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    PFL_EXPECT(shadow.terminal_protocol != ProtocolId::unknown);
+    PFL_EXPECT(
+        shadow.family == DissectionAddressFamily::ipv4 ||
+        shadow.family == DissectionAddressFamily::ipv6
+    );
 }
 
-void expect_shadow_matches_legacy_portless_terminal_flow(
+void expect_shadow_recognizes_portless_terminal_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,
     const StopReason expected_stop_reason
 ) {
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
 
-    PFL_REQUIRE(legacy.recognized_flow);
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
     PFL_EXPECT(format_shadow_path(shadow) == expected_path);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
-    PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    if (legacy.family == DissectionAddressFamily::ipv4) {
-        PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-        PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-        PFL_EXPECT(shadow.has_ipv4_fragmentation);
-        PFL_EXPECT(shadow.ipv4_fragmentation.is_fragmented == legacy.is_ip_fragmented);
-    } else if (legacy.family == DissectionAddressFamily::ipv6) {
-        PFL_EXPECT(shadow.src_addr_v6 == legacy.src_addr_v6);
-        PFL_EXPECT(shadow.dst_addr_v6 == legacy.dst_addr_v6);
-        PFL_EXPECT(shadow.has_ipv6_fragmentation);
-        PFL_EXPECT(shadow.ipv6_fragmentation.has_fragment_header == legacy.is_ip_fragmented);
-    }
-    PFL_EXPECT(legacy.src_port == 0U);
-    PFL_EXPECT(legacy.dst_port == 0U);
     PFL_EXPECT(!shadow.has_ports);
     PFL_EXPECT(shadow.src_port == 0U);
     PFL_EXPECT(shadow.dst_port == 0U);
@@ -333,32 +242,22 @@ void expect_shadow_matches_legacy_portless_terminal_flow(
     PFL_EXPECT(shadow.tcp_flags == 0U);
 }
 
-void expect_shadow_matches_legacy_arp_flow(
+void expect_shadow_recognizes_arp_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
     const std::string& expected_path,
     const StopReason expected_stop_reason
 ) {
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
-
-    PFL_REQUIRE(legacy.recognized_flow);
-    PFL_EXPECT(legacy.protocol == ProtocolId::arp);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
 
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
     PFL_EXPECT(shadow.terminal_protocol == ProtocolId::arp);
     PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
     PFL_EXPECT(shadow.has_arp_addresses);
     PFL_EXPECT(shadow.has_flow_addresses);
-    PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-    PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
     PFL_EXPECT(shadow.arp_addresses.has_sender_ipv4);
     PFL_EXPECT(shadow.arp_addresses.has_target_ipv4);
-    PFL_EXPECT(shadow.arp_addresses.sender_ipv4 == legacy.src_addr_v4);
-    PFL_EXPECT(shadow.arp_addresses.target_ipv4 == legacy.dst_addr_v4);
     PFL_EXPECT(format_shadow_path(shadow) == expected_path);
     PFL_EXPECT(!shadow.has_ports);
     PFL_EXPECT(shadow.src_port == 0U);

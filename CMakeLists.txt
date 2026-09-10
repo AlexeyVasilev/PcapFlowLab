@@ -154,19 +154,6 @@ target_include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Legacy-vs-unified validation and selected unit tests still use PacketDecoder
-# as an oracle. Keep its implementation out of production core/CLI/UI targets.
-add_library(
-    pcap_flow_lab_legacy_decoder STATIC
-    src/core/decode/PacketDecoder.cpp
-)
-
-target_link_libraries(
-    pcap_flow_lab_legacy_decoder
-    PRIVATE
-        pcap_flow_lab_core
-)
-
 add_executable(
     pcap_flow_lab_cli
     src/cli/main.cpp
@@ -185,44 +172,6 @@ target_link_libraries(
     pcap_flow_lab_cli
     PRIVATE
         pcap_flow_lab_core
-)
-
-# Developer-only legacy-vs-unified import validation tooling. This does not
-# change production import behavior or add a runtime decoder selector.
-add_library(
-    pcap_flow_lab_import_validation_lib
-    tools/import_validation/ImportValidation.cpp
-    tools/import_validation/ImportValidationDiagnostics.cpp
-)
-
-target_link_libraries(
-    pcap_flow_lab_import_validation_lib
-    PRIVATE
-        pcap_flow_lab_core
-        pcap_flow_lab_legacy_decoder
-)
-
-target_include_directories(
-    pcap_flow_lab_import_validation_lib
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-if(WIN32)
-    target_link_libraries(pcap_flow_lab_import_validation_lib PRIVATE psapi)
-endif()
-
-add_executable(
-    pcap_flow_lab_import_validation
-    tools/import_validation/main.cpp
-)
-
-target_link_libraries(
-    pcap_flow_lab_import_validation
-    PRIVATE
-        pcap_flow_lab_import_validation_lib
-        pcap_flow_lab_core
-        pcap_flow_lab_legacy_decoder
 )
 
 if(PFL_BUILD_UI)
@@ -426,8 +375,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectDissectionTests.cpp
         tests/unit/CommonDirectDissectionTestSupport.cpp
         tests/unit/DissectionImportAdapterTests.cpp
-        tests/unit/DissectionImportSessionParityTests.cpp
-        tests/unit/ImportValidationTests.cpp
+        tests/unit/DissectionImportRegressionTests.cpp
         tests/unit/CommonDirectCoreDissectionTests.cpp
         tests/unit/CommonDirectRegistryEngineTests.cpp
         tests/unit/CommonDirectCollectorTests.cpp
@@ -527,8 +475,6 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         PRIVATE
             pcap_flow_lab_core
-            pcap_flow_lab_legacy_decoder
-            pcap_flow_lab_import_validation_lib
     )
 
     # Keep only the core test executable unoptimized in optimized configs to

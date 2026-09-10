@@ -125,36 +125,17 @@ void expect_shadow_flow_fixture(
     const std::optional<std::uint16_t>& expected_sequence = std::nullopt
 ) {
     const auto packet = require_raw_fixture_packet(relative_path);
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
     const auto steps = collect_shadow_steps(packet, registry);
 
-    PFL_REQUIRE(legacy.recognized_flow);
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == StopReason::terminal_protocol);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
-    const auto legacy_path_text = format_protocol_path(legacy.path);
-    PFL_EXPECT(format_shadow_path(shadow) == legacy_path_text);
     if (expected_path.has_value()) {
-        PFL_EXPECT(legacy_path_text == *expected_path);
+        PFL_EXPECT(format_shadow_path(shadow) == *expected_path);
     }
-    PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    if (legacy.family == DissectionAddressFamily::ipv4) {
-        PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-        PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-    } else if (legacy.family == DissectionAddressFamily::ipv6) {
-        PFL_EXPECT(shadow.src_addr_v6 == legacy.src_addr_v6);
-        PFL_EXPECT(shadow.dst_addr_v6 == legacy.dst_addr_v6);
-    }
-    PFL_EXPECT(shadow.has_ports == legacy.has_ports);
-    PFL_EXPECT(shadow.src_port == legacy.src_port);
-    PFL_EXPECT(shadow.dst_port == legacy.dst_port);
-    PFL_EXPECT(shadow.has_transport_payload_length == legacy.has_payload_length);
-    PFL_EXPECT(shadow.captured_transport_payload_length == legacy.captured_payload_length);
-    PFL_EXPECT(shadow.has_tcp_flags == legacy.has_tcp_flags);
-    PFL_EXPECT(shadow.tcp_flags == legacy.tcp_flags);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    PFL_EXPECT(shadow.has_ports);
+    PFL_EXPECT(shadow.has_transport_payload_length);
     PFL_EXPECT((collect_step_kinds(steps) == expected_kinds));
 
     const auto* pw_facts = find_mpls_pseudowire_facts(steps);
@@ -171,25 +152,17 @@ void expect_shadow_arp_fixture(
     const std::optional<std::string_view>& expected_path
 ) {
     const auto packet = require_raw_fixture_packet(relative_path);
-    const auto legacy = decode_legacy_direct(packet);
     const auto shadow = run_shadow(packet, registry);
     const auto steps = collect_shadow_steps(packet, registry);
 
-    PFL_REQUIRE(legacy.recognized_flow);
-    PFL_EXPECT(legacy.protocol == ProtocolId::arp);
-    const auto legacy_path_text = format_protocol_path(legacy.path);
-    if (expected_path.has_value()) {
-        PFL_EXPECT(legacy_path_text == *expected_path);
-    }
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == StopReason::terminal_protocol);
     PFL_EXPECT(shadow.terminal_protocol == ProtocolId::arp);
-    PFL_EXPECT(shadow.family == legacy.family);
-    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
-    PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
-    PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
-    PFL_EXPECT(shadow_path(shadow) == legacy.path);
-    PFL_EXPECT(format_shadow_path(shadow) == legacy_path_text);
+    PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    if (expected_path.has_value()) {
+        PFL_EXPECT(format_shadow_path(shadow) == *expected_path);
+    }
     PFL_EXPECT(shadow.has_arp_addresses);
     PFL_EXPECT(!shadow.has_ports);
     PFL_EXPECT(step_kinds_contain(steps, DissectionLayerKind::mpls_pseudowire));

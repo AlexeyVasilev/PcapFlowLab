@@ -2,7 +2,6 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
-#include "core/decode/PacketDecoder.h"
 #include "core/domain/PacketRef.h"
 #include "core/services/PacketDetailsService.h"
 #include "PcapTestUtils.h"
@@ -98,19 +97,6 @@ void run_vlan_tests() {
             0x81, 0x00,
             0x00,
         };
-
-        PacketDecoder decoder {};
-        const RawPcapPacket raw_packet {
-            .packet_index = 99,
-            .ts_sec = 1,
-            .ts_usec = 1,
-            .captured_length = static_cast<std::uint32_t>(malformed_vlan_packet.size()),
-            .original_length = static_cast<std::uint32_t>(malformed_vlan_packet.size()),
-            .data_offset = 64,
-            .bytes = malformed_vlan_packet,
-        };
-        const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_EXPECT(!decoded.has_value());
 
         PacketDetailsService service {};
         const PacketRef packet_ref {

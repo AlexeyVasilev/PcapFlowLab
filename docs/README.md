@@ -105,8 +105,6 @@ different responsibilities.
 
 ## Developer Tools And Operational Docs
 
-- [Import Validation](dissection-import-validation.md)
-  Current developer validation-tool reference for import cutover and parity work.
 - [Release Checklist](release-checklist.md)
   Current release-readiness checklist.
 - [Manual Release Publish Checklist](manual-release-publish-checklist.md)

@@ -1,8 +1,8 @@
 Synthetic Geneve parsing fixtures for production-behavior regression tests.
 
-This directory documents the current production `PacketDecoder` Geneve contract.
-It is fixture-first documentation for the supported production path only. It does
-not describe any shadow dissection implementation.
+This directory documents the current production registry-driven Geneve
+dissection/import contract. It is fixture-first documentation for the supported
+production path only.
 
 ## Strict production Geneve contract
 

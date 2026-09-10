@@ -213,7 +213,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(!malformed_esp_step.path_contribution.has_value());
     }
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_ah_packet(
             ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), detail::kIpProtocolTcp,
@@ -222,7 +222,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> AH(spi=0x11111111) -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_ah_packet(
             ipv4(10, 50, 1, 1), ipv4(10, 50, 1, 2), detail::kIpProtocolUdp,
@@ -231,7 +231,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> AH(spi=0x11111111) -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_ah_packet(
             ipv6_src_addr, ipv6_dst_addr, detail::kIpProtocolTcp,
@@ -240,7 +240,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv6 -> AH(spi=0x11111111) -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         [&]() {
             auto ah_udp_payload = make_ah_header(
@@ -262,7 +262,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_esp_packet(
             ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 0x01020304U, 0x11121314U, {0xde, 0xad, 0xbe}
@@ -270,7 +270,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> ESP(spi=0x01020304)",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_esp_packet(
             ipv6_src_addr, ipv6_dst_addr, 0x01020304U, 0x11121314U, {0xde, 0xad}
@@ -291,7 +291,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
                 make_ipv6_tcp_segment(30000U, 443U, 1U, 0x18U)
             ))
         ));
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             ah_inner_ipv6_packet,
             "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv6 -> TCP",
@@ -311,7 +311,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
                 53U
             ))
         ));
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             ah_inner_ipv4_packet,
             "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv4 -> UDP",
@@ -579,7 +579,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(stacked_label_step.handoff->selector == expected_stack_selector);
     }
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_frame_with_payload(
             detail::kEtherTypeMplsUnicast,
@@ -597,7 +597,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_frame_with_payload(
@@ -618,7 +618,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_frame_with_payload(
@@ -639,7 +639,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 132, 0, 1),
@@ -661,7 +661,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_frame_with_payload(
             detail::kEtherTypeMplsUnicast,
@@ -771,7 +771,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(format_shadow_path(truncated_inner_shadow) == "EthernetII -> MPLS(label=16062)");
     }
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_frame_with_payload(
             detail::kEtherTypeMplsUnicast,
@@ -1084,7 +1084,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(!malformed_sequence_step.path_contribution.has_value());
     }
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 0, 1),
@@ -1102,7 +1102,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> GRE -> IPv4 -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 1, 1),
@@ -1120,7 +1120,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 2, 1),
@@ -1138,7 +1138,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> GRE -> IPv6 -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 3, 1),
@@ -1156,7 +1156,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> GRE -> IPv6 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_gre_packet(
             outer_ipv6_src,
@@ -1174,7 +1174,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv6 -> GRE -> IPv4 -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_gre_packet(
             outer_ipv6_src,
@@ -1192,7 +1192,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv6 -> GRE -> IPv6 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 5, 1),
@@ -1229,7 +1229,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
                 )
             )
         ));
-        expect_shadow_matches_legacy_flow(
+        expect_shadow_recognizes_flow(
             registry,
             outer_hbh_gre_udp,
             "EthernetII -> IPv6 -> GRE -> IPv4 -> UDP",
@@ -1237,7 +1237,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         );
     }
 
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_ipv4_gre_packet(
@@ -1258,7 +1258,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> VLAN(vid=330) -> IPv4 -> GRE -> IPv4 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_ipv4_gre_packet(
@@ -1279,7 +1279,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> VLAN(vid=331) -> VLAN(vid=330) -> IPv4 -> GRE -> IPv4 -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 9, 1),
@@ -1292,7 +1292,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> TCP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_flow(
+    expect_shadow_recognizes_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 90, 10, 1),
@@ -1777,7 +1777,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(extension_sctp_shadow.captured_transport_payload_length == 2U);
     PFL_EXPECT(format_shadow_path(extension_sctp_shadow) == "EthernetII -> IPv6 -> IPv4 -> SCTP");
 
-    expect_shadow_matches_legacy_portless_terminal_flow(
+    expect_shadow_recognizes_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 70),
@@ -1795,7 +1795,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_portless_terminal_flow(
+    expect_shadow_recognizes_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 72),
@@ -1813,7 +1813,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_portless_terminal_flow(
+    expect_shadow_recognizes_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 74),

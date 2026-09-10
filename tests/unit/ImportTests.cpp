@@ -7,7 +7,6 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
-#include "core/decode/PacketDecoder.h"
 #include "core/domain/CaptureState.h"
 #include "core/io/PcapReader.h"
 #include "core/services/CaptureImporter.h"
@@ -245,84 +244,6 @@ void run_import_tests() {
         PFL_EXPECT(reader.finish_prefix_packet(packet));
         PFL_EXPECT(!reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
         PFL_EXPECT(!reader.has_error());
-    }
-
-    {
-        PacketDecoder decoder {};
-        const RawPcapPacket raw_packet {
-            .packet_index = 3,
-            .ts_sec = 1,
-            .ts_usec = 10,
-            .captured_length = static_cast<std::uint32_t>(tcp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(tcp_packet.size()),
-            .data_offset = 128,
-            .bytes = tcp_packet,
-        };
-
-        const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_REQUIRE(decoded.ipv4.has_value());
-        PFL_EXPECT(!decoded.ipv6.has_value());
-        PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 1));
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 2));
-        PFL_EXPECT(decoded.ipv4->flow_key.src_port == 12345);
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 443);
-        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::tcp);
-        PFL_EXPECT(decoded.ipv4->packet_ref.packet_index == 3);
-        PFL_EXPECT(decoded.ipv4->packet_ref.byte_offset == 128);
-        PFL_EXPECT(decoded.ipv4->packet_ref.ts_sec == 1);
-        PFL_EXPECT(decoded.ipv4->packet_ref.ts_usec == 10);
-    }
-
-    {
-        PacketDecoder decoder {};
-        const RawPcapPacket raw_packet {
-            .packet_index = 4,
-            .ts_sec = 1,
-            .ts_usec = 11,
-            .captured_length = static_cast<std::uint32_t>(udp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(udp_packet.size()),
-            .data_offset = 256,
-            .bytes = udp_packet,
-        };
-
-        const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_REQUIRE(decoded.ipv4.has_value());
-        PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 3));
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 4));
-        PFL_EXPECT(decoded.ipv4->flow_key.src_port == 5353);
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 53);
-        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
-        PFL_EXPECT(decoded.ipv4->packet_ref.ts_sec == 1);
-        PFL_EXPECT(decoded.ipv4->packet_ref.ts_usec == 11);
-    }
-
-    {
-        PacketDecoder decoder {};
-        const auto full_udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
-            ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 53530, 443, 8);
-        auto captured_udp_packet = full_udp_packet;
-        captured_udp_packet.resize(full_udp_packet.size() - 4U);
-
-        const RawPcapPacket raw_packet {
-            .packet_index = 5,
-            .ts_sec = 1,
-            .ts_usec = 12,
-            .captured_length = static_cast<std::uint32_t>(captured_udp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(full_udp_packet.size()),
-            .data_offset = 320,
-            .bytes = captured_udp_packet,
-        };
-
-        const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_REQUIRE(decoded.ipv4.has_value());
-        PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 5));
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 6));
-        PFL_EXPECT(decoded.ipv4->flow_key.src_port == 53530);
-        PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 443);
-        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
-        PFL_EXPECT(decoded.ipv4->import_metadata.transport_payload_length == 4U);
-        PFL_EXPECT(decoded.ipv4->packet_ref.captured_length == captured_udp_packet.size());
-        PFL_EXPECT(decoded.ipv4->packet_ref.original_length == full_udp_packet.size());
     }
 
     {
