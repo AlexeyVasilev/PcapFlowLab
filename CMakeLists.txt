@@ -86,7 +86,6 @@ add_library(
     src/core/index/Serialization.cpp
     src/core/index/CaptureIndexWriter.cpp
     src/core/index/CaptureIndexReader.cpp
-    src/core/decode/PacketDecoder.cpp
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImportPrefixPolicy.cpp
@@ -155,6 +154,19 @@ target_include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# Legacy-vs-unified validation and selected unit tests still use PacketDecoder
+# as an oracle. Keep its implementation out of production core/CLI/UI targets.
+add_library(
+    pcap_flow_lab_legacy_decoder STATIC
+    src/core/decode/PacketDecoder.cpp
+)
+
+target_link_libraries(
+    pcap_flow_lab_legacy_decoder
+    PRIVATE
+        pcap_flow_lab_core
+)
+
 add_executable(
     pcap_flow_lab_cli
     src/cli/main.cpp
@@ -187,6 +199,7 @@ target_link_libraries(
     pcap_flow_lab_import_validation_lib
     PRIVATE
         pcap_flow_lab_core
+        pcap_flow_lab_legacy_decoder
 )
 
 target_include_directories(
@@ -209,6 +222,7 @@ target_link_libraries(
     PRIVATE
         pcap_flow_lab_import_validation_lib
         pcap_flow_lab_core
+        pcap_flow_lab_legacy_decoder
 )
 
 if(PFL_BUILD_UI)
@@ -513,6 +527,7 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         PRIVATE
             pcap_flow_lab_core
+            pcap_flow_lab_legacy_decoder
             pcap_flow_lab_import_validation_lib
     )
 

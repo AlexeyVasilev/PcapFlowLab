@@ -173,7 +173,6 @@ fn main() {
         "src/core/index/Serialization.cpp",
         "src/core/index/CaptureIndexWriter.cpp",
         "src/core/index/CaptureIndexReader.cpp",
-        "src/core/decode/PacketDecoder.cpp",
         "src/core/reassembly/ReassemblyService.cpp",
         "src/core/services/PacketIngestor.cpp",
         "src/core/services/CaptureImportPrefixPolicy.cpp",
