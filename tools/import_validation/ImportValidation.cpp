@@ -18,6 +18,7 @@
 #include "core/dissection/CommonDirectDissection.h"
 #include "core/dissection/DissectionEngine.h"
 #include "core/dissection/PacketSlice.h"
+#include "core/decode/PacketDecoder.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"

@@ -10,6 +10,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "core/decode/PacketDecoder.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"

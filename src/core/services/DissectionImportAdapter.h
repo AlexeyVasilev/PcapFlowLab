@@ -2,8 +2,8 @@
 
 #include <optional>
 
-#include "core/decode/PacketDecoder.h"
 #include "core/dissection/CommonDirectDissection.h"
+#include "core/domain/DecodedPacket.h"
 
 namespace pfl {
 

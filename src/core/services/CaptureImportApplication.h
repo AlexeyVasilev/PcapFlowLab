@@ -5,10 +5,11 @@
 #include <span>
 #include <string>
 
-#include "core/decode/PacketDecoder.h"
 #include "core/dissection/CommonDirectDissection.h"
 #include "core/domain/CaptureState.h"
+#include "core/domain/DecodedPacket.h"
 #include "core/domain/TerminalTransportPayloadBounds.h"
+#include "core/io/PcapReader.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketIngestor.h"
 #include "core/services/DissectionImportAdapter.h"
