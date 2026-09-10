@@ -2,6 +2,7 @@
 #include <array>
 #include <filesystem>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <set>
 #include <string>
@@ -11,6 +12,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
 
@@ -315,7 +317,8 @@ void expect_runtime_terminal_payload_for_session(
     const std::string& protocol,
     const std::uint16_t port_a,
     const std::uint16_t port_b,
-    const std::string_view expected_payload_text
+    const std::string_view expected_payload_text,
+    const std::optional<std::uint8_t> expected_tcp_flags
 ) {
     const auto rows = session.list_flows();
     const auto* flow = require_flow_by_tuple(
@@ -334,6 +337,13 @@ void expect_runtime_terminal_payload_for_session(
 
     const auto& packet = packets->front();
     const auto expected_payload = ascii_bytes(expected_payload_text);
+    const auto expected_payload_length = static_cast<std::uint32_t>(expected_payload.size());
+    const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+    PFL_EXPECT(metadata.captured_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(metadata.original_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(metadata.tcp_flags == expected_tcp_flags);
+    PFL_EXPECT(metadata.is_ip_fragmented == false);
+
     PFL_EXPECT(session.read_selected_flow_transport_payload(flow_index, packet) == expected_payload);
     PFL_EXPECT(session.read_selected_flow_transport_payload_prefix(flow_index, packet, 9U) ==
         std::vector<std::uint8_t>(expected_payload.begin(), expected_payload.begin() + 9));
@@ -348,6 +358,12 @@ void expect_runtime_terminal_payload_for_session(
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(cache_info->total_cached_bytes == expected_payload.size());
     PFL_EXPECT(cache_info->window_fully_cached);
+    const auto cached_metadata = session.selected_flow_cached_packet_metadata(flow_index, packet.packet_index);
+    PFL_REQUIRE(cached_metadata.has_value());
+    PFL_EXPECT(cached_metadata->captured_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(cached_metadata->original_transport_payload_length == expected_payload_length);
+    PFL_EXPECT(cached_metadata->tcp_flags == expected_tcp_flags);
+    PFL_EXPECT(cached_metadata->is_ip_fragmented == false);
     PFL_EXPECT(session.read_selected_flow_transport_payload(flow_index, packet) == expected_payload);
     PFL_EXPECT(session.read_selected_flow_transport_payload_slice(flow_index, packet, 15U, 10U) ==
         std::vector<std::uint8_t>(expected_payload.begin() + 15, expected_payload.begin() + 25));
@@ -358,13 +374,21 @@ void expect_runtime_terminal_payload_for_inner_flow(
     const std::string& protocol,
     const std::uint16_t port_a,
     const std::uint16_t port_b,
-    const std::string_view expected_payload_text
+    const std::string_view expected_payload_text,
+    const std::optional<std::uint8_t> expected_tcp_flags = std::nullopt
 ) {
     const auto capture_path = fixture_path(relative_path);
 
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(capture_path));
-    expect_runtime_terminal_payload_for_session(session, protocol, port_a, port_b, expected_payload_text);
+    expect_runtime_terminal_payload_for_session(
+        session,
+        protocol,
+        port_a,
+        port_b,
+        expected_payload_text,
+        expected_tcp_flags
+    );
 
     const auto index_path = std::filesystem::temp_directory_path() /
         ("pfl_gtpu_runtime_terminal_payload_" + relative_path.filename().string() + ".idx");
@@ -373,7 +397,14 @@ void expect_runtime_terminal_payload_for_inner_flow(
 
     CaptureSession loaded_session {};
     PFL_REQUIRE(loaded_session.load_index(index_path));
-    expect_runtime_terminal_payload_for_session(loaded_session, protocol, port_a, port_b, expected_payload_text);
+    expect_runtime_terminal_payload_for_session(
+        loaded_session,
+        protocol,
+        port_a,
+        port_b,
+        expected_payload_text,
+        expected_tcp_flags
+    );
 }
 
 void expect_gtpu_packet_details_present(
@@ -1478,7 +1509,8 @@ void run_gtpu_runtime_terminal_payload_tests() {
         "TCP",
         41000U,
         41001U,
-        "INNER-TCP-DATA|0123456789|abcdefghijklmnopqrstuv"
+        "INNER-TCP-DATA|0123456789|abcdefghijklmnopqrstuv",
+        static_cast<std::uint8_t>(0x18U)
     );
 }
 

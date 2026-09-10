@@ -195,7 +195,9 @@ void run_packet_metadata_tests() {
 
         const auto udp_metadata = session_detail::derive_transient_packet_metadata(session, *udp_ref);
         PFL_REQUIRE(udp_metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(udp_metadata.original_transport_payload_length.has_value());
         PFL_EXPECT(*udp_metadata.captured_transport_payload_length == 7U);
+        PFL_EXPECT(*udp_metadata.original_transport_payload_length == 7U);
         PFL_EXPECT(!udp_metadata.tcp_flags.has_value());
 
         const auto flow_rows = session.list_flows();
@@ -449,7 +451,9 @@ void run_packet_metadata_tests() {
 
         const auto udp_metadata = session_detail::derive_transient_packet_metadata(loaded_session, *udp_ref);
         PFL_REQUIRE(udp_metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(udp_metadata.original_transport_payload_length.has_value());
         PFL_EXPECT(*udp_metadata.captured_transport_payload_length == 7U);
+        PFL_EXPECT(*udp_metadata.original_transport_payload_length == 7U);
     }
 
     {

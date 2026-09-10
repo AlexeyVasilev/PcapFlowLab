@@ -1,33 +1,12 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 
-#include <algorithm>
-
 #include "app/session/CaptureSession.h"
 #include "core/decode/PacketDecodeSupport.h"
-#include "core/services/PacketDetailsService.h"
+#include "core/dissection/RuntimeDissection.h"
 
 namespace pfl::session_detail {
 
 namespace {
-
-enum class TransportPayloadLengthSemantics : std::uint8_t {
-    captured,
-    original,
-};
-
-std::optional<std::uint32_t> derive_transport_payload_length_from_ipv4_packet(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t ipv4_offset,
-    TransportPayloadLengthSemantics semantics
-);
-
-std::optional<std::uint32_t> derive_transport_payload_length_from_ipv6_packet(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t ipv6_offset,
-    TransportPayloadLengthSemantics semantics
-);
 
 std::optional<std::uint32_t> derive_original_transport_payload_length_from_metadata(
     const std::uint32_t captured_length,
@@ -83,310 +62,38 @@ void apply_transient_metadata_to_row(
     }
 }
 
-std::optional<std::uint32_t> derive_transport_payload_length_from_ah_payload(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t ah_offset,
-    const std::size_t nominal_packet_end,
-    TransportPayloadLengthSemantics semantics
-) {
-    const auto ah = detail::parse_ah_header(bounded_bytes, ah_offset, nominal_packet_end);
-    if (!ah.has_value()) {
-        return std::nullopt;
-    }
-
-    const auto captured_packet_end = std::min(nominal_packet_end, bounded_bytes.size());
-
-    if (ah->next_header == detail::kIpProtocolTcp) {
-        if (ah->payload_offset + detail::kTcpMinimumHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[ah->payload_offset + 12U] >> 4U) * 4U);
-        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
-            ah->payload_offset + tcp_header_length > bounded_bytes.size() ||
-            ah->payload_offset + tcp_header_length > nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            if (captured_packet_end < ah->payload_offset + tcp_header_length) {
-                return std::nullopt;
-            }
-            return static_cast<std::uint32_t>(captured_packet_end - (ah->payload_offset + tcp_header_length));
-        }
-
-        return static_cast<std::uint32_t>(nominal_packet_end - (ah->payload_offset + tcp_header_length));
-    }
-
-    if (ah->next_header == detail::kIpProtocolUdp) {
-        if (ah->payload_offset + detail::kUdpHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ah->payload_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize || ah->payload_offset + udp_length > nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            const auto payload_offset = ah->payload_offset + detail::kUdpHeaderSize;
-            const auto available_payload_length =
-                captured_packet_end > payload_offset ? (captured_packet_end - payload_offset) : 0U;
-            return static_cast<std::uint32_t>(std::min(udp_length - detail::kUdpHeaderSize, available_payload_length));
-        }
-
-        return static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
-    }
-
-    if (ah->next_header == detail::kIpProtocolIpv4Encapsulation) {
-        return derive_transport_payload_length_from_ipv4_packet(bounded_bytes, packet, ah->payload_offset, semantics);
-    }
-
-    if (ah->next_header == detail::kIpProtocolIpv6Encapsulation) {
-        return derive_transport_payload_length_from_ipv6_packet(bounded_bytes, packet, ah->payload_offset, semantics);
-    }
-
-    return std::nullopt;
+bool supports_transient_transport_payload_length(const ProtocolId protocol) noexcept {
+    return protocol == ProtocolId::tcp ||
+           protocol == ProtocolId::udp ||
+           protocol == ProtocolId::sctp;
 }
 
-std::optional<std::uint32_t> derive_transport_payload_length_from_gre_payload(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t gre_offset,
-    const std::size_t nominal_packet_end,
-    const bool allow_eoip,
-    TransportPayloadLengthSemantics semantics
+dissection::RuntimeDissectionFacts derive_runtime_facts(
+    const std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
 ) {
-    const auto gre = detail::parse_gre_payload(bounded_bytes, gre_offset, nominal_packet_end, allow_eoip);
-    if (!gre.has_value() || !gre->resolved_supported_protocol) {
-        return std::nullopt;
-    }
-
-    if (gre->resolved_protocol_type == detail::kEtherTypeIpv4) {
-        return derive_transport_payload_length_from_ipv4_packet(
-            bounded_bytes,
-            packet,
-            gre->resolved_payload_offset,
-            semantics
-        );
-    }
-
-    if (gre->resolved_protocol_type == detail::kEtherTypeIpv6) {
-        return derive_transport_payload_length_from_ipv6_packet(
-            bounded_bytes,
-            packet,
-            gre->resolved_payload_offset,
-            semantics
-        );
-    }
-
-    return std::nullopt;
+    return dissection::derive_runtime_dissection_facts(
+        packet_bytes,
+        packet.captured_length,
+        packet.original_length,
+        packet.data_link_type
+    );
 }
 
-std::optional<std::uint32_t> derive_transport_payload_length_from_ipv4_packet(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t ipv4_offset,
-    const TransportPayloadLengthSemantics semantics
+TransientPacketDerivedMetadata transient_metadata_from_runtime_facts(
+    const dissection::RuntimeDissectionFacts& facts
 ) {
-    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
-    if (!ipv4_bounds.has_value()) {
-        return std::nullopt;
+    TransientPacketDerivedMetadata metadata {};
+    if (supports_transient_transport_payload_length(facts.terminal_protocol)) {
+        metadata.captured_transport_payload_length = facts.captured_transport_payload_length;
+        metadata.original_transport_payload_length = facts.original_transport_payload_length;
+        metadata.terminal_transport_payload_bounds = facts.terminal_transport_payload_bounds;
     }
-
-    const auto flags_fragment = detail::read_be16(bounded_bytes, ipv4_offset + 6U);
-    if ((flags_fragment & 0x3FFFU) != 0U) {
-        return std::nullopt;
+    if (facts.terminal_protocol == ProtocolId::tcp) {
+        metadata.tcp_flags = facts.tcp_flags;
     }
-
-    const auto protocol = bounded_bytes[ipv4_offset + 9U];
-    const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
-    if (protocol == detail::kIpProtocolTcp) {
-        if (transport_offset + detail::kTcpMinimumHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
-        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
-            transport_offset + tcp_header_length > ipv4_bounds->packet_end ||
-            transport_offset + tcp_header_length > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            return static_cast<std::uint32_t>(ipv4_bounds->packet_end - (transport_offset + tcp_header_length));
-        }
-
-        if (!ipv4_bounds->bounds_from_captured_bytes) {
-            if (ipv4_bounds->total_length < ipv4_bounds->header_length + tcp_header_length) {
-                return std::nullopt;
-            }
-
-            return static_cast<std::uint32_t>(
-                static_cast<std::size_t>(ipv4_bounds->total_length) - ipv4_bounds->header_length - tcp_header_length
-            );
-        }
-
-        const auto transport_payload_offset = transport_offset + tcp_header_length;
-        if (packet.original_length < transport_payload_offset) {
-            return std::nullopt;
-        }
-
-        return static_cast<std::uint32_t>(packet.original_length - transport_payload_offset);
-    }
-
-    if (protocol == detail::kIpProtocolUdp) {
-        if (transport_offset + detail::kUdpHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, transport_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize) {
-            return std::nullopt;
-        }
-
-        if (!ipv4_bounds->bounds_from_captured_bytes && transport_offset + udp_length > ipv4_bounds->nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            const auto payload_offset = transport_offset + detail::kUdpHeaderSize;
-            const auto available_payload_length =
-                ipv4_bounds->packet_end > payload_offset ? (ipv4_bounds->packet_end - payload_offset) : 0U;
-            return static_cast<std::uint32_t>(std::min(udp_length - detail::kUdpHeaderSize, available_payload_length));
-        }
-
-        return static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
-    }
-
-    if (protocol == detail::kIpProtocolAh) {
-        return derive_transport_payload_length_from_ah_payload(
-            bounded_bytes,
-            packet,
-            transport_offset,
-            ipv4_bounds->nominal_packet_end,
-            semantics
-        );
-    }
-
-    if (protocol == detail::kIpProtocolGre) {
-        return derive_transport_payload_length_from_gre_payload(
-            bounded_bytes,
-            packet,
-            transport_offset,
-            ipv4_bounds->nominal_packet_end,
-            true,
-            semantics
-        );
-    }
-
-    return std::nullopt;
-}
-
-std::optional<std::uint32_t> derive_transport_payload_length_from_ipv6_packet(
-    const std::span<const std::uint8_t> bounded_bytes,
-    const PacketRef& packet,
-    const std::size_t ipv6_offset,
-    const TransportPayloadLengthSemantics semantics
-) {
-    if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
-        return std::nullopt;
-    }
-
-    const auto version = static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U);
-    if (version != 6U) {
-        return std::nullopt;
-    }
-
-    const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
-    const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
-    const auto captured_packet_end = std::min(nominal_packet_end, bounded_bytes.size());
-    const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
-    if (!payload.has_value() || payload->has_fragment_header) {
-        return std::nullopt;
-    }
-
-    if (const auto ah_payload = detail::parse_ipv6_authentication_payload(bounded_bytes, ipv6_offset);
-        ah_payload.has_value() && !ah_payload->has_fragment_header) {
-        return derive_transport_payload_length_from_ah_payload(
-            bounded_bytes,
-            packet,
-            ah_payload->ah_offset,
-            nominal_packet_end,
-            semantics
-        );
-    }
-
-    if (payload->next_header == detail::kIpProtocolTcp) {
-        if (payload->payload_offset + detail::kTcpMinimumHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
-        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
-            payload->payload_offset + tcp_header_length > bounded_bytes.size() ||
-            payload->payload_offset + tcp_header_length > nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            return static_cast<std::uint32_t>(captured_packet_end - (payload->payload_offset + tcp_header_length));
-        }
-
-        return static_cast<std::uint32_t>(nominal_packet_end - (payload->payload_offset + tcp_header_length));
-    }
-
-    if (payload->next_header == detail::kIpProtocolUdp) {
-        if (payload->payload_offset + detail::kUdpHeaderSize > bounded_bytes.size()) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, payload->payload_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        if (semantics == TransportPayloadLengthSemantics::captured) {
-            const auto payload_offset = payload->payload_offset + detail::kUdpHeaderSize;
-            const auto available_payload_length =
-                captured_packet_end > payload_offset ? (captured_packet_end - payload_offset) : 0U;
-            return static_cast<std::uint32_t>(std::min(udp_length - detail::kUdpHeaderSize, available_payload_length));
-        }
-
-        return static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
-    }
-
-    if (payload->next_header == detail::kIpProtocolIpv4Encapsulation) {
-        return derive_transport_payload_length_from_ipv4_packet(
-            bounded_bytes,
-            packet,
-            payload->payload_offset,
-            semantics
-        );
-    }
-
-    if (payload->next_header == detail::kIpProtocolIpv6Encapsulation) {
-        return derive_transport_payload_length_from_ipv6_packet(
-            bounded_bytes,
-            packet,
-            payload->payload_offset,
-            semantics
-        );
-    }
-
-    if (payload->next_header == detail::kIpProtocolGre) {
-        return derive_transport_payload_length_from_gre_payload(
-            bounded_bytes,
-            packet,
-            payload->payload_offset,
-            nominal_packet_end,
-            false,
-            semantics
-        );
-    }
-
-    return std::nullopt;
+    metadata.is_ip_fragmented = facts.is_ip_fragmented;
+    return metadata;
 }
 
 }  // namespace
@@ -421,23 +128,7 @@ TransientPacketDerivedMetadata derive_transient_packet_metadata(
     const std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
-    TransientPacketDerivedMetadata metadata {
-        .captured_transport_payload_length = derive_captured_transport_payload_length_from_headers(packet_bytes, packet),
-        .original_transport_payload_length = derive_original_transport_payload_length_from_headers(packet_bytes, packet),
-    };
-
-    PacketDetailsService details_service {};
-    const auto details = details_service.decode_best_effort(packet_bytes, packet);
-    if (!details.has_value()) {
-        return metadata;
-    }
-
-    metadata.is_ip_fragmented = derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, *details);
-    if (details->has_tcp) {
-        metadata.tcp_flags = details->tcp.flags;
-    }
-
-    return metadata;
+    return transient_metadata_from_runtime_facts(derive_runtime_facts(packet_bytes, packet));
 }
 
 TransientPacketDerivedMetadata derive_transient_packet_metadata(
@@ -459,66 +150,24 @@ std::optional<std::uint32_t> derive_captured_transport_payload_length_from_heade
     const std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
-    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
-    if (!network.has_value()) {
+    const auto facts = derive_runtime_facts(packet_bytes, packet);
+    if (!supports_transient_transport_payload_length(facts.terminal_protocol)) {
         return std::nullopt;
     }
-    const auto bounded_bytes = network->bounded_packet_end.has_value()
-        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
-        : packet_bytes;
 
-    if (network->protocol_type == detail::kEtherTypeIpv4) {
-        return derive_transport_payload_length_from_ipv4_packet(
-            bounded_bytes,
-            packet,
-            network->payload_offset,
-            TransportPayloadLengthSemantics::captured
-        );
-    }
-
-    if (network->protocol_type == detail::kEtherTypeIpv6) {
-        return derive_transport_payload_length_from_ipv6_packet(
-            bounded_bytes,
-            packet,
-            network->payload_offset,
-            TransportPayloadLengthSemantics::captured
-        );
-    }
-
-    return std::nullopt;
+    return facts.captured_transport_payload_length;
 }
 
 std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
     const std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
-    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
-    if (!network.has_value()) {
+    const auto facts = derive_runtime_facts(packet_bytes, packet);
+    if (!supports_transient_transport_payload_length(facts.terminal_protocol)) {
         return std::nullopt;
     }
-    const auto bounded_bytes = network->bounded_packet_end.has_value()
-        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
-        : packet_bytes;
 
-    if (network->protocol_type == detail::kEtherTypeIpv4) {
-        return derive_transport_payload_length_from_ipv4_packet(
-            bounded_bytes,
-            packet,
-            network->payload_offset,
-            TransportPayloadLengthSemantics::original
-        );
-    }
-
-    if (network->protocol_type == detail::kEtherTypeIpv6) {
-        return derive_transport_payload_length_from_ipv6_packet(
-            bounded_bytes,
-            packet,
-            network->payload_offset,
-            TransportPayloadLengthSemantics::original
-        );
-    }
-
-    return std::nullopt;
+    return facts.original_transport_payload_length;
 }
 
 std::optional<std::uint32_t> derive_captured_transport_payload_length_from_headers(

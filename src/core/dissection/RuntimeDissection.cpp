@@ -5,6 +5,8 @@
 #include "core/dissection/DissectionRegistry.h"
 #include "core/dissection/PacketSlice.h"
 
+#include <limits>
+
 namespace pfl::dissection {
 
 namespace {
@@ -16,6 +18,40 @@ const DissectionRegistry* common_direct_runtime_registry() {
     }
 
     return &*registry_result.registry;
+}
+
+std::optional<std::uint32_t> declared_payload_length_from_bounds(
+    const TerminalTransportPayloadBounds& bounds
+) noexcept {
+    if (bounds.declared_end_offset < bounds.payload_offset) {
+        return std::nullopt;
+    }
+
+    const auto payload_length = bounds.declared_end_offset - bounds.payload_offset;
+    if (payload_length > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(payload_length);
+}
+
+std::optional<bool> effective_ip_fragmentation(const ImportDissectionFacts& facts) noexcept {
+    switch (facts.family) {
+    case DissectionAddressFamily::ipv4:
+        if (!facts.has_ipv4_fragmentation) {
+            return std::nullopt;
+        }
+        return facts.ipv4_fragmentation.is_fragmented;
+    case DissectionAddressFamily::ipv6:
+        if (!facts.has_ipv6_fragmentation) {
+            return std::nullopt;
+        }
+        return facts.ipv6_fragmentation.has_fragment_header;
+    case DissectionAddressFamily::unknown:
+        break;
+    }
+
+    return std::nullopt;
 }
 
 }  // namespace
@@ -49,7 +85,19 @@ RuntimeDissectionFacts derive_runtime_dissection_facts(
 
     const auto& collected = collector.facts();
     facts.terminal_protocol = collected.terminal_protocol;
+    if (collected.has_transport_payload_length) {
+        facts.captured_transport_payload_length = collected.captured_transport_payload_length;
+    }
     facts.terminal_transport_payload_bounds = collected.terminal_transport_payload_bounds;
+    if (facts.terminal_transport_payload_bounds.has_value()) {
+        facts.original_transport_payload_length = declared_payload_length_from_bounds(
+            *facts.terminal_transport_payload_bounds
+        );
+    }
+    if (collected.has_tcp_flags) {
+        facts.tcp_flags = collected.tcp_flags;
+    }
+    facts.is_ip_fragmented = effective_ip_fragmentation(collected);
     facts.final_status = collected.final_status;
     facts.stop_reason = collected.stop_reason;
     facts.step_count = collected.step_count;

@@ -2979,15 +2979,20 @@ void run_packet_details_tests() {
             expected_udp_data_text.begin(),
             expected_udp_data_text.end()
         );
+        const auto expected_udp_data_length = static_cast<std::uint32_t>(expected_udp_data.size());
         const auto summary_layers = build_fixture_summary_layers("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap");
         const auto data_layers = find_summary_layers(summary_layers, "data");
-        PFL_REQUIRE(find_summary_layer(summary_layers, "udp") != nullptr);
+        const auto* outer_udp_layer = find_summary_layer(summary_layers, "udp");
+        PFL_REQUIRE(outer_udp_layer != nullptr);
         PFL_REQUIRE(find_summary_layer(summary_layers, "gtpu") != nullptr);
         PFL_REQUIRE(find_summary_layer(summary_layers, "ipv4-inner") != nullptr);
         const auto* inner_udp_layer = find_summary_layer(summary_layers, "udp-inner");
         PFL_REQUIRE(inner_udp_layer != nullptr);
         PFL_REQUIRE(data_layers.size() == 1U);
         PFL_EXPECT(find_summary_layer_index(summary_layers, "udp-inner") + 1U == find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(find_summary_field(*outer_udp_layer, "Payload Length") == nullptr);
+        PFL_EXPECT(find_summary_field(*outer_udp_layer, "Captured Payload Length") == nullptr);
+        PFL_EXPECT(find_summary_field(*outer_udp_layer, "Original Payload Length") == nullptr);
         PFL_EXPECT(require_summary_field_value(*inner_udp_layer, "Payload Length") == "48 bytes");
         PFL_EXPECT(require_summary_field_value(*data_layers[0], "Role") == "Transport Payload");
         PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
@@ -3010,8 +3015,11 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
         PFL_EXPECT(details->effective_transport_payload->summary_placement ==
             EffectiveTransportSummaryPlacement::after_inner_udp);
-        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == expected_udp_data.size());
-        PFL_EXPECT(details->effective_transport_payload->declared_payload_length == expected_udp_data.size());
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == expected_udp_data_length);
+        PFL_EXPECT(details->effective_transport_payload->declared_payload_length == expected_udp_data_length);
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+        PFL_EXPECT(metadata.captured_transport_payload_length == expected_udp_data_length);
+        PFL_EXPECT(metadata.original_transport_payload_length == expected_udp_data_length);
 
         const auto flow_context = resolve_selected_packet_flow_context(session, packet);
         const auto packet_summary_preparation = prepare_selected_packet_summary_with_production_lengths(
@@ -3022,13 +3030,15 @@ void run_packet_details_tests() {
             flow_context.flow_packet_index,
             flow_context.loaded_packet_window_count
         );
+        PFL_EXPECT(!packet_summary_preparation.transport_payload_length.has_value());
+        PFL_EXPECT(!packet_summary_preparation.original_transport_payload_length.has_value());
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==
             session_detail::TransportPayloadDisposition::unclaimed_data);
         PFL_EXPECT(packet_summary_preparation.packet_data->placement ==
             session_detail::PacketDataPlacement::after_inner_udp);
-        PFL_EXPECT(packet_summary_preparation.packet_data->captured_length == expected_udp_data.size());
-        PFL_EXPECT(packet_summary_preparation.packet_data->declared_length == expected_udp_data.size());
+        PFL_EXPECT(packet_summary_preparation.packet_data->captured_length == expected_udp_data_length);
+        PFL_EXPECT(packet_summary_preparation.packet_data->declared_length == expected_udp_data_length);
         PFL_EXPECT(packet_summary_preparation.packet_data_preview.size() == 32U);
         PFL_EXPECT(packet_summary_preparation.packet_data_preview ==
             std::vector<std::uint8_t>(expected_udp_data.begin(), expected_udp_data.begin() + 32));

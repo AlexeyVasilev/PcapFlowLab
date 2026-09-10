@@ -194,18 +194,13 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
 std::vector<std::uint8_t> extract_runtime_terminal_transport_payload(
     const PacketPayloadService& payload_service,
     const PacketRef& packet,
-    const std::span<const std::uint8_t> packet_bytes
+    const std::span<const std::uint8_t> packet_bytes,
+    const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds
 ) {
-    const auto facts = dissection::derive_runtime_dissection_facts(
-        packet_bytes,
-        packet.captured_length,
-        packet.original_length,
-        packet.data_link_type
-    );
-    if (facts.terminal_transport_payload_bounds.has_value()) {
+    if (terminal_transport_payload_bounds.has_value()) {
         const auto payload = payload_service.extract_terminal_transport_payload_view(
             packet_bytes,
-            *facts.terminal_transport_payload_bounds
+            *terminal_transport_payload_bounds
         );
         if (payload.found) {
             return std::vector<std::uint8_t>(payload.payload.begin(), payload.payload.end());
@@ -215,6 +210,25 @@ std::vector<std::uint8_t> extract_runtime_terminal_transport_payload(
     }
 
     return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+}
+
+std::vector<std::uint8_t> extract_runtime_terminal_transport_payload(
+    const PacketPayloadService& payload_service,
+    const PacketRef& packet,
+    const std::span<const std::uint8_t> packet_bytes
+) {
+    const auto facts = dissection::derive_runtime_dissection_facts(
+        packet_bytes,
+        packet.captured_length,
+        packet.original_length,
+        packet.data_link_type
+    );
+    return extract_runtime_terminal_transport_payload(
+        payload_service,
+        packet,
+        packet_bytes,
+        facts.terminal_transport_payload_bounds
+    );
 }
 
 UnrecognizedPacketRow make_unrecognized_packet_row(
@@ -3761,12 +3775,13 @@ void CaptureSession::prepare_selected_flow_packet_cache(
 
     PacketPayloadService payload_service {};
     CaptureFilePacketReader payload_reader {capture_path_};
-    const auto read_terminal_payload = [&](const PacketRef& packet) {
+    const auto read_terminal_payload = [&](const PacketRef& packet, const session_detail::TransientPacketDerivedMetadata& metadata) {
         const auto extract_payload = [&](const std::span<const std::uint8_t> packet_bytes) {
             return extract_runtime_terminal_transport_payload(
                 payload_service,
                 packet,
-                packet_bytes
+                packet_bytes,
+                metadata.terminal_transport_payload_bounds
             );
         };
 
@@ -3795,7 +3810,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         const auto metadata = window_packet.metadata.value_or(session_detail::TransientPacketDerivedMetadata {});
         auto payload_plan = plan_selected_flow_payload_caching(metadata);
         auto payload_bytes = payload_plan.requires_payload_read
-            ? read_terminal_payload(packet)
+            ? read_terminal_payload(packet, metadata)
             : std::vector<std::uint8_t> {};
         finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
         if (!payload_plan.payload_cached) {
@@ -3893,12 +3908,13 @@ void CaptureSession::prepare_selected_flow_packet_cache(
     );
     PacketPayloadService payload_service {};
     CaptureFilePacketReader payload_reader {capture_path_};
-    const auto read_terminal_payload = [&](const PacketRef& packet) {
+    const auto read_terminal_payload = [&](const PacketRef& packet, const session_detail::TransientPacketDerivedMetadata& metadata) {
         const auto extract_payload = [&](const std::span<const std::uint8_t> packet_bytes) {
             return extract_runtime_terminal_transport_payload(
                 payload_service,
                 packet,
-                packet_bytes
+                packet_bytes,
+                metadata.terminal_transport_payload_bounds
             );
         };
 
@@ -3931,7 +3947,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             : session_detail::TransientPacketDerivedMetadata {};
         auto payload_plan = plan_selected_flow_payload_caching(metadata);
         auto payload_bytes = payload_plan.requires_payload_read
-            ? read_terminal_payload(packet)
+            ? read_terminal_payload(packet, metadata)
             : std::vector<std::uint8_t> {};
         finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
         if (!payload_plan.payload_cached) {

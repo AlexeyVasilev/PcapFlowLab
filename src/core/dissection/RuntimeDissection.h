@@ -13,7 +13,11 @@ namespace pfl::dissection {
 
 struct RuntimeDissectionFacts {
     ProtocolId terminal_protocol {ProtocolId::unknown};
+    std::optional<std::uint32_t> captured_transport_payload_length {};
+    std::optional<std::uint32_t> original_transport_payload_length {};
     std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
+    std::optional<std::uint8_t> tcp_flags {};
+    std::optional<bool> is_ip_fragmented {};
     ParseStatus final_status {ParseStatus::opaque};
     StopReason stop_reason {StopReason::none};
     std::size_t step_count {0U};
