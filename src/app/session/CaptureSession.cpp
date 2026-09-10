@@ -33,7 +33,6 @@
 
 #include "../../../core/open_context.h"
 #include "core/debug_logging.h"
-#include "core/decode/PacketDecoder.h"
 #include "core/dissection/RuntimeDissection.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -2213,15 +2212,6 @@ std::optional<CapturePacketLocatorEntry> find_packet_locator_entry(
 }
 
 PacketRef build_packet_ref_from_located_packet(const RawPcapPacket& packet) {
-    PacketDecoder decoder {};
-    const auto decoded = decoder.decode(packet);
-    if (decoded.ipv4.has_value()) {
-        return decoded.ipv4->packet_ref;
-    }
-    if (decoded.ipv6.has_value()) {
-        return decoded.ipv6->packet_ref;
-    }
-
     return packet_ref_from_raw_packet(packet);
 }
 
