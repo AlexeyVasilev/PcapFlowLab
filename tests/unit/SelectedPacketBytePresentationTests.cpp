@@ -110,8 +110,49 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_dns_over_tcp_payload() {
+    auto payload = make_dns_query_payload();
+    const auto message_length = static_cast<std::uint16_t>(payload.size());
+    payload.insert(
+        payload.begin(),
+        {
+            static_cast<std::uint8_t>((message_length >> 8U) & 0xFFU),
+            static_cast<std::uint8_t>(message_length & 0xFFU),
+        }
+    );
+    return payload;
+}
+
 std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
+std::vector<std::uint8_t> make_vxlan_payload(
+    const std::vector<std::uint8_t>& inner_ethernet_frame,
+    const std::uint32_t vni = 0x00002aU
+) {
+    std::vector<std::uint8_t> payload {
+        0x08U, 0x00U, 0x00U, 0x00U,
+        static_cast<std::uint8_t>((vni >> 16U) & 0xFFU),
+        static_cast<std::uint8_t>((vni >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(vni & 0xFFU),
+        0x00U,
+    };
+    payload.insert(payload.end(), inner_ethernet_frame.begin(), inner_ethernet_frame.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_vxlan_packet(
+    const std::vector<std::uint8_t>& inner_ethernet_frame,
+    const std::uint32_t vni = 0x00002aU
+) {
+    return make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(192, 0, 2, 10),
+        ipv4(198, 51, 100, 10),
+        40000U,
+        4789U,
+        make_vxlan_payload(inner_ethernet_frame, vni)
+    );
 }
 
 const SelectedPacketByteViewDescriptor* require_view_in_scope(
@@ -822,15 +863,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
     }
 
     {
-        auto dns_over_tcp_payload = make_dns_query_payload();
-        const auto dns_message_length = static_cast<std::uint16_t>(dns_over_tcp_payload.size());
-        dns_over_tcp_payload.insert(
-            dns_over_tcp_payload.begin(),
-            {
-                static_cast<std::uint8_t>((dns_message_length >> 8U) & 0xFFU),
-                static_cast<std::uint8_t>(dns_message_length & 0xFFU),
-            }
-        );
+        auto dns_over_tcp_payload = make_dns_over_tcp_payload();
 
         const auto path = write_temp_pcap(
             "pfl_selected_packet_byte_dns_over_tcp.pcap",
@@ -865,6 +898,106 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(materialized.bytes[1] == 0x34U);
         PFL_EXPECT(materialized.bytes[2] == 0x01U);
         PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
+        const auto inner_dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 10),
+            ipv4(172, 16, 0, 53),
+            53000U,
+            53U,
+            make_dns_query_payload()
+        );
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_inner_dns.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_dns_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* outer_udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_REQUIRE(inner_udp->payload_range.has_value());
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::dns_message) == 1U);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_EXPECT(dns_message->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_REQUIRE(dns_message->parent_id.has_value());
+        PFL_EXPECT(!(*dns_message->parent_id == outer_udp->id));
+        PFL_EXPECT(dns_message->offset == inner_udp->payload_range->offset);
+        PFL_EXPECT(dns_message->captured_length == inner_udp->payload_range->captured_length);
+        PFL_EXPECT(dns_message->declared_length == inner_udp->payload_range->declared_length);
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0x12U);
+        PFL_EXPECT(materialized.bytes[1] == 0x34U);
+        PFL_EXPECT(materialized.bytes[2] == 0x01U);
+        PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
+        const auto inner_dns_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(172, 16, 1, 10),
+            ipv4(172, 16, 1, 53),
+            53001U,
+            53U,
+            make_dns_over_tcp_payload(),
+            0x18U
+        );
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_inner_dns_over_tcp.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_dns_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
+        PFL_REQUIRE(inner_tcp->payload_range.has_value());
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::dns_message) == 1U);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::inner_tcp_payload);
+        PFL_EXPECT(dns_message->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(dns_message->offset == inner_tcp->payload_range->offset + 2U);
+        PFL_EXPECT(dns_message->captured_length + 2U == inner_tcp->payload_range->captured_length);
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0x12U);
+        PFL_EXPECT(materialized.bytes[1] == 0x34U);
+        PFL_EXPECT(materialized.bytes[2] == 0x01U);
+        PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
+        const auto inner_data_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 2, 10),
+            ipv4(172, 16, 2, 20),
+            53002U,
+            53003U,
+            bytes_payload("not-dns-payload")
+        );
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_inner_udp_no_dns.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_data_packet, 0x000100U)}})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::udp_payload) != nullptr);
+        PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload) != nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
     }
 
     {
