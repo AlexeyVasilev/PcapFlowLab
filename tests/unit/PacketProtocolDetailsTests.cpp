@@ -12,9 +12,13 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
+#include "core/domain/PacketDetails.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/DnsPacketProtocolAnalyzer.h"
+#include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/QuicPacketProtocolAnalyzer.h"
+#include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl::tests {
 
@@ -48,6 +52,20 @@ std::uint32_t require_captured_transport_payload_length(CaptureSession& session,
     const auto payload_length = session_detail::derive_captured_transport_payload_length_from_headers(session, packet);
     PFL_REQUIRE(payload_length.has_value());
     return *payload_length;
+}
+
+void expect_effective_transport_payload_kind(
+    CaptureSession& session,
+    const PacketRef& packet,
+    const EffectiveTransportKind expected_kind
+) {
+    const auto packet_bytes = session.read_packet_data(packet);
+    PacketDetailsService details_service {};
+    const auto details = details_service.decode_best_effort(packet_bytes, packet);
+    PFL_REQUIRE(details.has_value());
+    PFL_REQUIRE(details->effective_transport_payload.has_value());
+    PFL_EXPECT(details->effective_transport_payload->transport == expected_kind);
+    PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
 }
 
 std::string_view trim_ascii(std::string_view text) {
@@ -425,6 +443,50 @@ std::vector<std::uint8_t> make_tls_alert_payload(
     return payload;
 }
 
+std::vector<std::uint8_t> make_http_request_payload() {
+    constexpr char request[] =
+        "GET /nested HTTP/1.1\r\n"
+        "Host: nested.example\r\n"
+        "\r\n";
+    return std::vector<std::uint8_t>(request, request + sizeof(request) - 1U);
+}
+
+std::vector<std::uint8_t> make_dns_query_payload() {
+    std::vector<std::uint8_t> payload {};
+    append_be16(payload, 0x1234U);
+    append_be16(payload, 0x0100U);
+    append_be16(payload, 1U);
+    append_be16(payload, 0U);
+    append_be16(payload, 0U);
+    append_be16(payload, 0U);
+    payload.push_back(6U);
+    payload.insert(payload.end(), {'n', 'e', 's', 't', 'e', 'd'});
+    payload.push_back(7U);
+    payload.insert(payload.end(), {'e', 'x', 'a', 'm', 'p', 'l', 'e'});
+    payload.push_back(0U);
+    append_be16(payload, 1U);
+    append_be16(payload, 1U);
+    return payload;
+}
+
+std::vector<std::uint8_t> make_vxlan_packet(const std::vector<std::uint8_t>& inner_ethernet_packet) {
+    std::vector<std::uint8_t> vxlan_payload {
+        0x08U,
+        0x00U, 0x00U, 0x00U,
+        0x00U, 0x01U, 0x00U,
+        0x00U,
+    };
+    vxlan_payload.insert(vxlan_payload.end(), inner_ethernet_packet.begin(), inner_ethernet_packet.end());
+
+    return make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(192, 0, 2, 1),
+        ipv4(198, 51, 100, 1),
+        40000U,
+        4789U,
+        vxlan_payload
+    );
+}
+
 std::vector<std::uint8_t> make_tls_client_hello_handshake_bytes() {
     const std::vector<std::uint8_t> server_name {'s', 't', 'a', 'g', 'e', '1', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
 
@@ -585,6 +647,101 @@ std::vector<std::uint8_t> make_quic_truncated_payload() {
 }  // namespace
 
 void run_packet_protocol_details_tests() {
+    {
+        const auto payload = make_tls_alert_payload();
+        const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 52000U, 443U, payload, 0x18U);
+        TlsPacketProtocolAnalyzer analyzer {};
+        const auto payload_text = analyzer.analyze_payload(payload);
+        const auto packet_text = analyzer.analyze(packet);
+        PFL_REQUIRE(payload_text.has_value());
+        PFL_EXPECT(packet_text == payload_text);
+    }
+
+    {
+        const auto payload = make_http_request_payload();
+        const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 3), ipv4(10, 20, 0, 4), 52001U, 80U, payload, 0x18U);
+        HttpPacketProtocolAnalyzer analyzer {};
+        const auto payload_text = analyzer.analyze_payload(payload);
+        const auto packet_text = analyzer.analyze(packet);
+        PFL_REQUIRE(payload_text.has_value());
+        PFL_EXPECT(packet_text == payload_text);
+    }
+
+    {
+        const auto payload = make_dns_query_payload();
+        const auto packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 5), ipv4(10, 20, 0, 6), 52002U, 53U, payload);
+        DnsPacketProtocolAnalyzer analyzer {};
+        const auto payload_text = analyzer.analyze_payload(payload);
+        const auto packet_text = analyzer.analyze(packet);
+        PFL_REQUIRE(payload_text.has_value());
+        PFL_EXPECT(packet_text == payload_text);
+    }
+
+    {
+        const auto inner_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 21, 0, 1), ipv4(10, 21, 0, 2), 52100U, 80U, make_http_request_payload(), 0x18U);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_details_vxlan_inner_http.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        expect_effective_transport_payload_kind(session, packet, EffectiveTransportKind::tcp);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("HTTP") != std::string::npos);
+        PFL_EXPECT(text.find("Message Type: Request") != std::string::npos);
+        PFL_EXPECT(text.find("Path: /nested") != std::string::npos);
+        PFL_EXPECT(text.find("Host: nested.example") != std::string::npos);
+    }
+
+    {
+        const auto inner_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 21, 0, 3), ipv4(10, 21, 0, 4), 52101U, 53U, make_dns_query_payload());
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_details_vxlan_inner_dns.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        expect_effective_transport_payload_kind(session, packet, EffectiveTransportKind::udp);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("DNS") != std::string::npos);
+        PFL_EXPECT(text.find("Message Type: Query") != std::string::npos);
+        PFL_EXPECT(text.find("QName: nested.example") != std::string::npos);
+        PFL_EXPECT(text.find("QType: A (1)") != std::string::npos);
+    }
+
+    {
+        const auto inner_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 21, 0, 5),
+            ipv4(10, 21, 0, 6),
+            52102U,
+            52103U,
+            std::vector<std::uint8_t> {0xAAU, 0xBBU, 0xCCU}
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_details_vxlan_inner_unknown_no_direct_fallback.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        expect_effective_transport_payload_kind(session, packet, EffectiveTransportKind::udp);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("DNS") == std::string::npos);
+        PFL_EXPECT(text.find("QUIC") == std::string::npos);
+        PFL_EXPECT(text.find("VXLAN") != std::string::npos);
+        PFL_EXPECT(text.find("VNI") != std::string::npos);
+    }
+
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));

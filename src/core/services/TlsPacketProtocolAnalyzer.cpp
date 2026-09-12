@@ -154,14 +154,7 @@ std::optional<std::string> TlsPacketProtocolAnalyzer::analyze(std::span<const st
     return analyze(packet_bytes, kLinkTypeEthernet);
 }
 
-std::optional<std::string> TlsPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
-    PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
-    if (payload_bytes.empty()) {
-        return std::nullopt;
-    }
-
-    const auto payload = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+std::optional<std::string> TlsPacketProtocolAnalyzer::analyze_payload(std::span<const std::uint8_t> payload) const {
     if (!looks_like_tls_record(payload)) {
         return std::nullopt;
     }
@@ -214,5 +207,10 @@ std::optional<std::string> TlsPacketProtocolAnalyzer::analyze(std::span<const st
     return text.str();
 }
 
-}  // namespace pfl
+std::optional<std::string> TlsPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
+    PacketPayloadService payload_service {};
+    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
+    return analyze_payload(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
+}
 
+}  // namespace pfl
