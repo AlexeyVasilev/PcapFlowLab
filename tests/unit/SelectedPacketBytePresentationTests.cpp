@@ -941,6 +941,52 @@ void run_selected_packet_byte_presentation_tests_impl() {
     }
 
     {
+        const auto inner_dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 11),
+            ipv4(172, 16, 0, 54),
+            53004U,
+            53U,
+            make_dns_query_payload()
+        );
+        const auto captured_packet = make_vxlan_packet(inner_dns_packet);
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_inner_dns_inherited_truncation.pcap",
+            make_classic_pcap_with_captured_lengths({
+                ClassicPcapCapturedRecord {
+                    .ts_usec = 100U,
+                    .captured_bytes = captured_packet,
+                    .original_length = static_cast<std::uint32_t>(captured_packet.size() + 16U),
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_REQUIRE(inner_udp->payload_range.has_value());
+        PFL_REQUIRE(inner_udp->payload_range->declared_length.has_value());
+        PFL_REQUIRE(inner_udp->payload_range->truncated);
+        PFL_EXPECT(inner_udp->payload_range->captured_length == *inner_udp->payload_range->declared_length);
+
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::dns_message) == 1U);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_EXPECT(dns_message->offset == inner_udp->payload_range->offset);
+        PFL_EXPECT(dns_message->captured_length == inner_udp->payload_range->captured_length);
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0x12U);
+        PFL_EXPECT(materialized.bytes[1] == 0x34U);
+        PFL_EXPECT(materialized.bytes[2] == 0x01U);
+        PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
         const auto inner_dns_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
             ipv4(172, 16, 1, 10),
             ipv4(172, 16, 1, 53),

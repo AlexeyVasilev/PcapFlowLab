@@ -1615,13 +1615,19 @@ bool effective_transport_payload_range_matches(
     const EffectiveTransportPayloadDetails& effective_payload
 ) noexcept {
     if (range.offset != effective_payload.payload_offset ||
-        range.captured_length != effective_payload.captured_payload_length ||
-        range.truncated != effective_payload.payload_truncated) {
+        range.captured_length != effective_payload.captured_payload_length) {
         return false;
     }
 
-    return !effective_payload.declared_payload_length.has_value() ||
-           range.declared_length == effective_payload.declared_payload_length;
+    if (!effective_payload.declared_payload_length.has_value()) {
+        return true;
+    }
+    if (range.declared_length != effective_payload.declared_payload_length) {
+        return false;
+    }
+
+    const auto payload_truncated = range.captured_length < *range.declared_length;
+    return payload_truncated == effective_payload.payload_truncated;
 }
 
 std::optional<SelectedPacketByteViewId> resolve_effective_transport_payload_parent_id(
