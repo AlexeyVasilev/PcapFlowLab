@@ -6,6 +6,7 @@
 #include "core/io/LinkType.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
 
 namespace pfl::session_detail {
@@ -1592,6 +1593,69 @@ std::optional<SelectedPacketByteViewId> find_last_view_id(
     return std::nullopt;
 }
 
+bool effective_transport_parent_kind_matches(
+    const SelectedPacketByteViewKind view_kind,
+    const EffectiveTransportKind transport
+) noexcept {
+    switch (transport) {
+    case EffectiveTransportKind::tcp:
+        return view_kind == SelectedPacketByteViewKind::tcp_payload ||
+               view_kind == SelectedPacketByteViewKind::inner_tcp_payload;
+    case EffectiveTransportKind::udp:
+        return view_kind == SelectedPacketByteViewKind::udp_payload ||
+               view_kind == SelectedPacketByteViewKind::inner_udp_payload;
+    case EffectiveTransportKind::unknown:
+    default:
+        return false;
+    }
+}
+
+bool effective_transport_payload_range_matches(
+    const PacketByteRange& range,
+    const EffectiveTransportPayloadDetails& effective_payload
+) noexcept {
+    if (range.offset != effective_payload.payload_offset ||
+        range.captured_length != effective_payload.captured_payload_length) {
+        return false;
+    }
+
+    if (!effective_payload.declared_payload_length.has_value()) {
+        return true;
+    }
+    if (range.declared_length != effective_payload.declared_payload_length) {
+        return false;
+    }
+
+    const auto payload_truncated = range.captured_length < *range.declared_length;
+    return payload_truncated == effective_payload.payload_truncated;
+}
+
+std::optional<SelectedPacketByteViewId> resolve_effective_transport_payload_parent_id(
+    const SelectedPacketBytePresentation& presentation,
+    const EffectiveTransportPayloadDetails& effective_payload
+) {
+    std::optional<SelectedPacketByteViewId> match {};
+
+    for (const auto& view : presentation.views) {
+        if (view.owner_kind != SelectedPacketByteOwnerKind::captured_packet ||
+            !(view.owner_id == kCapturedPacketOwnerId) ||
+            view.role != SelectedPacketByteViewRole::protocol_unit ||
+            view.assembly_kind != SelectedPacketByteAssemblyKind::packet_local ||
+            !effective_transport_parent_kind_matches(view.id.kind, effective_payload.transport) ||
+            !view.payload_range.has_value() ||
+            !effective_transport_payload_range_matches(*view.payload_range, effective_payload)) {
+            continue;
+        }
+
+        if (match.has_value()) {
+            return std::nullopt;
+        }
+        match = view.id;
+    }
+
+    return match;
+}
+
 std::optional<SelectedPacketByteViewId> resolve_packet_data_parent_id(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteBuildOptions& options,
@@ -2363,6 +2427,85 @@ void append_dns_message_view(
     );
 }
 
+void append_effective_transport_dns_message_view(
+    SelectedPacketBytePresentation& presentation,
+    const PacketDetails& details,
+    std::span<const std::uint8_t> packet_bytes,
+    const QuicPresentationResult& quic_presentation
+) {
+    if (!details.effective_transport_payload.has_value()) {
+        return;
+    }
+
+    const auto& effective_payload = *details.effective_transport_payload;
+    if (effective_payload.transport == EffectiveTransportKind::udp &&
+        !quic_presentation.packets.empty()) {
+        return;
+    }
+
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_effective_transport_payload_view(
+        packet_bytes,
+        effective_payload
+    );
+    if (!payload.found || payload.payload.empty()) {
+        return;
+    }
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    const auto dns_message = dns_analyzer.inspect_message_payload(
+        payload.payload,
+        payload.offset
+    );
+    if (!dns_message.has_value()) {
+        return;
+    }
+    if (effective_payload.transport == EffectiveTransportKind::tcp &&
+        !dns_message->tcp_length_prefixed) {
+        return;
+    }
+
+    const auto parent_id = resolve_effective_transport_payload_parent_id(
+        presentation,
+        effective_payload
+    );
+    if (!parent_id.has_value()) {
+        return;
+    }
+
+    if (const auto* parent_view = presentation.find_view(*parent_id); parent_view != nullptr) {
+        append_dns_message_view(presentation, *parent_id, *parent_view, *dns_message);
+    }
+}
+
+void append_direct_dns_message_view(
+    SelectedPacketBytePresentation& presentation,
+    const PacketDetails& details,
+    const PacketRef& packet,
+    std::span<const std::uint8_t> packet_bytes,
+    const QuicPresentationResult& quic_presentation,
+    const std::optional<SelectedPacketByteViewId>& outer_tcp_id,
+    const std::optional<SelectedPacketByteViewId>& outer_udp_id
+) {
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (const auto dns_message = dns_analyzer.inspect_message(packet_bytes, packet.data_link_type);
+        dns_message.has_value()) {
+        if (outer_udp_id.has_value() &&
+            !details.has_vxlan &&
+            !details.has_geneve &&
+            !details.has_gtpu &&
+            quic_presentation.packets.empty()) {
+            if (const auto* udp_view = presentation.find_view(*outer_udp_id); udp_view != nullptr) {
+                append_dns_message_view(presentation, *outer_udp_id, *udp_view, *dns_message);
+            }
+        } else if (outer_tcp_id.has_value() && dns_message->tcp_length_prefixed) {
+            if (const auto* tcp_view = presentation.find_view(*outer_tcp_id); tcp_view != nullptr) {
+                append_dns_message_view(presentation, *outer_tcp_id, *tcp_view, *dns_message);
+            }
+        }
+    }
+}
+
 void append_tls_record_view(
     SelectedPacketBytePresentation& presentation,
     const std::optional<SelectedPacketByteViewId>& parent_id,
@@ -3092,24 +3235,23 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         std::span<const std::optional<SelectedPacketByteViewId>>(quic_packet_ids.data(), quic_packet_ids.size())
     );
 
-    if (!options.packet_bytes.empty()) {
-        DnsPacketProtocolAnalyzer dns_analyzer {};
-        if (const auto dns_message = dns_analyzer.inspect_message(options.packet_bytes, packet.data_link_type);
-            dns_message.has_value()) {
-            if (outer_udp_id.has_value() &&
-                !details.has_vxlan &&
-                !details.has_geneve &&
-                !details.has_gtpu &&
-                quic_presentation_ref.packets.empty()) {
-                if (const auto* udp_view = presentation.find_view(*outer_udp_id); udp_view != nullptr) {
-                    append_dns_message_view(presentation, *outer_udp_id, *udp_view, *dns_message);
-                }
-            } else if (outer_tcp_id.has_value() && dns_message->tcp_length_prefixed) {
-                if (const auto* tcp_view = presentation.find_view(*outer_tcp_id); tcp_view != nullptr) {
-                    append_dns_message_view(presentation, *outer_tcp_id, *tcp_view, *dns_message);
-                }
-            }
-        }
+    if (!options.packet_bytes.empty() && details.effective_transport_payload.has_value()) {
+        append_effective_transport_dns_message_view(
+            presentation,
+            details,
+            options.packet_bytes,
+            quic_presentation_ref
+        );
+    } else if (!options.packet_bytes.empty()) {
+        append_direct_dns_message_view(
+            presentation,
+            details,
+            packet,
+            options.packet_bytes,
+            quic_presentation_ref,
+            outer_tcp_id,
+            outer_udp_id
+        );
     }
 
     if (outer_tcp_id.has_value() && !options.packet_bytes.empty()) {

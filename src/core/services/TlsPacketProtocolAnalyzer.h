@@ -9,6 +9,7 @@ namespace pfl {
 
 class TlsPacketProtocolAnalyzer {
 public:
+    [[nodiscard]] std::optional<std::string> analyze_payload(std::span<const std::uint8_t> payload_bytes) const;
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes, std::uint32_t data_link_type) const;
 };

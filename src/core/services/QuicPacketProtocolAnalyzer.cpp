@@ -740,6 +740,18 @@ std::optional<std::string> QuicPacketProtocolAnalyzer::analyze_udp_payload(std::
     return inspection.has_value() ? std::optional<std::string> {protocol_text_from_datagram(*inspection)} : std::nullopt;
 }
 
+std::optional<std::string> QuicPacketProtocolAnalyzer::analyze_udp_payload(
+    std::span<const std::uint8_t> udp_payload,
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) const {
+    if (!likely_quic_ports(src_port, dst_port)) {
+        return std::nullopt;
+    }
+
+    return analyze_udp_payload(udp_payload);
+}
+
 std::optional<QuicDatagramInspection> QuicPacketProtocolAnalyzer::inspect_udp_payload(
     std::span<const std::uint8_t> udp_payload
 ) const {

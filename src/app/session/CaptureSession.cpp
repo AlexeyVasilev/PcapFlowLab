@@ -32,6 +32,7 @@
 #include <variant>
 
 #include "../../../core/open_context.h"
+#include "core/decode/PacketDecodeSupport.h"
 #include "core/debug_logging.h"
 #include "core/dissection/RuntimeDissection.h"
 #include "core/index/CaptureIndex.h"
@@ -4636,17 +4637,103 @@ std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet
     return hex_dump_service.format(payload_bytes);
 }
 
+std::optional<std::string> analyze_direct_packet_application_protocol_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type
+) {
+    TlsPacketProtocolAnalyzer tls_analyzer {};
+    if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
+        return tls_details;
+    }
+
+    QuicPacketProtocolAnalyzer quic_analyzer {};
+    if (const auto quic_details = quic_analyzer.analyze(packet_bytes, data_link_type); quic_details.has_value()) {
+        return quic_details;
+    }
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (const auto dns_details = dns_analyzer.analyze(packet_bytes, data_link_type); dns_details.has_value()) {
+        return dns_details;
+    }
+
+    HttpPacketProtocolAnalyzer http_analyzer {};
+    return http_analyzer.analyze(packet_bytes, data_link_type);
+}
+
+std::optional<std::pair<std::uint16_t, std::uint16_t>> read_effective_udp_ports(
+    std::span<const std::uint8_t> packet_bytes,
+    const EffectiveTransportPayloadDetails& effective_payload
+) {
+    if (effective_payload.transport != EffectiveTransportKind::udp) {
+        return std::nullopt;
+    }
+
+    const auto transport_header_offset = static_cast<std::size_t>(effective_payload.transport_header_offset);
+    if (transport_header_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    return std::pair<std::uint16_t, std::uint16_t> {
+        detail::read_be16(packet_bytes, transport_header_offset),
+        detail::read_be16(packet_bytes, transport_header_offset + 2U),
+    };
+}
+
+std::optional<std::string> analyze_effective_packet_application_protocol_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketDetails& details
+) {
+    if (!details.effective_transport_payload.has_value()) {
+        return std::nullopt;
+    }
+
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_effective_transport_payload_view(
+        packet_bytes,
+        *details.effective_transport_payload
+    );
+    if (!payload.found || payload.payload.empty()) {
+        return std::nullopt;
+    }
+
+    TlsPacketProtocolAnalyzer tls_analyzer {};
+    if (const auto tls_details = tls_analyzer.analyze_payload(payload.payload); tls_details.has_value()) {
+        return tls_details;
+    }
+
+    if (details.effective_transport_payload->transport == EffectiveTransportKind::udp) {
+        if (const auto udp_ports = read_effective_udp_ports(packet_bytes, *details.effective_transport_payload);
+            udp_ports.has_value()) {
+            QuicPacketProtocolAnalyzer quic_analyzer {};
+            if (const auto quic_details =
+                    quic_analyzer.analyze_udp_payload(payload.payload, udp_ports->first, udp_ports->second);
+                quic_details.has_value()) {
+                return quic_details;
+            }
+        }
+    }
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (const auto dns_details = dns_analyzer.analyze_payload(payload.payload, payload.offset); dns_details.has_value()) {
+        return dns_details;
+    }
+
+    HttpPacketProtocolAnalyzer http_analyzer {};
+    return http_analyzer.analyze_payload(payload.payload);
+}
+
 std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& packet) const {
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {
         return std::string {kUnavailableProtocolDetailsMessage};
     }
+    const auto packet_bytes = std::span<const std::uint8_t>(bytes.data(), bytes.size());
 
     PacketDetailsService details_service {};
     const auto details = details_service.decode_best_effort(bytes, packet);
     if (details.has_value() &&
         session_detail::derive_ip_fragmentation_state_from_packet_details(
-            std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+            packet_bytes,
             packet,
             *details
         ).value_or(false)) {
@@ -4662,24 +4749,14 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return std::string {kNoProtocolDetailsMessage};
     }
 
-    TlsPacketProtocolAnalyzer tls_analyzer {};
-    if (const auto tls_details = tls_analyzer.analyze(bytes, packet.data_link_type); tls_details.has_value()) {
-        return *tls_details;
-    }
-
-    QuicPacketProtocolAnalyzer quic_analyzer {};
-    if (const auto quic_details = quic_analyzer.analyze(bytes, packet.data_link_type); quic_details.has_value()) {
-        return *quic_details;
-    }
-
-    DnsPacketProtocolAnalyzer dns_analyzer {};
-    if (const auto dns_details = dns_analyzer.analyze(bytes, packet.data_link_type); dns_details.has_value()) {
-        return *dns_details;
-    }
-
-    HttpPacketProtocolAnalyzer http_analyzer {};
-    if (const auto http_details = http_analyzer.analyze(bytes, packet.data_link_type); http_details.has_value()) {
-        return *http_details;
+    if (details.has_value() && details->effective_transport_payload.has_value()) {
+        if (const auto protocol_details = analyze_effective_packet_application_protocol_details(packet_bytes, *details);
+            protocol_details.has_value()) {
+            return *protocol_details;
+        }
+    } else if (const auto protocol_details = analyze_direct_packet_application_protocol_details(packet_bytes, packet.data_link_type);
+               protocol_details.has_value()) {
+        return *protocol_details;
     }
 
     if (const auto details = details_service.decode(bytes, packet); details.has_value()) {
