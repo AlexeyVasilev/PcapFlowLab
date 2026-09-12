@@ -32,6 +32,7 @@
 #include <variant>
 
 #include "../../../core/open_context.h"
+#include "core/decode/PacketDecodeSupport.h"
 #include "core/debug_logging.h"
 #include "core/dissection/RuntimeDissection.h"
 #include "core/index/CaptureIndex.h"
@@ -4659,6 +4660,25 @@ std::optional<std::string> analyze_direct_packet_application_protocol_details(
     return http_analyzer.analyze(packet_bytes, data_link_type);
 }
 
+std::optional<std::pair<std::uint16_t, std::uint16_t>> read_effective_udp_ports(
+    std::span<const std::uint8_t> packet_bytes,
+    const EffectiveTransportPayloadDetails& effective_payload
+) {
+    if (effective_payload.transport != EffectiveTransportKind::udp) {
+        return std::nullopt;
+    }
+
+    const auto transport_header_offset = static_cast<std::size_t>(effective_payload.transport_header_offset);
+    if (transport_header_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    return std::pair<std::uint16_t, std::uint16_t> {
+        detail::read_be16(packet_bytes, transport_header_offset),
+        detail::read_be16(packet_bytes, transport_header_offset + 2U),
+    };
+}
+
 std::optional<std::string> analyze_effective_packet_application_protocol_details(
     std::span<const std::uint8_t> packet_bytes,
     const PacketDetails& details
@@ -4682,9 +4702,14 @@ std::optional<std::string> analyze_effective_packet_application_protocol_details
     }
 
     if (details.effective_transport_payload->transport == EffectiveTransportKind::udp) {
-        QuicPacketProtocolAnalyzer quic_analyzer {};
-        if (const auto quic_details = quic_analyzer.analyze_udp_payload(payload.payload); quic_details.has_value()) {
-            return quic_details;
+        if (const auto udp_ports = read_effective_udp_ports(packet_bytes, *details.effective_transport_payload);
+            udp_ports.has_value()) {
+            QuicPacketProtocolAnalyzer quic_analyzer {};
+            if (const auto quic_details =
+                    quic_analyzer.analyze_udp_payload(payload.payload, udp_ports->first, udp_ports->second);
+                quic_details.has_value()) {
+                return quic_details;
+            }
         }
     }
 

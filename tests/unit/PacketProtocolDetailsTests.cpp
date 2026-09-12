@@ -743,6 +743,58 @@ void run_packet_protocol_details_tests() {
     }
 
     {
+        const auto quic_payload = make_plaintext_quic_initial_payload(
+            make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())
+        );
+        QuicPacketProtocolAnalyzer analyzer {};
+        PFL_REQUIRE(analyzer.analyze_udp_payload(quic_payload).has_value());
+
+        const auto inner_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 21, 0, 7),
+            ipv4(10, 21, 0, 8),
+            52104U,
+            52105U,
+            quic_payload
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_details_vxlan_inner_quic_shape_non_443.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        expect_effective_transport_payload_kind(session, packet, EffectiveTransportKind::udp);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("QUIC") == std::string::npos);
+        PFL_EXPECT(text.find("VXLAN") != std::string::npos);
+    }
+
+    {
+        const auto quic_payload = make_plaintext_quic_initial_payload(
+            make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())
+        );
+        const auto inner_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 21, 0, 9),
+            ipv4(10, 21, 0, 10),
+            52106U,
+            443U,
+            quic_payload
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_details_vxlan_inner_quic_443.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        expect_effective_transport_payload_kind(session, packet, EffectiveTransportKind::udp);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("QUIC") != std::string::npos);
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
