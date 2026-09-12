@@ -155,6 +155,19 @@ std::vector<std::uint8_t> make_vxlan_packet(
     );
 }
 
+std::vector<std::uint8_t> make_vxlan_unsupported_inner_frame_with_dns_shape() {
+    std::vector<std::uint8_t> inner_frame {
+        0x00U, 0x00U, 0x00U, 0x00U,
+        0x03U, 'a', 'p', 'i',
+        0x07U, 'e', 'x', 'a',
+        'm', 'p', 'l', 'e',
+        0x00U,
+        0x00U, 0x01U,
+        0x00U, 0x01U,
+    };
+    return inner_frame;
+}
+
 const SelectedPacketByteViewDescriptor* require_view_in_scope(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewKind kind,
@@ -993,6 +1006,32 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
         PFL_REQUIRE(require_view(quic_precedence_presentation, SelectedPacketByteViewKind::inner_udp_payload) != nullptr);
         PFL_EXPECT(find_view(quic_precedence_presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_top_level_udp_no_dns.pcap",
+            make_classic_pcap({{
+                100U,
+                make_vxlan_packet(make_vxlan_unsupported_inner_frame_with_dns_shape(), 0x000100U)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vxlan);
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::top_level);
+
+        const auto presentation = require_presentation(session, packet);
+        PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::udp_payload) != nullptr);
+        PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::vxlan_payload) != nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_udp_payload) == nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
     }
 
     {

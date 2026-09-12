@@ -2438,9 +2438,14 @@ void append_effective_transport_dns_message_view(
     }
 
     const auto& effective_payload = *details.effective_transport_payload;
-    if (effective_payload.transport == EffectiveTransportKind::udp &&
-        !quic_presentation.packets.empty()) {
-        return;
+    if (effective_payload.transport == EffectiveTransportKind::udp) {
+        if (!quic_presentation.packets.empty()) {
+            return;
+        }
+        if (effective_payload.role == EffectiveTransportRole::top_level &&
+            (details.has_vxlan || details.has_geneve || details.has_gtpu)) {
+            return;
+        }
     }
 
     PacketPayloadService payload_service {};

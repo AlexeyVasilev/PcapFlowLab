@@ -319,6 +319,36 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
         return tls_disposition;
     }
 
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        if (effective_payload.transport == EffectiveTransportKind::udp) {
+            if (options.dns_summary_presentation_kind.has_value() &&
+                details.dns_message.has_value() &&
+                details.dns_message->status != DnsInspectionStatus::not_enough_header) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
+
+            DnsPacketProtocolAnalyzer dns_analyzer {};
+            if (dns_analyzer.analyze_payload(
+                    options.transport_payload_bytes,
+                    static_cast<std::size_t>(effective_payload.payload_offset)
+                ).has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
+            return TransportPayloadDisposition::none;
+        }
+
+        if (effective_payload.transport == EffectiveTransportKind::tcp) {
+            HttpPacketProtocolAnalyzer http_analyzer {};
+            if (http_analyzer.analyze_payload(options.transport_payload_bytes).has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
+            return TransportPayloadDisposition::none;
+        }
+
+        return TransportPayloadDisposition::none;
+    }
+
     if (details.has_udp) {
         if (options.dns_summary_presentation_kind.has_value() &&
             details.dns_message.has_value() &&
