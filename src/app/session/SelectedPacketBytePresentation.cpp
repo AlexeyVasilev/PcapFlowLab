@@ -2431,14 +2431,18 @@ void append_effective_transport_dns_message_view(
     SelectedPacketBytePresentation& presentation,
     const PacketDetails& details,
     std::span<const std::uint8_t> packet_bytes,
-    const QuicPresentationResult& quic_presentation,
-    const std::optional<SelectedPacketByteViewId>& outer_udp_id
+    const QuicPresentationResult& quic_presentation
 ) {
     if (!details.effective_transport_payload.has_value()) {
         return;
     }
 
     const auto& effective_payload = *details.effective_transport_payload;
+    if (effective_payload.transport == EffectiveTransportKind::udp &&
+        !quic_presentation.packets.empty()) {
+        return;
+    }
+
     PacketPayloadService payload_service {};
     const auto payload = payload_service.extract_effective_transport_payload_view(
         packet_bytes,
@@ -2466,11 +2470,6 @@ void append_effective_transport_dns_message_view(
         effective_payload
     );
     if (!parent_id.has_value()) {
-        return;
-    }
-    if (outer_udp_id.has_value() &&
-        *parent_id == *outer_udp_id &&
-        !quic_presentation.packets.empty()) {
         return;
     }
 
@@ -3241,8 +3240,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             presentation,
             details,
             options.packet_bytes,
-            quic_presentation_ref,
-            outer_udp_id
+            quic_presentation_ref
         );
     } else if (!options.packet_bytes.empty()) {
         append_direct_dns_message_view(

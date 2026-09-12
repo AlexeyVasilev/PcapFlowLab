@@ -942,6 +942,61 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         const auto inner_dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 12),
+            ipv4(172, 16, 0, 55),
+            53005U,
+            53U,
+            make_dns_query_payload()
+        );
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_vxlan_inner_dns_suppressed_by_quic.pcap",
+            make_classic_pcap({{100U, make_vxlan_packet(inner_dns_packet)}})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+
+        const auto dns_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+            }
+        );
+        const auto* inner_udp = require_view(dns_presentation, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_REQUIRE(inner_udp->payload_range.has_value());
+        const auto* dns_message = require_view(dns_presentation, SelectedPacketByteViewKind::dns_message);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::inner_udp_payload);
+
+        session_detail::QuicPresentationResult quic_presentation {};
+        quic_presentation.shell_type = session_detail::QuicPresentationShellType::initial;
+        quic_presentation.packets.push_back(session_detail::QuicPresentationPacket {
+            .shell_type = session_detail::QuicPresentationShellType::initial,
+            .packet_bytes_consumed = inner_udp->payload_range->captured_length,
+        });
+
+        const auto quic_precedence_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+                .quic_presentation = quic_presentation,
+            }
+        );
+
+        PFL_REQUIRE(require_view(quic_precedence_presentation, SelectedPacketByteViewKind::inner_udp_payload) != nullptr);
+        PFL_EXPECT(find_view(quic_precedence_presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
+    }
+
+    {
+        const auto inner_dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
             ipv4(172, 16, 0, 11),
             ipv4(172, 16, 0, 54),
             53004U,
