@@ -714,6 +714,25 @@ std::string build_frontend_packet_summary_text(
         top_level_summary_accepts_payload_lengths
             ? metadata.original_transport_payload_length
             : std::optional<std::uint32_t> {};
+    const auto append_top_level_payload_length_lines = [&](
+        std::vector<std::string>& section_lines
+    ) {
+        const bool has_captured_payload_length = top_level_captured_payload_length.has_value();
+        const bool has_original_payload_length = top_level_original_payload_length.has_value();
+        const auto captured_payload_length = top_level_captured_payload_length.value_or(0U);
+        const auto original_payload_length = top_level_original_payload_length.value_or(0U);
+
+        if (has_original_payload_length) {
+            if (has_captured_payload_length && captured_payload_length != original_payload_length) {
+                section_lines.push_back("Real Payload Length: " + std::to_string(captured_payload_length));
+                section_lines.push_back("Original Payload Length: " + std::to_string(original_payload_length));
+            } else {
+                section_lines.push_back("Payload Length: " + std::to_string(original_payload_length));
+            }
+        } else if (has_captured_payload_length) {
+            section_lines.push_back("Payload Length: " + std::to_string(captured_payload_length));
+        }
+    };
 
     if (details->has_tcp) {
         auto tcp_lines = std::vector<std::string> {
@@ -721,17 +740,7 @@ std::string build_frontend_packet_summary_text(
             "Destination Port: " + std::to_string(details->tcp.dst_port),
             "Flags: " + session_detail::format_tcp_flags_text(details->tcp.flags),
         };
-        if (top_level_original_payload_length.has_value()) {
-            if (top_level_captured_payload_length.has_value() &&
-                *top_level_captured_payload_length != *top_level_original_payload_length) {
-                tcp_lines.push_back("Real Payload Length: " + std::to_string(*top_level_captured_payload_length));
-                tcp_lines.push_back("Original Payload Length: " + std::to_string(*top_level_original_payload_length));
-            } else {
-                tcp_lines.push_back("Payload Length: " + std::to_string(*top_level_original_payload_length));
-            }
-        } else if (top_level_captured_payload_length.has_value()) {
-            tcp_lines.push_back("Payload Length: " + std::to_string(*top_level_captured_payload_length));
-        }
+        append_top_level_payload_length_lines(tcp_lines);
         append_summary_section(lines, "TCP", tcp_lines);
     }
 
@@ -740,17 +749,7 @@ std::string build_frontend_packet_summary_text(
             "Source Port: " + std::to_string(details->udp.src_port),
             "Destination Port: " + std::to_string(details->udp.dst_port),
         };
-        if (top_level_original_payload_length.has_value()) {
-            if (top_level_captured_payload_length.has_value() &&
-                *top_level_captured_payload_length != *top_level_original_payload_length) {
-                udp_lines.push_back("Real Payload Length: " + std::to_string(*top_level_captured_payload_length));
-                udp_lines.push_back("Original Payload Length: " + std::to_string(*top_level_original_payload_length));
-            } else {
-                udp_lines.push_back("Payload Length: " + std::to_string(*top_level_original_payload_length));
-            }
-        } else if (top_level_captured_payload_length.has_value()) {
-            udp_lines.push_back("Payload Length: " + std::to_string(*top_level_captured_payload_length));
-        }
+        append_top_level_payload_length_lines(udp_lines);
         append_summary_section(lines, "UDP", udp_lines);
     }
 

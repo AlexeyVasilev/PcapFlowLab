@@ -239,6 +239,40 @@ std::optional<HttpPacketMessageView> parse_http_message(const std::string_view p
     return std::nullopt;
 }
 
+std::optional<std::string> format_http_message_text(const HttpPacketMessageView& message) {
+    std::ostringstream text {};
+    text << "HTTP\n";
+
+    if (message.message_type == HttpPacketMessageType::request) {
+        text << "  Message Type: Request\n"
+             << "  Method: " << message.method << "\n"
+             << "  Path: " << message.path << "\n"
+             << "  Version: " << message.version;
+
+        if (!message.host.empty()) {
+            text << "\n"
+                 << "  Host: " << message.host;
+        }
+
+        return text.str();
+    }
+
+    if (message.message_type == HttpPacketMessageType::response) {
+        text << "  Message Type: Response\n"
+             << "  Version: " << message.version << "\n"
+             << "  Status Code: " << message.status_code;
+
+        if (!message.reason.empty()) {
+            text << "\n"
+                 << "  Reason: " << message.reason;
+        }
+
+        return text.str();
+    }
+
+    return std::nullopt;
+}
+
 }  // namespace
 
 std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message(
@@ -270,43 +304,22 @@ std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const s
     return analyze(packet_bytes, kLinkTypeEthernet);
 }
 
+std::optional<std::string> HttpPacketProtocolAnalyzer::analyze_payload(std::span<const std::uint8_t> payload_bytes) const {
+    const auto message = inspect_message_payload(payload_bytes);
+    if (!message.has_value()) {
+        return std::nullopt;
+    }
+
+    return format_http_message_text(*message);
+}
+
 std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
     const auto message = inspect_message(packet_bytes, data_link_type);
     if (!message.has_value()) {
         return std::nullopt;
     }
 
-    std::ostringstream text {};
-    text << "HTTP\n";
-
-    if (message->message_type == HttpPacketMessageType::request) {
-        text << "  Message Type: Request\n"
-             << "  Method: " << message->method << "\n"
-             << "  Path: " << message->path << "\n"
-             << "  Version: " << message->version;
-
-        if (!message->host.empty()) {
-            text << "\n"
-                 << "  Host: " << message->host;
-        }
-
-        return text.str();
-    }
-
-    if (message->message_type == HttpPacketMessageType::response) {
-        text << "  Message Type: Response\n"
-             << "  Version: " << message->version << "\n"
-             << "  Status Code: " << message->status_code;
-
-        if (!message->reason.empty()) {
-            text << "\n"
-                 << "  Reason: " << message->reason;
-        }
-
-        return text.str();
-    }
-
-    return std::nullopt;
+    return format_http_message_text(*message);
 }
 
 }  // namespace pfl

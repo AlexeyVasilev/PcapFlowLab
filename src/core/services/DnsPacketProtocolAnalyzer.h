@@ -32,6 +32,10 @@ public:
         std::span<const std::uint8_t> packet_bytes,
         std::uint32_t data_link_type
     ) const;
+    [[nodiscard]] std::optional<std::string> analyze_payload(
+        std::span<const std::uint8_t> payload_bytes,
+        std::size_t payload_offset = 0U
+    ) const;
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes, std::uint32_t data_link_type) const;
 };

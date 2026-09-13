@@ -145,6 +145,25 @@ std::string qtype_text(const std::uint16_t qtype) {
     }
 }
 
+std::string format_dns_message_text(const DnsPacketMessageView& message) {
+    std::ostringstream text {};
+    text << "DNS\n"
+         << "  Message Type: " << (message.is_response ? "Response" : "Query") << "\n"
+         << "  Transaction ID: 0x" << std::hex << std::uppercase << message.transaction_id << std::dec << "\n"
+         << "  Questions: " << message.question_count << "\n"
+         << "  Answers: " << message.answer_count;
+
+    if (message.query_name != ".") {
+        text << "\n"
+             << "  QName: " << message.query_name;
+    }
+
+    text << "\n"
+         << "  QType: " << qtype_text(message.query_type);
+
+    return text.str();
+}
+
 }  // namespace
 
 std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {
@@ -227,22 +246,19 @@ std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(
         return std::nullopt;
     }
 
-    std::ostringstream text {};
-    text << "DNS\n"
-         << "  Message Type: " << (message->is_response ? "Response" : "Query") << "\n"
-         << "  Transaction ID: 0x" << std::hex << std::uppercase << message->transaction_id << std::dec << "\n"
-         << "  Questions: " << message->question_count << "\n"
-         << "  Answers: " << message->answer_count;
+    return format_dns_message_text(*message);
+}
 
-    if (message->query_name != ".") {
-        text << "\n"
-             << "  QName: " << message->query_name;
+std::optional<std::string> DnsPacketProtocolAnalyzer::analyze_payload(
+    std::span<const std::uint8_t> payload_bytes,
+    const std::size_t payload_offset
+) const {
+    const auto message = inspect_message_payload(payload_bytes, payload_offset);
+    if (!message.has_value()) {
+        return std::nullopt;
     }
 
-    text << "\n"
-         << "  QType: " << qtype_text(message->query_type);
-
-    return text.str();
+    return format_dns_message_text(*message);
 }
 
 }  // namespace pfl

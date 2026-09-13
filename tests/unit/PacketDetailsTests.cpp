@@ -76,13 +76,37 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     return bytes;
 }
 
-std::vector<std::uint8_t> make_vxlan_payload(const std::vector<std::uint8_t>& inner_ethernet_frame) {
+std::vector<std::uint8_t> make_vxlan_payload(
+    const std::vector<std::uint8_t>& inner_ethernet_frame,
+    const std::uint32_t vni = 0x00002aU
+) {
     std::vector<std::uint8_t> bytes {
         0x08U, 0x00U, 0x00U, 0x00U,
-        0x00U, 0x00U, 0x2aU, 0x00U,
+        static_cast<std::uint8_t>((vni >> 16U) & 0xFFU),
+        static_cast<std::uint8_t>((vni >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(vni & 0xFFU),
+        0x00U,
     };
     bytes.insert(bytes.end(), inner_ethernet_frame.begin(), inner_ethernet_frame.end());
     return bytes;
+}
+
+std::vector<std::uint8_t> make_vxlan_inner_frame_with_dns_shaped_header(
+    std::vector<std::uint8_t> inner_ethernet_frame
+) {
+    inner_ethernet_frame[0] = 0x00U;
+    inner_ethernet_frame[1] = 0x00U;
+    inner_ethernet_frame[2] = 0x00U;
+    inner_ethernet_frame[3] = 0x00U;
+    inner_ethernet_frame[4] = 0xc0U;
+    inner_ethernet_frame[5] = 0x12U;
+    inner_ethernet_frame[6] = 0x00U;
+    inner_ethernet_frame[7] = 0x01U;
+    inner_ethernet_frame[8] = 0x00U;
+    inner_ethernet_frame[9] = 0x01U;
+    inner_ethernet_frame[10] = 0x00U;
+    inner_ethernet_frame[11] = 0x00U;
+    return inner_ethernet_frame;
 }
 
 void append_extension(
@@ -2790,6 +2814,73 @@ void run_packet_details_tests() {
         PFL_REQUIRE(find_summary_layer(summary_layers, "tcp-inner") != nullptr);
         PFL_REQUIRE(find_summary_layer(summary_layers, "http") != nullptr);
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const std::string_view expected_udp_data_text = "INNER-UDP-DATA-NOT-DNS";
+        const std::vector<std::uint8_t> expected_udp_data(
+            expected_udp_data_text.begin(),
+            expected_udp_data_text.end()
+        );
+        const auto inner_data_packet = make_vxlan_inner_frame_with_dns_shaped_header(
+            make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                ipv4(172, 16, 2, 30),
+                ipv4(172, 16, 2, 31),
+                53030,
+                53031,
+                expected_udp_data
+            )
+        );
+        const auto outer_vxlan_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(192, 0, 2, 30),
+            ipv4(198, 51, 100, 30),
+            40030,
+            4789,
+            make_vxlan_payload(inner_data_packet, 0x000100U)
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_summary_vxlan_inner_udp_ignores_outer_dns_shape.pcap",
+            make_classic_pcap({{100U, outer_vxlan_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vxlan);
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(!details->has_dns);
+
+        const auto flow_context = resolve_selected_packet_flow_context(session, packet);
+        const auto packet_summary_preparation = prepare_selected_packet_summary_with_production_lengths(
+            session,
+            *details,
+            packet,
+            flow_context.flow_index,
+            flow_context.flow_packet_index,
+            flow_context.loaded_packet_window_count
+        );
+        PFL_EXPECT(packet_summary_preparation.transport_payload == expected_udp_data);
+        PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
+        PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==
+            session_detail::TransportPayloadDisposition::unclaimed_data);
+        PFL_EXPECT(packet_summary_preparation.packet_data->placement ==
+            session_detail::PacketDataPlacement::after_inner_udp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(
+            *details,
+            packet,
+            packet_summary_preparation.make_options()
+        );
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "udp-inner") != nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "dns") == nullptr);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Status") == "Complete");
     }
 
     {

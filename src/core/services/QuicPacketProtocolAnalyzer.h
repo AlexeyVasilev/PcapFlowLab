@@ -52,6 +52,11 @@ public:
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<std::string> analyze(std::span<const std::uint8_t> packet_bytes, std::uint32_t data_link_type) const;
     [[nodiscard]] std::optional<std::string> analyze_udp_payload(std::span<const std::uint8_t> udp_payload) const;
+    [[nodiscard]] std::optional<std::string> analyze_udp_payload(
+        std::span<const std::uint8_t> udp_payload,
+        std::uint16_t src_port,
+        std::uint16_t dst_port
+    ) const;
     [[nodiscard]] std::optional<QuicDatagramInspection> inspect(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<QuicDatagramInspection> inspect(
         std::span<const std::uint8_t> packet_bytes,
