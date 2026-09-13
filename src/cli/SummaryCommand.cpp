@@ -528,6 +528,7 @@ FrontendOverviewDto build_fast_v16_overview(
     };
     if (!header.source_capture_path_utf8.empty()) {
         input_metadata.source_capture_path = source_info.capture_path.string();
+        input_metadata.source_capture_file_size = source_info.file_size;
     }
 
     return FrontendOverviewDto {

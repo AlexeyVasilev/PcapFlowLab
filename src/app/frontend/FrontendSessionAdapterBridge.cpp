@@ -1748,6 +1748,13 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         out << "null";
     }
     out << ','
+        << "\"source_capture_file_size\":";
+    if (overview.input_metadata.source_capture_file_size.has_value()) {
+        out << *overview.input_metadata.source_capture_file_size;
+    } else {
+        out << "null";
+    }
+    out << ','
         << "\"source_capture_accessible\":" << bool_json(overview.input_metadata.source_capture_accessible)
         << "},"
         << "\"capture_time\":" << capture_time_statistics_json(overview.capture_time) << ','

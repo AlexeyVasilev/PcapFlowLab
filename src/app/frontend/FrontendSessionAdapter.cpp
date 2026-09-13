@@ -284,6 +284,7 @@ FrontendInputMetadataDto build_frontend_input_metadata(const CaptureSession& ses
 
     if (session.opened_from_index() && !session.expected_source_capture_path().empty()) {
         metadata.source_capture_path = path_to_string(session.expected_source_capture_path());
+        metadata.source_capture_file_size = session.source_info().file_size;
     }
 
     return metadata;

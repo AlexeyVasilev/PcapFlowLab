@@ -177,6 +177,7 @@ FrontendInputMetadataDto build_statistics_report_input_metadata(const CaptureSes
 
     if (session.opened_from_index() && !session.expected_source_capture_path().empty()) {
         metadata.source_capture_path = path_to_report_string(session.expected_source_capture_path());
+        metadata.source_capture_file_size = session.source_info().file_size;
     }
 
     return metadata;

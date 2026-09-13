@@ -581,6 +581,16 @@ pub struct TopPortDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputMetadataDto {
+    pub input_path: String,
+    pub input_kind: String,
+    pub input_file_size: u64,
+    pub source_capture_path: Option<String>,
+    pub source_capture_file_size: Option<u64>,
+    pub source_capture_accessible: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopFlowDto {
     pub flow_index: usize,
     pub flow_index_text: String,
@@ -749,6 +759,7 @@ pub struct OverviewDto {
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub whole_capture_totals: WholeCaptureTotalsDto,
+    pub input_metadata: InputMetadataDto,
     pub capture_time: CaptureTimeStatisticsDto,
     pub capture_metrics: CaptureMetricsDto,
     pub flow_characteristics: FlowCharacteristicsDto,

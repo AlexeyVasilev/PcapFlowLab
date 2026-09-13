@@ -1492,6 +1492,11 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(markdown, "| Generated at |"));
     PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
     PFL_EXPECT(!contains_text(markdown, "| Index revision |"));
+    PFL_EXPECT(contains_text(markdown, "| Input type | PCAP |"));
+    PFL_EXPECT(contains_text(markdown, "| Capture path |"));
+    PFL_EXPECT(contains_text(markdown, "| Capture file size |"));
+    PFL_EXPECT(!contains_text(markdown, "Input file size"));
+    PFL_EXPECT(!contains_text(markdown, "Index file size"));
     PFL_EXPECT(contains_text(markdown, "### Transport"));
     PFL_EXPECT(contains_text(markdown, "### IP Family"));
     PFL_EXPECT(contains_text(markdown, "### QUIC Recognition"));
@@ -1524,6 +1529,11 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(html, "<th>Client</th><td>CLI</td>"));
     PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
     PFL_EXPECT(!contains_text(html, "<th>Index revision</th>"));
+    PFL_EXPECT(contains_text(html, "<th>Input type</th><td>PCAP</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Capture path</th><td>"));
+    PFL_EXPECT(contains_text(html, "<th>Capture file size</th><td>"));
+    PFL_EXPECT(!contains_text(html, "Input file size"));
+    PFL_EXPECT(!contains_text(html, "Index file size"));
     PFL_EXPECT(contains_text(html, "<h3>Transport</h3>"));
     PFL_EXPECT(contains_text(html, "<h3>IP Family</h3>"));
     PFL_EXPECT(contains_text(html, "<h3>QUIC Recognition</h3>"));
@@ -1592,7 +1602,11 @@ void expect_statistics_report_side_output_contracts() {
 
     const auto index_markdown = read_text_file(index_markdown_path);
     PFL_EXPECT(contains_text(index_markdown, "PcapFlowLab Index"));
-    PFL_EXPECT(contains_text(index_markdown, "Recorded source capture"));
+    PFL_EXPECT(contains_text(index_markdown, "Index file size"));
+    PFL_EXPECT(contains_text(index_markdown, "Source capture path"));
+    PFL_EXPECT(contains_text(index_markdown, "Source capture file size"));
+    PFL_EXPECT(contains_text(index_markdown, "Source capture status"));
+    PFL_EXPECT(!contains_text(index_markdown, "Input file size"));
     PFL_EXPECT(contains_text(index_markdown, "| Client | CLI |"));
     PFL_EXPECT(contains_text(index_markdown, "| Statistics scope | Complete |"));
     PFL_EXPECT(contains_text(index_markdown, "| Index revision |"));

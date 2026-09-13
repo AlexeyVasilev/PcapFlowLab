@@ -4932,7 +4932,11 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!index_report_controller.statusIsError());
         const auto index_markdown_report = read_text_file_text(index_markdown_report_path);
         UI_EXPECT(contains_text(index_markdown_report, "PcapFlowLab Index"));
-        UI_EXPECT(contains_text(index_markdown_report, "Recorded source capture"));
+        UI_EXPECT(contains_text(index_markdown_report, "Index file size"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture path"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture file size"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture status"));
+        UI_EXPECT(!contains_text(index_markdown_report, "Input file size"));
         UI_EXPECT(contains_text(index_markdown_report, "| Client | Qt |"));
         UI_EXPECT(contains_text(index_markdown_report, "| Statistics scope | Complete |"));
         UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));

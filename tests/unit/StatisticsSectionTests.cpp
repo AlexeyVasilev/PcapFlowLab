@@ -1597,6 +1597,7 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(overview.input_metadata.input_path == capture_path.string());
     PFL_EXPECT(overview.input_metadata.input_file_size == std::filesystem::file_size(capture_path));
     PFL_EXPECT(!overview.input_metadata.source_capture_path.has_value());
+    PFL_EXPECT(!overview.input_metadata.source_capture_file_size.has_value());
     PFL_EXPECT(overview.input_metadata.source_capture_accessible);
     PFL_EXPECT(overview.protocol_summary.tcp.flow_count == 1U);
     PFL_EXPECT(overview.protocol_summary.udp.flow_count == 2U);
@@ -2062,6 +2063,7 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(raw_overview.input_metadata.input_path == capture_path.string());
     PFL_EXPECT(raw_overview.input_metadata.input_file_size == std::filesystem::file_size(capture_path));
     PFL_EXPECT(!raw_overview.input_metadata.source_capture_path.has_value());
+    PFL_EXPECT(!raw_overview.input_metadata.source_capture_file_size.has_value());
     PFL_EXPECT(raw_overview.input_metadata.source_capture_accessible);
     PFL_EXPECT(raw_overview.whole_capture_totals.packet_count == 2U);
     PFL_EXPECT(raw_overview.whole_capture_totals.packet_count > raw_overview.summary.packet_count);
@@ -2089,6 +2091,8 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(indexed_overview.input_metadata.input_file_size == std::filesystem::file_size(index_path));
     PFL_REQUIRE(indexed_overview.input_metadata.source_capture_path.has_value());
     PFL_EXPECT(*indexed_overview.input_metadata.source_capture_path == capture_path.string());
+    PFL_REQUIRE(indexed_overview.input_metadata.source_capture_file_size.has_value());
+    PFL_EXPECT(*indexed_overview.input_metadata.source_capture_file_size == raw_overview.input_metadata.input_file_size);
     PFL_EXPECT(!indexed_overview.input_metadata.source_capture_accessible);
     PFL_EXPECT(indexed_overview.whole_capture_totals.packet_count == raw_overview.whole_capture_totals.packet_count);
     PFL_EXPECT(indexed_overview.whole_capture_totals.captured_bytes == raw_overview.whole_capture_totals.captured_bytes);
@@ -2138,6 +2142,7 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(pcapng_overview.input_metadata.input_kind == FrontendInputKind::pcapng);
     PFL_EXPECT(pcapng_overview.input_metadata.input_path == pcapng_path.string());
     PFL_EXPECT(pcapng_overview.input_metadata.input_file_size == std::filesystem::file_size(pcapng_path));
+    PFL_EXPECT(!pcapng_overview.input_metadata.source_capture_file_size.has_value());
 }
 
 void expect_statistics_overview_marks_partial_open_runtime_state() {
@@ -2436,6 +2441,7 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"original_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_metadata\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_kind\":\"pcap\""));
+    PFL_EXPECT(contains_text(overview_json, "\"source_capture_file_size\":null"));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));
     PFL_EXPECT(!contains_text(overview_json, "\"protocol_hints\""));
     PFL_EXPECT(!contains_text(overview_json, "\"quic_recognition\""));
@@ -2443,6 +2449,24 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(!contains_text(overview_json, "\"top_endpoints\""));
     PFL_EXPECT(!contains_text(overview_json, "\"top_ports\""));
     PFL_EXPECT(!contains_text(overview_json, "\"top_flows\""));
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_statistics_sections_bridge_json.idx";
+    std::filesystem::remove(index_path);
+    const auto save_index_json = take_bridge_string(
+        pfl_frontend_session_adapter_save_index_json(handle, index_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(save_index_json, "\"saved\":true"));
+    const auto index_open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(handle, index_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(index_open_json, "\"opened\":true"));
+    const auto index_overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
+    PFL_EXPECT(contains_text(index_overview_json, "\"input_kind\":\"index\""));
+    PFL_EXPECT(contains_text(
+        index_overview_json,
+        std::string {"\"source_capture_file_size\":"} +
+            std::to_string(static_cast<std::uint64_t>(std::filesystem::file_size(capture_path)))
+    ));
 
     const auto hints_json = take_bridge_string(pfl_frontend_session_adapter_get_protocol_hint_statistics_json(handle));
     PFL_EXPECT(contains_text(hints_json, "\"protocol_hints\""));
@@ -2503,8 +2527,9 @@ void expect_protocol_path_tree_bridge_export_contract() {
 }
 
 void expect_frontend_statistics_report_export_uses_tauri_metadata() {
+    const auto capture_path = fixture_path("parsing/http/http_get_1.pcap");
     FrontendSessionAdapter adapter {};
-    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap")).opened);
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
 
     const auto markdown_path = std::filesystem::temp_directory_path()
         / "pfl_statistics_report_tauri_metadata.md";
@@ -2524,6 +2549,12 @@ void expect_frontend_statistics_report_export_uses_tauri_metadata() {
     PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
     PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
     PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+    PFL_EXPECT(contains_text(markdown, "| Input type | PCAP |"));
+    PFL_EXPECT(contains_text(markdown, "| Capture path |"));
+    PFL_EXPECT(contains_text(markdown, capture_path.filename().string()));
+    PFL_EXPECT(contains_text(markdown, "| Capture file size |"));
+    PFL_EXPECT(!contains_text(markdown, "Input file size"));
+    PFL_EXPECT(!contains_text(markdown, "Index file size"));
 
     const auto html_result = adapter.export_statistics_report(
         FrontendStatisticsReportFormat::html,
@@ -2536,6 +2567,12 @@ void expect_frontend_statistics_report_export_uses_tauri_metadata() {
     PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
     PFL_EXPECT(contains_text(html, "<th>Client</th><td>Tauri</td>"));
     PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Input type</th><td>PCAP</td>"));
+    PFL_EXPECT(contains_text(html, "<th>Capture path</th><td>"));
+    PFL_EXPECT(contains_text(html, capture_path.filename().string()));
+    PFL_EXPECT(contains_text(html, "<th>Capture file size</th><td>"));
+    PFL_EXPECT(!contains_text(html, "Input file size"));
+    PFL_EXPECT(!contains_text(html, "Index file size"));
 }
 
 void expect_frontend_statistics_report_export_works_from_v16_index_without_source() {
@@ -2550,8 +2587,14 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         / "pfl_statistics_report_index_source.idx";
     const auto report_path = std::filesystem::temp_directory_path()
         / "pfl_statistics_report_index_source.md";
+    const auto relocated_capture_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source_relocated.pcap";
+    const auto attached_report_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source_attached.md";
     std::filesystem::remove(index_path);
     std::filesystem::remove(report_path);
+    std::filesystem::remove(relocated_capture_path);
+    std::filesystem::remove(attached_report_path);
 
     {
         FrontendSessionAdapter raw_adapter {};
@@ -2559,7 +2602,46 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
     }
 
-    std::filesystem::remove(capture_path);
+    const auto source_capture_file_size = static_cast<std::uint64_t>(std::filesystem::file_size(capture_path));
+    const auto index_file_size = static_cast<std::uint64_t>(std::filesystem::file_size(index_path));
+    const auto source_capture_file_size_text =
+        session_detail::format_statistics_compact_size_value(source_capture_file_size);
+    const auto index_file_size_text =
+        session_detail::format_statistics_compact_size_value(index_file_size);
+
+    const auto available_report_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_index_source_available.md";
+    std::filesystem::remove(available_report_path);
+    {
+        FrontendSessionAdapter available_index_adapter {};
+        PFL_REQUIRE(available_index_adapter.open_capture(index_path).opened);
+        const auto available_index_overview = available_index_adapter.get_overview();
+        PFL_REQUIRE(available_index_overview.input_metadata.source_capture_file_size.has_value());
+        PFL_EXPECT(*available_index_overview.input_metadata.source_capture_file_size == source_capture_file_size);
+        PFL_EXPECT(available_index_overview.input_metadata.input_file_size == index_file_size);
+        PFL_EXPECT(available_index_overview.input_metadata.source_capture_accessible);
+        const auto available_export_result = available_index_adapter.export_statistics_report(
+            FrontendStatisticsReportFormat::markdown,
+            available_report_path
+        );
+        PFL_EXPECT(available_export_result.exported);
+        PFL_EXPECT(available_export_result.error_text.empty());
+        const auto available_report = read_text_file(available_report_path);
+        PFL_EXPECT(contains_text(available_report, "| Input type | PcapFlowLab Index |"));
+        PFL_EXPECT(contains_text(available_report, "| Index path |"));
+        PFL_EXPECT(contains_text(available_report, index_path.filename().string()));
+        PFL_EXPECT(contains_text(available_report, std::string {"| Index file size | "} + index_file_size_text + " |"));
+        PFL_EXPECT(contains_text(available_report, "| Source capture path |"));
+        PFL_EXPECT(contains_text(available_report, capture_path.filename().string()));
+        PFL_EXPECT(contains_text(
+            available_report,
+            std::string {"| Source capture file size | "} + source_capture_file_size_text + " |"
+        ));
+        PFL_EXPECT(contains_text(available_report, "| Source capture status | Available |"));
+        PFL_EXPECT(!contains_text(available_report, "Input file size"));
+    }
+
+    std::filesystem::rename(capture_path, relocated_capture_path);
 
     FrontendSessionAdapter index_adapter {};
     const auto open_result = index_adapter.open_capture(index_path);
@@ -2580,8 +2662,37 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         report,
         std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
     ));
+    PFL_EXPECT(contains_text(report, "| Input type | PcapFlowLab Index |"));
+    PFL_EXPECT(contains_text(report, std::string {"| Index file size | "} + index_file_size_text + " |"));
+    PFL_EXPECT(contains_text(report, "| Source capture path |"));
+    PFL_EXPECT(contains_text(report, capture_path.filename().string()));
+    PFL_EXPECT(contains_text(
+        report,
+        std::string {"| Source capture file size | "} + source_capture_file_size_text + " |"
+    ));
+    PFL_EXPECT(contains_text(report, "| Source capture status | Unavailable |"));
+    PFL_EXPECT(!contains_text(report, "Input file size"));
     PFL_EXPECT(contains_text(report, "## Top Endpoints and Ports"));
     PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree"));
+
+    const auto attach_result = index_adapter.attach_source_capture(relocated_capture_path);
+    PFL_REQUIRE(attach_result.attached);
+    const auto attached_export_result = index_adapter.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown,
+        attached_report_path
+    );
+    PFL_EXPECT(attached_export_result.exported);
+    PFL_EXPECT(attached_export_result.error_text.empty());
+    const auto attached_report = read_text_file(attached_report_path);
+    PFL_EXPECT(contains_text(attached_report, "| Source capture path |"));
+    PFL_EXPECT(contains_text(attached_report, relocated_capture_path.filename().string()));
+    PFL_EXPECT(!contains_text(attached_report, capture_path.filename().string()));
+    PFL_EXPECT(contains_text(
+        attached_report,
+        std::string {"| Source capture file size | "} + source_capture_file_size_text + " |"
+    ));
+    PFL_EXPECT(contains_text(attached_report, "| Source capture status | Available |"));
+    PFL_EXPECT(!contains_text(attached_report, "Input file size"));
 }
 
 void expect_frontend_statistics_report_export_reports_write_failure() {
