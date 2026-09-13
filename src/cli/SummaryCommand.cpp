@@ -674,13 +674,6 @@ FrontendStatisticsReportMetadata make_cli_statistics_report_metadata(
     };
 }
 
-std::optional<std::uint32_t> cli_statistics_report_index_revision(const FrontendOverviewDto& overview) noexcept {
-    if (overview.input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index) {
-        return kCaptureIndexStableIndexRevision;
-    }
-    return std::nullopt;
-}
-
 FrontendStatisticsReportInput make_statistics_report_input(
     FrontendStatisticsReportMetadata metadata,
     FrontendOverviewDto overview,
@@ -1553,7 +1546,7 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
 
     if (summary_statistics_report_requested(options)) {
         const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
-            make_cli_statistics_report_metadata(overview, cli_statistics_report_index_revision(overview)),
+            make_cli_statistics_report_metadata(overview, adapter.loaded_index_revision()),
             overview,
             build_summary_statistics_dtos(adapter, kStatisticsReportTopEndpointPortLimit),
             adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree)

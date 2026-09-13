@@ -1560,6 +1560,10 @@ void expect_statistics_report_side_output_contracts() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_fast.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+    FrontendSessionAdapter index_revision_adapter {};
+    PFL_REQUIRE(index_revision_adapter.open_capture(index_path).opened);
+    const auto loaded_index_revision = index_revision_adapter.loaded_index_revision();
+    PFL_REQUIRE(loaded_index_revision.has_value());
 
     const auto full_open_index_markdown_path =
         std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_full_open_index.md";
@@ -1581,7 +1585,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(full_open_index_markdown, "PcapFlowLab Index"));
     PFL_EXPECT(contains_text(
         full_open_index_markdown,
-        std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
+        std::string {"| Index revision | "} + std::to_string(*loaded_index_revision) + " |"
     ));
 
     append_binary_bytes(index_path, std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU});
@@ -1609,7 +1613,10 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(!contains_text(index_markdown, "Input file size"));
     PFL_EXPECT(contains_text(index_markdown, "| Client | CLI |"));
     PFL_EXPECT(contains_text(index_markdown, "| Statistics scope | Complete |"));
-    PFL_EXPECT(contains_text(index_markdown, "| Index revision |"));
+    PFL_EXPECT(contains_text(
+        index_markdown,
+        std::string {"| Index revision | "} + std::to_string(*loaded_index_revision) + " |"
+    ));
     PFL_EXPECT(contains_text(index_markdown, "Protocol Path Statistics - Identity Tree"));
     PFL_EXPECT(!contains_text(index_markdown, "Kind overview"));
     PFL_EXPECT(!contains_text(index_markdown, "Terminal paths"));

@@ -2618,9 +2618,7 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
             std::chrono::system_clock::now()
         ),
         .statistics_scope = statistics_report_scope_text(session_.is_partial_open()),
-        .index_revision = session_.opened_from_index()
-            ? std::optional<std::uint32_t> {kCaptureIndexStableIndexRevision}
-            : std::nullopt,
+        .index_revision = session_.loaded_index_revision(),
     };
 
     const FrontendStatisticsReportInput input {
@@ -2664,6 +2662,10 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
     result.exported = true;
     result.output_path = path_to_string(output_path);
     return result;
+}
+
+std::optional<std::uint32_t> FrontendSessionAdapter::loaded_index_revision() const noexcept {
+    return session_.loaded_index_revision();
 }
 
 std::vector<FrontendByteExportFormatDto> FrontendSessionAdapter::get_byte_export_formats() const {

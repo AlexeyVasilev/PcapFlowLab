@@ -4877,6 +4877,7 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
         .client_name = "Qt",
         .generated_at_utc = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss 'UTC'")).toStdString(),
         .statistics_scope = session_.is_partial_open() ? "Partial" : "Complete",
+        .index_revision = session_.loaded_index_revision(),
     };
     const auto report = build_frontend_statistics_report_data(
         build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata))

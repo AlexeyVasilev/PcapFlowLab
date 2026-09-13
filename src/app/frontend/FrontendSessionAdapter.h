@@ -58,6 +58,7 @@ public:
         FrontendStatisticsReportFormat format,
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] std::optional<std::uint32_t> loaded_index_revision() const noexcept;
     [[nodiscard]] std::vector<FrontendByteExportFormatDto> get_byte_export_formats() const;
     [[nodiscard]] FrontendByteExportResult export_selected_flow_packet_byte_view(
         std::uint64_t packet_index,

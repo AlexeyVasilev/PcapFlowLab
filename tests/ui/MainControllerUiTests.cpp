@@ -4877,6 +4877,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(markdown_report, "| Client | Qt |"));
         UI_EXPECT(contains_text(markdown_report, "| Generated at |"));
         UI_EXPECT(contains_text(markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(!contains_text(markdown_report, "| Index revision |"));
         UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree"));
         UI_EXPECT(!contains_text(markdown_report, "Kind overview"));
         UI_EXPECT(!contains_text(markdown_report, "Terminal paths"));
@@ -4884,6 +4885,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(html_report, "<th>Application</th><td>Pcap Flow Lab</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Version</th><td>9.9.9-ui-test</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Client</th><td>Qt</td>"));
+        UI_EXPECT(!contains_text(html_report, "<th>Index revision</th>"));
         UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
         UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
@@ -4917,6 +4919,10 @@ int main(int argc, char* argv[]) {
         std::filesystem::remove(report_index_path, remove_error);
         std::filesystem::remove(moved_report_index_source_path, remove_error);
         UI_EXPECT(report_index_seed_session.save_index(report_index_path));
+        CaptureSession report_index_revision_probe {};
+        UI_EXPECT(report_index_revision_probe.load_v16_index_for_testing(report_index_path));
+        const auto report_index_revision = report_index_revision_probe.loaded_index_revision();
+        UI_REQUIRE(report_index_revision.has_value());
         std::filesystem::rename(report_index_capture_path, moved_report_index_source_path);
 
         MainController index_report_controller {};
@@ -4926,7 +4932,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(index_report_controller.canExportStatisticsReport());
         const auto index_markdown_report_path =
             std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index.md";
+        const auto attached_index_markdown_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index_attached.md";
         std::filesystem::remove(index_markdown_report_path, remove_error);
+        std::filesystem::remove(attached_index_markdown_report_path, remove_error);
         UI_EXPECT(index_report_controller.exportStatisticsReportMarkdown(
             QString::fromStdWString(index_markdown_report_path.wstring())));
         UI_EXPECT(!index_report_controller.statusIsError());
@@ -4939,7 +4948,24 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!contains_text(index_markdown_report, "Input file size"));
         UI_EXPECT(contains_text(index_markdown_report, "| Client | Qt |"));
         UI_EXPECT(contains_text(index_markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(contains_text(
+            index_markdown_report,
+            std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
+        ));
         UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));
+
+        UI_EXPECT(index_report_controller.attachSourceCapture(
+            QString::fromStdWString(moved_report_index_source_path.wstring())));
+        UI_EXPECT(index_report_controller.hasSourceCapture());
+        UI_EXPECT(index_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(attached_index_markdown_report_path.wstring())));
+        UI_EXPECT(!index_report_controller.statusIsError());
+        const auto attached_index_markdown_report = read_text_file_text(attached_index_markdown_report_path);
+        UI_EXPECT(contains_text(
+            attached_index_markdown_report,
+            std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
+        ));
+        UI_EXPECT(contains_text(attached_index_markdown_report, "| Source capture status | Available |"));
 
         QCoreApplication::setApplicationVersion(previous_application_version);
     });

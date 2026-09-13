@@ -2549,6 +2549,7 @@ void expect_frontend_statistics_report_export_uses_tauri_metadata() {
     PFL_EXPECT(contains_text(markdown, "| Version | " PFL_APP_VERSION " |"));
     PFL_EXPECT(contains_text(markdown, "| Client | Tauri |"));
     PFL_EXPECT(contains_text(markdown, "| Statistics scope | Complete |"));
+    PFL_EXPECT(!contains_text(markdown, "| Index revision |"));
     PFL_EXPECT(contains_text(markdown, "| Input type | PCAP |"));
     PFL_EXPECT(contains_text(markdown, "| Capture path |"));
     PFL_EXPECT(contains_text(markdown, capture_path.filename().string()));
@@ -2567,6 +2568,7 @@ void expect_frontend_statistics_report_export_uses_tauri_metadata() {
     PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
     PFL_EXPECT(contains_text(html, "<th>Client</th><td>Tauri</td>"));
     PFL_EXPECT(contains_text(html, "<th>Statistics scope</th><td>Complete</td>"));
+    PFL_EXPECT(!contains_text(html, "<th>Index revision</th>"));
     PFL_EXPECT(contains_text(html, "<th>Input type</th><td>PCAP</td>"));
     PFL_EXPECT(contains_text(html, "<th>Capture path</th><td>"));
     PFL_EXPECT(contains_text(html, capture_path.filename().string()));
@@ -2615,6 +2617,8 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     {
         FrontendSessionAdapter available_index_adapter {};
         PFL_REQUIRE(available_index_adapter.open_capture(index_path).opened);
+        const auto available_index_revision = available_index_adapter.loaded_index_revision();
+        PFL_REQUIRE(available_index_revision.has_value());
         const auto available_index_overview = available_index_adapter.get_overview();
         PFL_REQUIRE(available_index_overview.input_metadata.source_capture_file_size.has_value());
         PFL_EXPECT(*available_index_overview.input_metadata.source_capture_file_size == source_capture_file_size);
@@ -2628,6 +2632,10 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         PFL_EXPECT(available_export_result.error_text.empty());
         const auto available_report = read_text_file(available_report_path);
         PFL_EXPECT(contains_text(available_report, "| Input type | PcapFlowLab Index |"));
+        PFL_EXPECT(contains_text(
+            available_report,
+            std::string {"| Index revision | "} + std::to_string(*available_index_revision) + " |"
+        ));
         PFL_EXPECT(contains_text(available_report, "| Index path |"));
         PFL_EXPECT(contains_text(available_report, index_path.filename().string()));
         PFL_EXPECT(contains_text(available_report, std::string {"| Index file size | "} + index_file_size_text + " |"));
@@ -2648,6 +2656,8 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_REQUIRE(open_result.opened);
     PFL_EXPECT(open_result.opened_from_index);
     PFL_EXPECT(!open_result.source_availability.byte_backed_inspection_available);
+    const auto loaded_index_revision = index_adapter.loaded_index_revision();
+    PFL_REQUIRE(loaded_index_revision.has_value());
 
     const auto export_result = index_adapter.export_statistics_report(
         FrontendStatisticsReportFormat::markdown,
@@ -2660,7 +2670,7 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_EXPECT(contains_text(report, "| Client | Tauri |"));
     PFL_EXPECT(contains_text(
         report,
-        std::string {"| Index revision | "} + std::to_string(kCaptureIndexStableIndexRevision) + " |"
+        std::string {"| Index revision | "} + std::to_string(*loaded_index_revision) + " |"
     ));
     PFL_EXPECT(contains_text(report, "| Input type | PcapFlowLab Index |"));
     PFL_EXPECT(contains_text(report, std::string {"| Index file size | "} + index_file_size_text + " |"));
@@ -2684,6 +2694,11 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_EXPECT(attached_export_result.exported);
     PFL_EXPECT(attached_export_result.error_text.empty());
     const auto attached_report = read_text_file(attached_report_path);
+    PFL_EXPECT(index_adapter.loaded_index_revision() == loaded_index_revision);
+    PFL_EXPECT(contains_text(
+        attached_report,
+        std::string {"| Index revision | "} + std::to_string(*loaded_index_revision) + " |"
+    ));
     PFL_EXPECT(contains_text(attached_report, "| Source capture path |"));
     PFL_EXPECT(contains_text(attached_report, relocated_capture_path.filename().string()));
     PFL_EXPECT(!contains_text(attached_report, capture_path.filename().string()));
