@@ -2053,7 +2053,7 @@ FrontendOverviewDto build_frontend_overview(
         : std::vector<FrontendProtocolPathPresentationDto> {};
     const auto input_metadata = build_frontend_input_metadata(session);
     const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
-    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
+    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics, session.summary().flow_count);
     const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
     const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
         flow_characteristics_statistics,

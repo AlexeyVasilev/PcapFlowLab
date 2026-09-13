@@ -4053,6 +4053,8 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "captureDurationValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedPacketSizeValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averagePacketsPerFlowValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowsPer1MPacketsValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averagePacketRateValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalDataRateValue") != nullptr);
@@ -4119,6 +4121,8 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("captureMetrics", QVariantMap {
             {QStringLiteral("averageCapturedPacketSizeText"), QStringLiteral("54 B")},
             {QStringLiteral("averageOriginalPacketSizeText"), QStringLiteral("54 B")},
+            {QStringLiteral("averagePacketsPerFlowText"), QStringLiteral("2.24")},
+            {QStringLiteral("flowsPer1MPacketsText"), QStringLiteral("17 251")},
             {QStringLiteral("averagePacketRateText"), QStringLiteral("13 333.33 pkt/s")},
             {QStringLiteral("averageCapturedDataRateText"), QStringLiteral("720 KB/s")},
             {QStringLiteral("averageOriginalDataRateText"), QStringLiteral("720 KB/s")},
@@ -4240,6 +4244,10 @@ int main(int argc, char* argv[]) {
             == QStringLiteral("54 B"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue")->property("text").toString()
             == QStringLiteral("54 B"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketsPerFlowValue")->property("text").toString()
+            == QStringLiteral("2.24"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowsPer1MPacketsValue")->property("text").toString()
+            == QStringLiteral("17 251"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketRateValue")->property("text").toString()
             == QStringLiteral("13 333.33 pkt/s"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue")->property("text").toString()

@@ -1585,6 +1585,22 @@ std::string capture_metrics_json(const pfl::FrontendCaptureMetricsDto& metrics) 
     }
     out << ','
         << "\"average_original_packet_size_text\":" << json_string(metrics.average_original_packet_size_text) << ','
+        << "\"average_packets_per_flow\":";
+    if (metrics.average_packets_per_flow.has_value()) {
+        out << *metrics.average_packets_per_flow;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_packets_per_flow_text\":" << json_string(metrics.average_packets_per_flow_text) << ','
+        << "\"flows_per_1m_packets\":";
+    if (metrics.flows_per_1m_packets.has_value()) {
+        out << *metrics.flows_per_1m_packets;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"flows_per_1m_packets_text\":" << json_string(metrics.flows_per_1m_packets_text) << ','
         << "\"average_packet_rate\":";
     if (metrics.average_packet_rate.has_value()) {
         out << *metrics.average_packet_rate;

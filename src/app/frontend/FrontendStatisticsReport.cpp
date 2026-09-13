@@ -671,6 +671,8 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
         };
         add_field(section, "Average captured packet size", metrics.average_captured_packet_size_text);
         add_field(section, "Average original packet size", metrics.average_original_packet_size_text);
+        add_field(section, "Average packets per flow", metrics.average_packets_per_flow_text);
+        add_field(section, "Flows per 1M packets", metrics.flows_per_1m_packets_text);
         add_field(section, "Average packet rate", metrics.average_packet_rate_text);
         add_field(section, "Average captured data rate", metrics.average_captured_data_rate_text);
         add_field(section, "Average original data rate", metrics.average_original_data_rate_text);

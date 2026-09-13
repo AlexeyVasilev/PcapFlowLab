@@ -229,7 +229,7 @@ FrontendOverviewDto build_statistics_report_overview(const CaptureSession& sessi
         },
         .input_metadata = build_statistics_report_input_metadata(session),
         .capture_time = build_frontend_capture_time_statistics(packet_statistics),
-        .capture_metrics = build_frontend_capture_metrics(packet_statistics),
+        .capture_metrics = build_frontend_capture_metrics(packet_statistics, session.summary().flow_count),
         .flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics),
         .packet_direction_distribution = build_frontend_packet_direction_distribution(
             flow_characteristics_statistics,
@@ -2110,6 +2110,10 @@ QVariantMap capture_metrics_to_variant_map(const FrontendCaptureMetricsDto& metr
     map.insert(QStringLiteral("averageCapturedPacketSizeText"), qstring_from_utf8(metrics.average_captured_packet_size_text));
     map.insert(QStringLiteral("averageOriginalPacketSize"), optional_double_variant(metrics.average_original_packet_size));
     map.insert(QStringLiteral("averageOriginalPacketSizeText"), qstring_from_utf8(metrics.average_original_packet_size_text));
+    map.insert(QStringLiteral("averagePacketsPerFlow"), optional_double_variant(metrics.average_packets_per_flow));
+    map.insert(QStringLiteral("averagePacketsPerFlowText"), qstring_from_utf8(metrics.average_packets_per_flow_text));
+    map.insert(QStringLiteral("flowsPer1MPackets"), optional_double_variant(metrics.flows_per_1m_packets));
+    map.insert(QStringLiteral("flowsPer1MPacketsText"), qstring_from_utf8(metrics.flows_per_1m_packets_text));
     map.insert(QStringLiteral("averagePacketRate"), optional_double_variant(metrics.average_packet_rate));
     map.insert(QStringLiteral("averagePacketRateText"), qstring_from_utf8(metrics.average_packet_rate_text));
     map.insert(QStringLiteral("averageCapturedDataRate"), optional_double_variant(metrics.average_captured_data_rate));
@@ -7744,7 +7748,7 @@ void MainController::refreshStatisticsOverviewPresentation() {
         build_frontend_capture_time_statistics(packet_statistics)
     );
     capture_metrics_ = capture_metrics_to_variant_map(
-        build_frontend_capture_metrics(packet_statistics)
+        build_frontend_capture_metrics(packet_statistics, session_.summary().flow_count)
     );
     flow_characteristics_ = flow_characteristics_to_variant_map(
         build_frontend_flow_characteristics(flow_characteristics_statistics)

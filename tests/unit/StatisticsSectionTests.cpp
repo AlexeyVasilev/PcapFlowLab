@@ -1564,7 +1564,10 @@ void expect_overview_excludes_optional_statistics_sections() {
     const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
     const auto histogram = adapter.get_flow_packet_count_histogram();
     const auto expected_capture_time = build_frontend_capture_time_statistics(session.packet_statistics());
-    const auto expected_capture_metrics = build_frontend_capture_metrics(session.packet_statistics());
+    const auto expected_capture_metrics = build_frontend_capture_metrics(
+        session.packet_statistics(),
+        session.summary().flow_count
+    );
     const auto expected_flow_characteristics =
         build_frontend_flow_characteristics(session.flow_characteristics_statistics());
     const auto expected_packet_direction_distribution =
@@ -1613,6 +1616,14 @@ void expect_overview_excludes_optional_statistics_sections() {
         == expected_capture_metrics.average_captured_packet_size_text);
     PFL_EXPECT(overview.capture_metrics.average_original_packet_size_text
         == expected_capture_metrics.average_original_packet_size_text);
+    PFL_EXPECT(overview.capture_metrics.average_packets_per_flow
+        == expected_capture_metrics.average_packets_per_flow);
+    PFL_EXPECT(overview.capture_metrics.average_packets_per_flow_text
+        == expected_capture_metrics.average_packets_per_flow_text);
+    PFL_EXPECT(overview.capture_metrics.flows_per_1m_packets
+        == expected_capture_metrics.flows_per_1m_packets);
+    PFL_EXPECT(overview.capture_metrics.flows_per_1m_packets_text
+        == expected_capture_metrics.flows_per_1m_packets_text);
     PFL_EXPECT(overview.capture_metrics.average_packet_rate_text
         == expected_capture_metrics.average_packet_rate_text);
     PFL_EXPECT(overview.capture_metrics.average_captured_data_rate_text
@@ -1748,7 +1759,7 @@ void expect_overview_excludes_optional_statistics_sections() {
 
 void expect_frontend_statistics_overview_helpers_cover_availability_and_direction_distributions() {
     const auto empty_time = build_frontend_capture_time_statistics(CapturePacketStatistics {});
-    const auto empty_metrics = build_frontend_capture_metrics(CapturePacketStatistics {});
+    const auto empty_metrics = build_frontend_capture_metrics(CapturePacketStatistics {}, 0U);
     const auto empty_characteristics = build_frontend_flow_characteristics(CaptureFlowCharacteristicsStatistics {});
     const auto empty_packet_distribution = build_frontend_packet_direction_distribution(
         CaptureFlowCharacteristicsStatistics {},
@@ -1766,6 +1777,10 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     PFL_EXPECT(empty_time.duration_text == unavailable);
     PFL_EXPECT(empty_metrics.average_captured_packet_size_text == unavailable);
     PFL_EXPECT(empty_metrics.average_original_packet_size_text == unavailable);
+    PFL_EXPECT(!empty_metrics.average_packets_per_flow.has_value());
+    PFL_EXPECT(empty_metrics.average_packets_per_flow_text == unavailable);
+    PFL_EXPECT(!empty_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(empty_metrics.flows_per_1m_packets_text == unavailable);
     PFL_EXPECT(empty_metrics.average_packet_rate_text == unavailable);
     PFL_EXPECT(empty_metrics.average_captured_data_rate_text == unavailable);
     PFL_EXPECT(empty_metrics.average_original_data_rate_text == unavailable);
@@ -1778,6 +1793,8 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     PFL_EXPECT(empty_original_distribution.rows.size() == 3U);
     expect_not_nan_or_inf_text(empty_metrics.average_captured_packet_size_text);
     expect_not_nan_or_inf_text(empty_metrics.average_original_packet_size_text);
+    expect_not_nan_or_inf_text(empty_metrics.average_packets_per_flow_text);
+    expect_not_nan_or_inf_text(empty_metrics.flows_per_1m_packets_text);
     expect_not_nan_or_inf_text(empty_metrics.average_packet_rate_text);
     expect_not_nan_or_inf_text(empty_metrics.average_captured_data_rate_text);
     expect_not_nan_or_inf_text(empty_metrics.average_original_data_rate_text);
@@ -1795,13 +1812,19 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     single_packet_statistics.truncated_packet_count = 1U;
 
     const auto single_time = build_frontend_capture_time_statistics(single_packet_statistics);
-    const auto single_metrics = build_frontend_capture_metrics(single_packet_statistics);
+    const auto single_metrics = build_frontend_capture_metrics(single_packet_statistics, 1U);
     PFL_EXPECT(single_time.available);
     PFL_EXPECT(single_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
     PFL_EXPECT(single_time.capture_end_text == "1970-01-01 00:00:00.000 UTC");
     PFL_EXPECT(single_time.duration_text == "00:00:00.000");
     PFL_EXPECT(single_metrics.average_captured_packet_size_text == "60 B");
     PFL_EXPECT(single_metrics.average_original_packet_size_text == "100 B");
+    PFL_REQUIRE(single_metrics.average_packets_per_flow.has_value());
+    PFL_EXPECT(*single_metrics.average_packets_per_flow == 1.0);
+    PFL_EXPECT(single_metrics.average_packets_per_flow_text == "1");
+    PFL_REQUIRE(single_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(*single_metrics.flows_per_1m_packets == 1'000'000.0);
+    PFL_EXPECT(single_metrics.flows_per_1m_packets_text == "1 000 000");
     PFL_EXPECT(single_metrics.average_packet_rate_text == unavailable);
     PFL_EXPECT(single_metrics.average_captured_data_rate_text == unavailable);
     PFL_EXPECT(single_metrics.average_original_data_rate_text == unavailable);
@@ -1824,12 +1847,18 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     multi_packet_statistics.truncated_packet_count = 1U;
 
     const auto multi_time = build_frontend_capture_time_statistics(multi_packet_statistics);
-    const auto multi_metrics = build_frontend_capture_metrics(multi_packet_statistics);
+    const auto multi_metrics = build_frontend_capture_metrics(multi_packet_statistics, 2U);
     PFL_EXPECT(multi_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
     PFL_EXPECT(multi_time.capture_end_text == "1970-01-01 00:00:02.000 UTC");
     PFL_EXPECT(multi_time.duration_text == "00:00:02.000");
     PFL_EXPECT(multi_metrics.average_captured_packet_size_text == "512 B");
     PFL_EXPECT(multi_metrics.average_original_packet_size_text == "1 KB");
+    PFL_REQUIRE(multi_metrics.average_packets_per_flow.has_value());
+    PFL_EXPECT(*multi_metrics.average_packets_per_flow == 2.0);
+    PFL_EXPECT(multi_metrics.average_packets_per_flow_text == "2");
+    PFL_REQUIRE(multi_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(*multi_metrics.flows_per_1m_packets == 500'000.0);
+    PFL_EXPECT(multi_metrics.flows_per_1m_packets_text == "500 000");
     PFL_EXPECT(multi_metrics.average_packet_rate_text == "2 pkt/s");
     PFL_EXPECT(multi_metrics.average_captured_data_rate_text == "1 KB/s");
     PFL_EXPECT(multi_metrics.average_original_data_rate_text == "2 KB/s");
@@ -1838,6 +1867,8 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     PFL_EXPECT(multi_metrics.capture_completeness_text == "50%");
     expect_not_nan_or_inf_text(multi_metrics.average_captured_packet_size_text);
     expect_not_nan_or_inf_text(multi_metrics.average_original_packet_size_text);
+    expect_not_nan_or_inf_text(multi_metrics.average_packets_per_flow_text);
+    expect_not_nan_or_inf_text(multi_metrics.flows_per_1m_packets_text);
     expect_not_nan_or_inf_text(multi_metrics.average_packet_rate_text);
     expect_not_nan_or_inf_text(multi_metrics.average_captured_data_rate_text);
     expect_not_nan_or_inf_text(multi_metrics.average_original_data_rate_text);
@@ -1847,7 +1878,7 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     complete_statistics.total_packet_count = 8U;
     complete_statistics.total_captured_bytes = 4096U;
     complete_statistics.total_original_bytes = 4096U;
-    const auto complete_metrics = build_frontend_capture_metrics(complete_statistics);
+    const auto complete_metrics = build_frontend_capture_metrics(complete_statistics, 4U);
     PFL_EXPECT(complete_metrics.capture_completeness_text == "100%");
     expect_not_nan_or_inf_text(complete_metrics.capture_completeness_text);
 
@@ -1855,7 +1886,7 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     zero_original_statistics.total_packet_count = 2U;
     zero_original_statistics.total_captured_bytes = 128U;
     zero_original_statistics.total_original_bytes = 0U;
-    const auto zero_original_metrics = build_frontend_capture_metrics(zero_original_statistics);
+    const auto zero_original_metrics = build_frontend_capture_metrics(zero_original_statistics, 1U);
     PFL_EXPECT(zero_original_metrics.average_captured_packet_size_text == "64 B");
     PFL_EXPECT(zero_original_metrics.average_original_packet_size_text == "0 B");
     PFL_EXPECT(zero_original_metrics.capture_completeness_text == unavailable);
@@ -1871,7 +1902,7 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
         .latest_timestamp_us = 732'333U,
     };
     const auto slightly_incomplete_time = build_frontend_capture_time_statistics(slightly_incomplete_statistics);
-    const auto slightly_incomplete_metrics = build_frontend_capture_metrics(slightly_incomplete_statistics);
+    const auto slightly_incomplete_metrics = build_frontend_capture_metrics(slightly_incomplete_statistics, 5U);
     PFL_EXPECT(slightly_incomplete_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
     PFL_EXPECT(slightly_incomplete_time.capture_end_text == "1970-01-01 00:00:00.732 UTC");
     PFL_EXPECT(slightly_incomplete_time.duration_text == "00:00:00.732");
@@ -1880,6 +1911,33 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     PFL_EXPECT(slightly_incomplete_metrics.capture_completeness_text == "99.99%");
     expect_not_nan_or_inf_text(slightly_incomplete_metrics.average_packet_rate_text);
     expect_not_nan_or_inf_text(slightly_incomplete_metrics.capture_completeness_text);
+
+    CapturePacketStatistics fractional_flow_density_statistics {};
+    fractional_flow_density_statistics.total_packet_count = 224U;
+    const auto fractional_flow_density_metrics =
+        build_frontend_capture_metrics(fractional_flow_density_statistics, 100U);
+    PFL_REQUIRE(fractional_flow_density_metrics.average_packets_per_flow.has_value());
+    PFL_EXPECT(*fractional_flow_density_metrics.average_packets_per_flow > 2.239);
+    PFL_EXPECT(*fractional_flow_density_metrics.average_packets_per_flow < 2.241);
+    PFL_EXPECT(fractional_flow_density_metrics.average_packets_per_flow_text == "2.24");
+    PFL_REQUIRE(fractional_flow_density_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(fractional_flow_density_metrics.flows_per_1m_packets_text == "446 429");
+
+    CapturePacketStatistics grouped_flow_density_statistics {};
+    grouped_flow_density_statistics.total_packet_count = 1'000'000U;
+    const auto grouped_flow_density_metrics =
+        build_frontend_capture_metrics(grouped_flow_density_statistics, 17'251U);
+    PFL_REQUIRE(grouped_flow_density_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(*grouped_flow_density_metrics.flows_per_1m_packets == 17'251.0);
+    PFL_EXPECT(grouped_flow_density_metrics.flows_per_1m_packets_text == "17 251");
+
+    CapturePacketStatistics no_flows_statistics {};
+    no_flows_statistics.total_packet_count = 7U;
+    const auto no_flows_metrics = build_frontend_capture_metrics(no_flows_statistics, 0U);
+    PFL_EXPECT(!no_flows_metrics.average_packets_per_flow.has_value());
+    PFL_EXPECT(no_flows_metrics.average_packets_per_flow_text == unavailable);
+    PFL_EXPECT(!no_flows_metrics.flows_per_1m_packets.has_value());
+    PFL_EXPECT(no_flows_metrics.flows_per_1m_packets_text == unavailable);
 
     CaptureFlowCharacteristicsStatistics flow_characteristics {};
     flow_characteristics.total_flow_count = 10U;
@@ -2104,6 +2162,14 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
         == raw_overview.capture_metrics.average_captured_packet_size_text);
     PFL_EXPECT(indexed_overview.capture_metrics.average_original_packet_size_text
         == raw_overview.capture_metrics.average_original_packet_size_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_packets_per_flow
+        == raw_overview.capture_metrics.average_packets_per_flow);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_packets_per_flow_text
+        == raw_overview.capture_metrics.average_packets_per_flow_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.flows_per_1m_packets
+        == raw_overview.capture_metrics.flows_per_1m_packets);
+    PFL_EXPECT(indexed_overview.capture_metrics.flows_per_1m_packets_text
+        == raw_overview.capture_metrics.flows_per_1m_packets_text);
     PFL_EXPECT(indexed_overview.capture_metrics.average_packet_rate_text
         == raw_overview.capture_metrics.average_packet_rate_text);
     PFL_EXPECT(indexed_overview.capture_metrics.average_captured_data_rate_text
@@ -2413,8 +2479,18 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"capture_end_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"duration_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"capture_metrics\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_captured_packet_size\""));
     PFL_EXPECT(contains_text(overview_json, "\"average_captured_packet_size_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_original_packet_size\""));
     PFL_EXPECT(contains_text(overview_json, "\"average_original_packet_size_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_packets_per_flow\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_packets_per_flow\":2"));
+    PFL_EXPECT(contains_text(overview_json, "\"average_packets_per_flow_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_packets_per_flow_text\":\"2\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_per_1m_packets\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_per_1m_packets\":500000"));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_per_1m_packets_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_per_1m_packets_text\":\"500 000\""));
     PFL_EXPECT(contains_text(overview_json, "\"average_packet_rate_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"average_captured_data_rate_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"average_original_data_rate_text\""));

@@ -159,6 +159,8 @@ Important details:
 - `Capture Metrics` renders:
   - average captured packet size;
   - average original packet size;
+  - average packets per flow;
+  - flows per 1M packets;
   - average packet rate;
   - average captured data rate;
   - average original data rate;

@@ -133,6 +133,22 @@ std::string format_display_rate(
     return group_integer_part(trim_trailing_zeros(out.str())) + ' ' + std::string(suffix);
 }
 
+std::string format_unitless_decimal(const double value, const int max_fraction_digits) {
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(max_fraction_digits) << std::max(0.0, value);
+    return group_integer_part(trim_trailing_zeros(out.str()));
+}
+
+std::string optional_unitless_decimal_text(
+    const std::optional<double>& value,
+    const int max_fraction_digits
+) {
+    if (!value.has_value() || !std::isfinite(*value)) {
+        return std::string {kUnavailableText};
+    }
+    return format_unitless_decimal(*value, max_fraction_digits);
+}
+
 std::optional<std::string> format_absolute_utc_timestamp_impl(const std::uint64_t value_us) {
     const auto days = static_cast<std::int64_t>(value_us / kMicrosPerDay);
     const auto time_us = value_us % kMicrosPerDay;
@@ -436,7 +452,8 @@ FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(
 }
 
 FrontendCaptureMetricsDto build_frontend_capture_metrics(
-    const CapturePacketStatistics& packet_statistics
+    const CapturePacketStatistics& packet_statistics,
+    const std::uint64_t total_flow_count
 ) {
     FrontendCaptureMetricsDto dto {};
     const auto total_packets = packet_statistics.total_packet_count;
@@ -461,6 +478,13 @@ FrontendCaptureMetricsDto build_frontend_capture_metrics(
             static_cast<double>(total_original_bytes) / static_cast<double>(total_packets);
     }
 
+    if (total_packets > 0U && total_flow_count > 0U) {
+        dto.average_packets_per_flow =
+            static_cast<double>(total_packets) / static_cast<double>(total_flow_count);
+        dto.flows_per_1m_packets =
+            static_cast<double>(total_flow_count) * 1'000'000.0 / static_cast<double>(total_packets);
+    }
+
     if (duration_us.has_value() && *duration_us > 0U) {
         const auto seconds = static_cast<double>(*duration_us) / static_cast<double>(kMicrosPerSecond);
         dto.average_packet_rate = static_cast<double>(total_packets) / seconds;
@@ -482,6 +506,8 @@ FrontendCaptureMetricsDto build_frontend_capture_metrics(
 
     dto.average_captured_packet_size_text = optional_size_text(dto.average_captured_packet_size);
     dto.average_original_packet_size_text = optional_size_text(dto.average_original_packet_size);
+    dto.average_packets_per_flow_text = optional_unitless_decimal_text(dto.average_packets_per_flow, 2);
+    dto.flows_per_1m_packets_text = optional_unitless_decimal_text(dto.flows_per_1m_packets, 0);
     dto.average_packet_rate_text = optional_packet_rate_text(dto.average_packet_rate);
     dto.average_captured_data_rate_text = optional_data_rate_text(dto.average_captured_data_rate);
     dto.average_original_data_rate_text = optional_data_rate_text(dto.average_original_data_rate);

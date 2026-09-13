@@ -1474,6 +1474,18 @@ Item {
                         }
 
                         OverviewMetricBlock {
+                            title: "Average packets per flow"
+                            valueText: root.statisticsText(root.captureMetrics, "averagePacketsPerFlowText")
+                            valueObjectName: "averagePacketsPerFlowValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Flows per 1M packets"
+                            valueText: root.statisticsText(root.captureMetrics, "flowsPer1MPacketsText")
+                            valueObjectName: "flowsPer1MPacketsValue"
+                        }
+
+                        OverviewMetricBlock {
                             title: "Average Packet Rate"
                             valueText: root.statisticsText(root.captureMetrics, "averagePacketRateText")
                             valueObjectName: "averagePacketRateValue"

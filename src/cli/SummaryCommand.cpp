@@ -551,7 +551,7 @@ FrontendOverviewDto build_fast_v16_overview(
         },
         .input_metadata = std::move(input_metadata),
         .capture_time = build_frontend_capture_time_statistics(packet_statistics),
-        .capture_metrics = build_frontend_capture_metrics(packet_statistics),
+        .capture_metrics = build_frontend_capture_metrics(packet_statistics, snapshot.total_flow_count),
         .flow_characteristics = build_frontend_flow_characteristics(general_statistics.flow_characteristics),
         .packet_direction_distribution = build_frontend_packet_direction_distribution(
             general_statistics.flow_characteristics,
@@ -717,9 +717,11 @@ std::string render_extended_summary_text(
 ) {
     std::ostringstream out {};
 
-    constexpr std::array<std::string_view, 8> capture_metrics_labels {
+    constexpr std::array<std::string_view, 10> capture_metrics_labels {
         "Average captured packet size",
         "Average original packet size",
+        "Average packets per flow",
+        "Flows per 1M packets",
         "Average packet rate",
         "Average captured data rate",
         "Average original data rate",
@@ -778,6 +780,18 @@ std::string render_extended_summary_text(
         out,
         "Average original packet size",
         overview.capture_metrics.average_original_packet_size_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average packets per flow",
+        overview.capture_metrics.average_packets_per_flow_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Flows per 1M packets",
+        overview.capture_metrics.flows_per_1m_packets_text,
         capture_metrics_label_width
     );
     append_key_value_line(

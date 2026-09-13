@@ -1038,6 +1038,8 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.duration_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.average_captured_packet_size_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.average_original_packet_size_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.average_packets_per_flow_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.flows_per_1m_packets_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.truncated_packets_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.not_captured_bytes_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.capture_completeness_text));
@@ -1557,6 +1559,15 @@ void expect_statistics_report_side_output_contracts() {
 
     FrontendSessionAdapter raw_adapter {};
     PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+    const auto report_overview = raw_adapter.get_overview();
+    PFL_EXPECT(contains_text(markdown, "| Average packets per flow | "));
+    PFL_EXPECT(contains_text(markdown, report_overview.capture_metrics.average_packets_per_flow_text));
+    PFL_EXPECT(contains_text(markdown, "| Flows per 1M packets | "));
+    PFL_EXPECT(contains_text(markdown, report_overview.capture_metrics.flows_per_1m_packets_text));
+    PFL_EXPECT(contains_text(html, "<th>Average packets per flow</th><td>"));
+    PFL_EXPECT(contains_text(html, report_overview.capture_metrics.average_packets_per_flow_text));
+    PFL_EXPECT(contains_text(html, "<th>Flows per 1M packets</th><td>"));
+    PFL_EXPECT(contains_text(html, report_overview.capture_metrics.flows_per_1m_packets_text));
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report_fast.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
