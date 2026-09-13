@@ -8101,10 +8101,10 @@
             );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             const valueText = showingOriginalBytes
-              ? String(bucket?.original_byte_count_text || "0 B")
+              ? String(bucket?.original_byte_count_with_total_percent_text || bucket?.original_byte_count_text || "0 B")
               : (showingCapturedBytes
-                  ? String(bucket?.captured_byte_count_text || "0 B")
-                  : formatNumber(flowCount));
+                  ? String(bucket?.captured_byte_count_with_total_percent_text || bucket?.captured_byte_count_text || "0 B")
+                  : String(bucket?.flow_count_with_total_percent_text || formatNumber(flowCount)));
             return `
               <div class="statistics-histogram-row">
                 <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>

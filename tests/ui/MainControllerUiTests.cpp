@@ -4405,10 +4405,13 @@ int main(int argc, char* argv[]) {
             QVariantMap {
                 {QStringLiteral("label"), QStringLiteral("1")},
                 {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("1 (50%)")},
                 {QStringLiteral("capturedByteCount"), QVariant::fromValue<qulonglong>(512U)},
                 {QStringLiteral("capturedByteCountText"), QStringLiteral("512 B")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("512 B (33%)")},
                 {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(0U)},
                 {QStringLiteral("originalByteCountText"), QStringLiteral("0 B")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("0 B (0%)")},
                 {QStringLiteral("normalizedFlowFraction"), 1.0},
                 {QStringLiteral("normalizedCapturedByteFraction"), 0.5},
                 {QStringLiteral("normalizedOriginalByteFraction"), 0.0},
@@ -4416,10 +4419,13 @@ int main(int argc, char* argv[]) {
             QVariantMap {
                 {QStringLiteral("label"), QStringLiteral("3-5")},
                 {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("1 (50%)")},
                 {QStringLiteral("capturedByteCount"), QVariant::fromValue<qulonglong>(1024U)},
                 {QStringLiteral("capturedByteCountText"), QStringLiteral("1 KB")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("1 KB (67%)")},
                 {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(1536U)},
                 {QStringLiteral("originalByteCountText"), QStringLiteral("1.5 KB")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("1.5 KB (100%)")},
                 {QStringLiteral("normalizedFlowFraction"), 1.0},
                 {QStringLiteral("normalizedCapturedByteFraction"), 1.0},
                 {QStringLiteral("normalizedOriginalByteFraction"), 1.0},
@@ -4433,14 +4439,22 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeCapturedBytesButton") != nullptr);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton") != nullptr);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
+        auto* flow_packet_histogram_value_label = find_quick_item_by_object_name(
+            qobject_cast<QQuickItem*>(statistics_pane.object.get()),
+            QStringLiteral("flowPacketHistogramValueLabel")
+        );
+        UI_REQUIRE(flow_packet_histogram_value_label != nullptr);
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("1 (50%)"));
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 1);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramState").toInt() == section_ready);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeCapturedBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("512 B (33%)"));
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 2);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("0 B (0%)"));
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", false);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -4514,6 +4528,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("2")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("flowCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
 
@@ -4523,8 +4538,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(histogram_controller.flowPacketHistogramRows() == histogram_rows);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCount")).toULongLong() > 0U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCountText")).toString().endsWith(QStringLiteral("B")));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCount")).toULongLong() > 0U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountText")).toString().endsWith(QStringLiteral("B")));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFlowFraction")).toDouble() == 1.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedCapturedByteFraction")).toDouble() >= 0.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedOriginalByteFraction")).toDouble() >= 0.0);

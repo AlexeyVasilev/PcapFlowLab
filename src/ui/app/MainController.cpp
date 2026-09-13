@@ -761,44 +761,40 @@ QVariantList build_packet_size_distribution_rows(const CapturePacketStatistics& 
     return rows;
 }
 
-QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& histogram) {
+QVariantList build_flow_packet_histogram_rows(const FrontendFlowPacketCountHistogramDto& histogram) {
     QVariantList rows {};
     rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
 
-    const auto max_flow_count = histogram.maximum_bucket_flow_count;
-    const auto max_captured_byte_count = histogram.maximum_bucket_captured_byte_count;
-    const auto max_original_byte_count = histogram.maximum_bucket_original_byte_count;
     for (const auto& bucket : histogram.buckets) {
         QVariantMap row {};
-        row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.stable_id));
+        row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.bucket_id));
         row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
         row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
             ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
             : QVariant {});
-        row.insert(QStringLiteral("label"), bucket.upper_bound_inclusive.has_value()
-            ? (*bucket.upper_bound_inclusive == bucket.lower_bound_inclusive
-                ? QString::number(bucket.lower_bound_inclusive)
-                : QStringLiteral("%1-%2").arg(bucket.lower_bound_inclusive).arg(*bucket.upper_bound_inclusive))
-            : QStringLiteral("%1+").arg(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("label"), QString::fromStdString(bucket.label));
         row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
+        row.insert(
+            QStringLiteral("flowCountWithTotalPercentText"),
+            QString::fromStdString(bucket.flow_count_with_total_percent_text)
+        );
         row.insert(QStringLiteral("capturedByteCount"), static_cast<qulonglong>(bucket.captured_byte_count));
-        row.insert(QStringLiteral("capturedByteCountText"), format_size_value(bucket.captured_byte_count));
+        row.insert(QStringLiteral("capturedByteCountText"), QString::fromStdString(bucket.captured_byte_count_text));
+        row.insert(
+            QStringLiteral("capturedByteCountWithTotalPercentText"),
+            QString::fromStdString(bucket.captured_byte_count_with_total_percent_text)
+        );
         row.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(bucket.original_byte_count));
-        row.insert(QStringLiteral("originalByteCountText"), format_size_value(bucket.original_byte_count));
-        const auto normalized_flow_fraction =
-            max_flow_count > 0U
-                ? static_cast<double>(bucket.flow_count) / static_cast<double>(max_flow_count)
-                : 0.0;
+        row.insert(QStringLiteral("originalByteCountText"), QString::fromStdString(bucket.original_byte_count_text));
+        row.insert(
+            QStringLiteral("originalByteCountWithTotalPercentText"),
+            QString::fromStdString(bucket.original_byte_count_with_total_percent_text)
+        );
+        const auto normalized_flow_fraction = bucket.normalized_flow_fraction;
         row.insert(QStringLiteral("normalizedFraction"), normalized_flow_fraction);
         row.insert(QStringLiteral("normalizedFlowFraction"), normalized_flow_fraction);
-        row.insert(QStringLiteral("normalizedCapturedByteFraction"),
-            max_captured_byte_count > 0U
-                ? static_cast<double>(bucket.captured_byte_count) / static_cast<double>(max_captured_byte_count)
-                : 0.0);
-        row.insert(QStringLiteral("normalizedOriginalByteFraction"),
-            max_original_byte_count > 0U
-                ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(max_original_byte_count)
-                : 0.0);
+        row.insert(QStringLiteral("normalizedCapturedByteFraction"), bucket.normalized_captured_byte_fraction);
+        row.insert(QStringLiteral("normalizedOriginalByteFraction"), bucket.normalized_original_byte_fraction);
         rows.push_back(row);
     }
 
@@ -5978,7 +5974,8 @@ void MainController::ensureFlowPacketHistogramLoaded() {
     setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::loading);
     emit stateChanged();
     flow_packet_count_histogram_ = session_.flow_packet_count_histogram();
-    flow_packet_histogram_rows_ = build_flow_packet_histogram_rows(flow_packet_count_histogram_);
+    flow_packet_histogram_rows_ =
+        build_flow_packet_histogram_rows(build_frontend_flow_packet_count_histogram(flow_packet_count_histogram_));
     setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }
