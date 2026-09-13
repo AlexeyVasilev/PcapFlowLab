@@ -12902,6 +12902,7 @@
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
     [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
     [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
+    [elements.topFlowsDetails, statisticsSectionKeys.topFlows],
     [elements.topEndpointsPortsDetails, statisticsSectionKeys.topEndpointsPorts],
   ]) {
     detailsElement?.addEventListener("toggle", () => {
