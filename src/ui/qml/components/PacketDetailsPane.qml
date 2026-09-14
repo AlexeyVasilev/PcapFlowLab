@@ -82,6 +82,14 @@ Frame {
         return index === 1 ? 1 : 0
     }
 
+    function requestStreamItemDataIfNeeded() {
+        if (streamTabs.currentIndex !== 1 || !root.isStreamItemDetails() || !root.packetDetailsController) {
+            return
+        }
+
+        root.packetDetailsController.loadSelectedStreamItemData()
+    }
+
     function packetByteViews() {
         if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
             return []
@@ -1099,7 +1107,9 @@ Frame {
                 const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
                 if (currentIndex !== normalizedIndex) {
                     currentIndex = normalizedIndex
+                    return
                 }
+                root.requestStreamItemDataIfNeeded()
             }
 
             onVisibleChanged: {
@@ -1107,7 +1117,9 @@ Frame {
                     const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
                     if (currentIndex !== normalizedIndex) {
                         currentIndex = normalizedIndex
+                        return
                     }
+                    root.requestStreamItemDataIfNeeded()
                 }
             }
 
@@ -1464,6 +1476,13 @@ Frame {
                 }
             }
 
+        }
+
+        Connections {
+            target: root.packetDetailsModel
+            function onChanged() {
+                root.requestStreamItemDataIfNeeded()
+            }
         }
     }
 }

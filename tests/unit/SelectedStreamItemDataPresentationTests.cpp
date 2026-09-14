@@ -747,19 +747,27 @@ void run_selected_stream_item_data_presentation_tests() {
             adapter.get_selected_flow_stream_item_details(30U, 16U, frontend_partial_row->stream_item_index);
         const auto status_details =
             adapter.get_selected_flow_stream_item_details(30U, 16U, frontend_status_row->stream_item_index);
+        const auto response_data =
+            adapter.get_selected_flow_stream_item_data(30U, 16U, frontend_response_row->stream_item_index);
+        const auto partial_data =
+            adapter.get_selected_flow_stream_item_data(30U, 16U, frontend_partial_row->stream_item_index);
+        const auto status_data =
+            adapter.get_selected_flow_stream_item_data(30U, 16U, frontend_status_row->stream_item_index);
         PFL_EXPECT(response_details.payload_tab_title == "Item Data");
-        PFL_EXPECT(response_details.stream_item_data.available);
-        PFL_EXPECT(response_details.stream_item_data.semantic_kind == "http_message");
-        PFL_EXPECT(response_details.stream_item_data.source_kind == "reconstructed_item");
-        PFL_EXPECT(response_details.stream_item_data.unavailable_text.empty());
-        PFL_EXPECT(partial_details.stream_item_data.available);
-        PFL_EXPECT(partial_details.stream_item_data.semantic_kind == "http_message");
-        PFL_EXPECT(partial_details.stream_item_data.source_kind == "reconstructed_item");
-        PFL_EXPECT(partial_details.stream_item_data.unavailable_text.empty());
-        PFL_EXPECT(status_details.stream_item_data.available);
-        PFL_EXPECT(status_details.stream_item_data.semantic_kind == "http_message");
-        PFL_EXPECT(status_details.stream_item_data.source_kind == "reconstructed_item");
-        PFL_EXPECT(status_details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(!response_details.stream_item_data.available);
+        PFL_EXPECT(response_details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(response_data.available);
+        PFL_EXPECT(response_data.semantic_kind == "http_message");
+        PFL_EXPECT(response_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(response_data.unavailable_text.empty());
+        PFL_EXPECT(partial_data.available);
+        PFL_EXPECT(partial_data.semantic_kind == "http_message");
+        PFL_EXPECT(partial_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(partial_data.unavailable_text.empty());
+        PFL_EXPECT(status_data.available);
+        PFL_EXPECT(status_data.semantic_kind == "http_message");
+        PFL_EXPECT(status_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(status_data.unavailable_text.empty());
     }
 
     {
@@ -829,14 +837,17 @@ void run_selected_stream_item_data_presentation_tests() {
         const auto stream = adapter.get_selected_flow_stream(30U, 16U);
         const auto* row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /");
         PFL_REQUIRE(row != nullptr);
-        PFL_EXPECT(!row->stream_item_data.formatted_text.empty());
+        PFL_EXPECT(row->stream_item_data.formatted_text.empty());
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 16U, row->stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 16U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.semantic_kind == "http_message");
-        PFL_EXPECT(details.stream_item_data.source_kind == "reconstructed_item");
-        PFL_EXPECT(!details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.available);
+        PFL_EXPECT(item_data.semantic_kind == "http_message");
+        PFL_EXPECT(item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(!item_data.formatted_text.empty());
     }
 
     {
@@ -852,11 +863,14 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(stream.items[0].stream_item_data.formatted_text.empty());
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, stream.items[0].stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 32U, stream.items[0].stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.semantic_kind == "tcp_payload");
-        PFL_EXPECT(details.stream_item_data.source_kind == "captured_packet_range");
-        PFL_EXPECT(details.stream_item_data.formatted_text.find("48 65 6c 6c 6f") != std::string::npos);
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.available);
+        PFL_EXPECT(item_data.semantic_kind == "tcp_payload");
+        PFL_EXPECT(item_data.source_kind == "captured_packet_range");
+        PFL_EXPECT(item_data.formatted_text.find("48 65 6c 6c 6f") != std::string::npos);
     }
 
     {
@@ -871,13 +885,16 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(row->stream_item_data.formatted_text.empty());
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 16U, row->stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 16U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.semantic_kind == "http_message");
-        PFL_EXPECT(details.stream_item_data.source_kind == "reconstructed_item");
-        PFL_EXPECT(!details.stream_item_data.status_text.empty());
-        PFL_EXPECT(!details.stream_item_data.formatted_text.empty());
-        PFL_EXPECT(details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.available);
+        PFL_EXPECT(item_data.semantic_kind == "http_message");
+        PFL_EXPECT(item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(!item_data.status_text.empty());
+        PFL_EXPECT(!item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.unavailable_text.empty());
     }
 
     {
@@ -1017,13 +1034,16 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(row != nullptr);
 
         const auto details = adapter.get_selected_flow_stream_item_details(5U, 16U, row->stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(5U, 16U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.semantic_kind == "tls_record");
-        PFL_EXPECT(details.stream_item_data.assembly_kind == "reassembled");
-        PFL_EXPECT(details.stream_item_data.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
-        PFL_EXPECT(details.stream_item_data.contributing_unit_count == std::optional<std::uint64_t> {2U});
-        PFL_EXPECT(details.stream_item_data.formatted_text.find("16 03 03") != std::string::npos);
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.available);
+        PFL_EXPECT(item_data.semantic_kind == "tls_record");
+        PFL_EXPECT(item_data.assembly_kind == "reassembled");
+        PFL_EXPECT(item_data.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+        PFL_EXPECT(item_data.contributing_unit_count == std::optional<std::uint64_t> {2U});
+        PFL_EXPECT(item_data.formatted_text.find("16 03 03") != std::string::npos);
     }
 
     {
@@ -1163,11 +1183,14 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(row != nullptr);
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, row->stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 32U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.semantic_kind == "quic_frame");
-        PFL_EXPECT(details.stream_item_data.logical_offset == std::optional<std::uint64_t> {0U});
-        PFL_EXPECT(details.stream_item_data.formatted_text.find("06") != std::string::npos);
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(item_data.available);
+        PFL_EXPECT(item_data.semantic_kind == "quic_frame");
+        PFL_EXPECT(item_data.logical_offset == std::optional<std::uint64_t> {0U});
+        PFL_EXPECT(item_data.formatted_text.find("06") != std::string::npos);
     }
 
     {
@@ -1357,10 +1380,14 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(adapter.select_flow(0U).selected);
 
         const auto stale_details = adapter.get_selected_flow_stream_item_details(30U, 15U, 16U);
+        const auto stale_data = adapter.get_selected_flow_stream_item_data(30U, 15U, 16U);
         PFL_EXPECT(stale_details.payload_tab_title == "Item Data");
         PFL_EXPECT(!stale_details.stream_item_data.available);
         PFL_EXPECT(stale_details.stream_item_data.formatted_text.empty());
-        PFL_EXPECT(stale_details.stream_item_data.unavailable_text.find("stale or outside the requested bounded stream window") != std::string::npos);
+        PFL_EXPECT(stale_details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(!stale_data.available);
+        PFL_EXPECT(stale_data.formatted_text.empty());
+        PFL_EXPECT(stale_data.unavailable_text.find("stale or outside the requested bounded stream window") != std::string::npos);
     }
 
     {

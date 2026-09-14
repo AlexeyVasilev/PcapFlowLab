@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDataDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -1284,6 +1284,21 @@ fn get_selected_flow_stream_item_details(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_selected_flow_stream_item_data(
+    state: State<'_, Mutex<AdapterState>>,
+    max_packets_to_scan: usize,
+    limit: usize,
+    stream_item_index: u64,
+) -> Result<StreamItemDataDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .get_selected_flow_stream_item_data(max_packets_to_scan, limit, stream_item_index)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_selected_flow_packet_details(
     state: State<'_, Mutex<AdapterState>>,
     packet_index: u64,
@@ -1656,6 +1671,7 @@ pub fn run() {
             get_unrecognized_packets,
             get_selected_flow_stream,
             get_selected_flow_stream_item_details,
+            get_selected_flow_stream_item_data,
             get_selected_flow_packet_details,
             get_selected_flow_packet_byte_view_content,
             get_unrecognized_packet_details,

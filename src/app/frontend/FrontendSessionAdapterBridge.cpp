@@ -3746,6 +3746,23 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
     );
 }
 
+char* pfl_frontend_session_adapter_get_selected_flow_stream_item_data_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) {
+    if (handle == nullptr) {
+        return make_c_string(stream_item_data_json(unavailable_stream_item(stream_item_index).stream_item_data));
+    }
+
+    return make_c_string(stream_item_data_json(handle->adapter.get_selected_flow_stream_item_data(
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    )));
+}
+
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint64_t packet_index,

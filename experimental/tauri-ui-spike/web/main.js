@@ -309,6 +309,8 @@
     selectedStreamItemDetails: null,
     streamDetailsState: "idle",
     streamDetailsErrorText: "",
+    streamItemDataState: "idle",
+    streamItemDataErrorText: "",
     streamDetailsTab: "summary",
     analysis: null,
     analysisState: "idle",
@@ -354,6 +356,7 @@
     packetRequestToken: 0,
     streamRequestToken: 0,
     streamDetailsRequestToken: 0,
+    streamItemDataRequestToken: 0,
     packetDetailsRequestToken: 0,
     packetDetailsByteViewRequestToken: 0,
     analysisRequestToken: 0,
@@ -6506,6 +6509,9 @@
     state.selectedStreamItemDetails = null;
     state.streamDetailsState = "idle";
     state.streamDetailsErrorText = "";
+    state.streamItemDataState = "idle";
+    state.streamItemDataErrorText = "";
+    state.streamItemDataRequestToken += 1;
   }
 
   function clearAnalysis(resetFlowListState = true) {
@@ -8997,7 +9003,7 @@
     elements.streamDetailsItemDataTabButton.textContent = "Item Data";
     renderStreamItemSummary(elements.streamDetailsSummaryText, item);
 
-    if (state.streamDetailsState === "loading") {
+    if (state.streamItemDataState === "loading") {
       elements.streamDetailsItemDataStateText.textContent = "Loading item data...";
       elements.streamDetailsItemDataText.textContent = "Loading item data...";
       elements.streamDetailsItemDataText.classList.add("is-muted");
@@ -9008,6 +9014,29 @@
       elements.streamDetailsStateText.classList.remove("is-hidden");
       elements.streamDetailsStateText.classList.add("is-error");
       elements.streamDetailsStateText.textContent = state.streamDetailsErrorText;
+    }
+
+    if (state.streamItemDataState === "error" && state.streamItemDataErrorText) {
+      elements.streamDetailsItemDataStateText.textContent = state.streamItemDataErrorText;
+      elements.streamDetailsItemDataStateText.classList.add("is-error");
+      elements.streamDetailsItemDataText.textContent = state.streamItemDataErrorText;
+      elements.streamDetailsItemDataText.classList.add("is-muted");
+      if (elements.streamDetailsExportBytesButton) {
+        elements.streamDetailsExportBytesButton.disabled = true;
+      }
+      return;
+    }
+
+    const itemDataLoaded = item.stream_item_data_loaded === true
+      && item.stream_item_data_context_key === streamItemDataContextKey(item.stream_item_index);
+    if (!itemDataLoaded) {
+      elements.streamDetailsItemDataStateText.textContent = "Item data has not been loaded yet.";
+      elements.streamDetailsItemDataText.textContent = "Open Item Data to load selected stream item data.";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
+      if (elements.streamDetailsExportBytesButton) {
+        elements.streamDetailsExportBytesButton.disabled = true;
+      }
+      return;
     }
 
     elements.streamDetailsItemDataStateText.textContent = itemData.status_text || "";
@@ -10407,6 +10436,9 @@
         state.selectedStreamItemDetails = selectedItem;
         state.streamDetailsState = selectedItem ? "loading" : "idle";
         state.streamDetailsErrorText = "";
+        state.streamItemDataState = "idle";
+        state.streamItemDataErrorText = "";
+        state.streamItemDataRequestToken += 1;
         if (selectedItem) {
           void loadSelectedStreamItemDetails(selectedItem.stream_item_index, selectionToken);
         }
@@ -10416,6 +10448,9 @@
         state.selectedStreamItemDetails = null;
         state.streamDetailsState = "idle";
         state.streamDetailsErrorText = "";
+        state.streamItemDataState = "idle";
+        state.streamItemDataErrorText = "";
+        state.streamItemDataRequestToken += 1;
       }
     } catch (error) {
       if (
@@ -10435,6 +10470,9 @@
       state.selectedStreamItemDetails = null;
       state.streamDetailsState = "error";
       state.streamDetailsErrorText = state.streamErrorText;
+      state.streamItemDataState = "idle";
+      state.streamItemDataErrorText = "";
+      state.streamItemDataRequestToken += 1;
       setStatus(state.streamErrorText, "error");
     }
 
@@ -10813,6 +10851,9 @@
       state.selectedStreamItemDetails = null;
       state.streamDetailsState = "idle";
       state.streamDetailsErrorText = "";
+      state.streamItemDataState = "idle";
+      state.streamItemDataErrorText = "";
+      state.streamItemDataRequestToken += 1;
       setStatus("The selected stream item is not available in the current stream window.", "error");
       render();
       return;
@@ -10823,8 +10864,20 @@
     state.selectedStreamItemDetails = item;
     state.streamDetailsState = "loading";
     state.streamDetailsErrorText = "";
+    state.streamItemDataState = "idle";
+    state.streamItemDataErrorText = "";
+    state.streamItemDataRequestToken += 1;
     render();
     void loadSelectedStreamItemDetails(streamItemIndex);
+  }
+
+  function streamItemDataContextKey(streamItemIndex) {
+    return [
+      state.selectedFlowIndex ?? "none",
+      state.streamRequestedPacketBudget,
+      state.streamRequestedItemLimit,
+      streamItemIndex,
+    ].join(":");
   }
 
   async function loadSelectedStreamItemDetails(streamItemIndex, selectionToken = state.flowSelectionRequestToken) {
@@ -10860,6 +10913,9 @@
       };
       state.streamDetailsState = "loaded";
       state.streamDetailsErrorText = "";
+      if (state.streamDetailsTab === "item-data") {
+        void loadSelectedStreamItemData(streamItemIndex, selectionToken);
+      }
     } catch (error) {
       if (
         selectionToken !== state.flowSelectionRequestToken
@@ -10873,6 +10929,67 @@
       state.selectedStreamItemDetails = state.selectedStreamItem;
       state.streamDetailsState = "error";
       state.streamDetailsErrorText = `Failed to load stream item details: ${String(error)}`;
+    }
+
+    render();
+  }
+
+  async function loadSelectedStreamItemData(streamItemIndex = state.selectedStreamItemIndex, selectionToken = state.flowSelectionRequestToken) {
+    if (state.selectedFlowIndex == null || streamItemIndex == null) {
+      return;
+    }
+
+    const item = state.selectedStreamItemDetails || state.selectedStreamItem;
+    if (item == null || item.stream_item_index !== streamItemIndex) {
+      return;
+    }
+
+    const contextKey = streamItemDataContextKey(streamItemIndex);
+    if (item.stream_item_data_loaded === true && item.stream_item_data_context_key === contextKey) {
+      return;
+    }
+
+    const requestedFlowIndex = state.selectedFlowIndex;
+    const requestToken = ++state.streamItemDataRequestToken;
+    state.streamItemDataState = "loading";
+    state.streamItemDataErrorText = "";
+    render();
+
+    try {
+      const itemData = await invoke("get_selected_flow_stream_item_data", {
+        max_packets_to_scan: state.streamRequestedPacketBudget,
+        limit: state.streamRequestedItemLimit,
+        stream_item_index: streamItemIndex,
+      });
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamItemDataRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+        || state.selectedStreamItemIndex !== streamItemIndex
+      ) {
+        return;
+      }
+
+      state.selectedStreamItemDetails = {
+        ...(state.selectedStreamItemDetails || state.selectedStreamItem || {}),
+        stream_item_data: itemData || {},
+        stream_item_data_loaded: true,
+        stream_item_data_context_key: contextKey,
+      };
+      state.streamItemDataState = "loaded";
+      state.streamItemDataErrorText = "";
+    } catch (error) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamItemDataRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+        || state.selectedStreamItemIndex !== streamItemIndex
+      ) {
+        return;
+      }
+
+      state.streamItemDataState = "error";
+      state.streamItemDataErrorText = `Failed to load stream item data: ${String(error)}`;
     }
 
     render();
@@ -12985,6 +13102,9 @@
     button.addEventListener("click", () => {
       state.streamDetailsTab = normalizeStreamDetailsTab(button.dataset.streamDetailsTab || "summary");
       render();
+      if (state.streamDetailsTab === "item-data") {
+        void loadSelectedStreamItemData();
+      }
     });
   }
   elements.packetLoadMoreButton.addEventListener("click", async () => {
