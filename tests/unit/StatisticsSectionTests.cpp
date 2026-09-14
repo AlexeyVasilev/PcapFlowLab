@@ -1601,7 +1601,7 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(overview.input_metadata.input_file_size == std::filesystem::file_size(capture_path));
     PFL_EXPECT(!overview.input_metadata.source_capture_path.has_value());
     PFL_EXPECT(!overview.input_metadata.source_capture_file_size.has_value());
-    PFL_EXPECT(overview.input_metadata.source_capture_accessible);
+    PFL_EXPECT(overview.input_metadata.source_capture_accessible == true);
     PFL_EXPECT(overview.protocol_summary.tcp.flow_count == 1U);
     PFL_EXPECT(overview.protocol_summary.udp.flow_count == 2U);
     PFL_EXPECT(overview.protocol_summary.tcp.captured_bytes_text
@@ -2122,7 +2122,7 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(raw_overview.input_metadata.input_file_size == std::filesystem::file_size(capture_path));
     PFL_EXPECT(!raw_overview.input_metadata.source_capture_path.has_value());
     PFL_EXPECT(!raw_overview.input_metadata.source_capture_file_size.has_value());
-    PFL_EXPECT(raw_overview.input_metadata.source_capture_accessible);
+    PFL_EXPECT(raw_overview.input_metadata.source_capture_accessible == true);
     PFL_EXPECT(raw_overview.whole_capture_totals.packet_count == 2U);
     PFL_EXPECT(raw_overview.whole_capture_totals.packet_count > raw_overview.summary.packet_count);
     PFL_EXPECT(
@@ -2151,7 +2151,7 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(*indexed_overview.input_metadata.source_capture_path == capture_path.string());
     PFL_REQUIRE(indexed_overview.input_metadata.source_capture_file_size.has_value());
     PFL_EXPECT(*indexed_overview.input_metadata.source_capture_file_size == raw_overview.input_metadata.input_file_size);
-    PFL_EXPECT(!indexed_overview.input_metadata.source_capture_accessible);
+    PFL_EXPECT(indexed_overview.input_metadata.source_capture_accessible == false);
     PFL_EXPECT(indexed_overview.whole_capture_totals.packet_count == raw_overview.whole_capture_totals.packet_count);
     PFL_EXPECT(indexed_overview.whole_capture_totals.captured_bytes == raw_overview.whole_capture_totals.captured_bytes);
     PFL_EXPECT(indexed_overview.whole_capture_totals.original_bytes == raw_overview.whole_capture_totals.original_bytes);
@@ -2518,6 +2518,7 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"input_metadata\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_kind\":\"pcap\""));
     PFL_EXPECT(contains_text(overview_json, "\"source_capture_file_size\":null"));
+    PFL_EXPECT(contains_text(overview_json, "\"source_capture_accessible\":true"));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));
     PFL_EXPECT(!contains_text(overview_json, "\"protocol_hints\""));
     PFL_EXPECT(!contains_text(overview_json, "\"quic_recognition\""));
@@ -2538,11 +2539,14 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(index_open_json, "\"opened\":true"));
     const auto index_overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
     PFL_EXPECT(contains_text(index_overview_json, "\"input_kind\":\"index\""));
+    PFL_EXPECT(contains_text(index_overview_json, "\"source_capture_accessible\":true"));
     PFL_EXPECT(contains_text(
         index_overview_json,
         std::string {"\"source_capture_file_size\":"} +
             std::to_string(static_cast<std::uint64_t>(std::filesystem::file_size(capture_path)))
     ));
+    const auto unavailable_overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(nullptr));
+    PFL_EXPECT(contains_text(unavailable_overview_json, "\"source_capture_accessible\":null"));
 
     const auto hints_json = take_bridge_string(pfl_frontend_session_adapter_get_protocol_hint_statistics_json(handle));
     PFL_EXPECT(contains_text(hints_json, "\"protocol_hints\""));
@@ -2699,7 +2703,7 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         PFL_REQUIRE(available_index_overview.input_metadata.source_capture_file_size.has_value());
         PFL_EXPECT(*available_index_overview.input_metadata.source_capture_file_size == source_capture_file_size);
         PFL_EXPECT(available_index_overview.input_metadata.input_file_size == index_file_size);
-        PFL_EXPECT(available_index_overview.input_metadata.source_capture_accessible);
+        PFL_EXPECT(available_index_overview.input_metadata.source_capture_accessible == true);
         const auto available_export_result = available_index_adapter.export_statistics_report(
             FrontendStatisticsReportFormat::markdown,
             available_report_path

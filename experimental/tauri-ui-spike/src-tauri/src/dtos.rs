@@ -591,7 +591,7 @@ pub struct InputMetadataDto {
     pub input_file_size: u64,
     pub source_capture_path: Option<String>,
     pub source_capture_file_size: Option<u64>,
-    pub source_capture_accessible: bool,
+    pub source_capture_accessible: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

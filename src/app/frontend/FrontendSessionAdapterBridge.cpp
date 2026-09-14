@@ -182,6 +182,10 @@ std::string optional_size_json(const std::optional<std::size_t>& value) {
     return value.has_value() ? std::to_string(*value) : "null";
 }
 
+std::string optional_bool_json(const std::optional<bool> value) {
+    return value.has_value() ? bool_json(*value) : "null";
+}
+
 std::string advanced_flow_query_status_json(const pfl::FrontendAdvancedFlowQueryStatus status) {
     switch (status) {
     case pfl::FrontendAdvancedFlowQueryStatus::ok:
@@ -1771,7 +1775,7 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         out << "null";
     }
     out << ','
-        << "\"source_capture_accessible\":" << bool_json(overview.input_metadata.source_capture_accessible)
+        << "\"source_capture_accessible\":" << optional_bool_json(overview.input_metadata.source_capture_accessible)
         << "},"
         << "\"capture_time\":" << capture_time_statistics_json(overview.capture_time) << ','
         << "\"capture_metrics\":" << capture_metrics_json(overview.capture_metrics) << ','

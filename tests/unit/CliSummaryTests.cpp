@@ -1497,6 +1497,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(markdown, "| Input type | PCAP |"));
     PFL_EXPECT(contains_text(markdown, "| Capture path |"));
     PFL_EXPECT(contains_text(markdown, "| Capture file size |"));
+    PFL_EXPECT(!contains_text(markdown, "Source capture status"));
     PFL_EXPECT(!contains_text(markdown, "Input file size"));
     PFL_EXPECT(!contains_text(markdown, "Index file size"));
     PFL_EXPECT(contains_text(markdown, "### Transport"));
@@ -1534,6 +1535,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(html, "<th>Input type</th><td>PCAP</td>"));
     PFL_EXPECT(contains_text(html, "<th>Capture path</th><td>"));
     PFL_EXPECT(contains_text(html, "<th>Capture file size</th><td>"));
+    PFL_EXPECT(!contains_text(html, "Source capture status"));
     PFL_EXPECT(!contains_text(html, "Input file size"));
     PFL_EXPECT(!contains_text(html, "Index file size"));
     PFL_EXPECT(contains_text(html, "<h3>Transport</h3>"));
@@ -1620,7 +1622,8 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(index_markdown, "Index file size"));
     PFL_EXPECT(contains_text(index_markdown, "Source capture path"));
     PFL_EXPECT(contains_text(index_markdown, "Source capture file size"));
-    PFL_EXPECT(contains_text(index_markdown, "Source capture status"));
+    PFL_EXPECT(contains_text(index_markdown, "| Source capture status | Not checked |"));
+    PFL_EXPECT(!contains_text(index_markdown, "| Source capture status | Unavailable |"));
     PFL_EXPECT(!contains_text(index_markdown, "Input file size"));
     PFL_EXPECT(contains_text(index_markdown, "| Client | CLI |"));
     PFL_EXPECT(contains_text(index_markdown, "| Statistics scope | Complete |"));

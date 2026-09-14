@@ -203,7 +203,7 @@ struct FrontendInputMetadataDto {
     std::uint64_t input_file_size {0};
     std::optional<std::string> source_capture_path {};
     std::optional<std::uint64_t> source_capture_file_size {};
-    bool source_capture_accessible {false};
+    std::optional<bool> source_capture_accessible {};
 };
 
 struct FrontendWholeCaptureTotalsDto {

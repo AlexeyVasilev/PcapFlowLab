@@ -38,6 +38,14 @@ std::string format_optional_file_size(const std::optional<std::uint64_t>& value)
         : std::string {};
 }
 
+std::string source_capture_status_text(const std::optional<bool> accessible) {
+    if (!accessible.has_value()) {
+        return "Not checked";
+    }
+
+    return *accessible ? "Available" : "Unavailable";
+}
+
 void add_field(
     FrontendStatisticsReportSection& section,
     std::string name,
@@ -75,7 +83,7 @@ FrontendStatisticsReportSection make_input_section(const FrontendInputMetadataDt
         add_field(
             section,
             "Source capture status",
-            input_metadata.source_capture_accessible ? "Available" : "Unavailable"
+            source_capture_status_text(input_metadata.source_capture_accessible)
         );
         return section;
     }

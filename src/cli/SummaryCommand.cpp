@@ -275,7 +275,7 @@ std::string render_basic_summary_text(
     if (overview.input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index &&
         overview.input_metadata.source_capture_path.has_value()) {
         auto source_capture = basename_for_display(*overview.input_metadata.source_capture_path);
-        if (render_source_capture_availability && !overview.input_metadata.source_capture_accessible) {
+        if (render_source_capture_availability && overview.input_metadata.source_capture_accessible == false) {
             source_capture += " (not available)";
         }
         append_key_value_line(out, "Source capture", source_capture, input_label_width);
@@ -524,7 +524,6 @@ FrontendOverviewDto build_fast_v16_overview(
         .input_path = index_path.string(),
         .input_kind = FrontendInputKind::pcap_flow_lab_index,
         .input_file_size = index_file_size,
-        .source_capture_accessible = false,
     };
     if (!header.source_capture_path_utf8.empty()) {
         input_metadata.source_capture_path = source_info.capture_path.string();
