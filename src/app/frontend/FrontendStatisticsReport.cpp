@@ -1,6 +1,8 @@
 #include "app/frontend/FrontendStatisticsReport.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -30,6 +32,20 @@ std::string input_kind_report_text(const FrontendInputKind kind) {
     }
 }
 
+std::string format_optional_file_size(const std::optional<std::uint64_t>& value) {
+    return value.has_value()
+        ? session_detail::format_statistics_compact_size_value(*value)
+        : std::string {};
+}
+
+std::string source_capture_status_text(const std::optional<bool> accessible) {
+    if (!accessible.has_value()) {
+        return "Not checked";
+    }
+
+    return *accessible ? "Available" : "Unavailable";
+}
+
 void add_field(
     FrontendStatisticsReportSection& section,
     std::string name,
@@ -39,6 +55,46 @@ void add_field(
         .name = std::move(name),
         .value = report_value_or_missing(value),
     });
+}
+
+FrontendStatisticsReportSection make_input_section(const FrontendInputMetadataDto& input_metadata) {
+    FrontendStatisticsReportSection section {
+        .title = "Input",
+    };
+    add_field(section, "Input type", input_kind_report_text(input_metadata.input_kind));
+
+    if (input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index) {
+        add_field(section, "Index path", input_metadata.input_path);
+        add_field(
+            section,
+            "Index file size",
+            session_detail::format_statistics_compact_size_value(input_metadata.input_file_size)
+        );
+        add_field(
+            section,
+            "Source capture path",
+            input_metadata.source_capture_path.value_or(std::string {})
+        );
+        add_field(
+            section,
+            "Source capture file size",
+            format_optional_file_size(input_metadata.source_capture_file_size)
+        );
+        add_field(
+            section,
+            "Source capture status",
+            source_capture_status_text(input_metadata.source_capture_accessible)
+        );
+        return section;
+    }
+
+    add_field(section, "Capture path", input_metadata.input_path);
+    add_field(
+        section,
+        "Capture file size",
+        session_detail::format_statistics_compact_size_value(input_metadata.input_file_size)
+    );
+    return section;
 }
 
 void add_note(FrontendStatisticsReportSection& section, std::string text) {
@@ -562,22 +618,7 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
         report.sections.push_back(std::move(section));
     }
 
-    {
-        FrontendStatisticsReportSection section {
-            .title = "Input",
-        };
-        add_field(section, "Input path", overview.input_metadata.input_path);
-        add_field(section, "Input type", input_kind_report_text(overview.input_metadata.input_kind));
-        add_field(
-            section,
-            "Input file size",
-            session_detail::format_statistics_compact_size_value(overview.input_metadata.input_file_size)
-        );
-        if (overview.input_metadata.source_capture_path.has_value()) {
-            add_field(section, "Recorded source capture", *overview.input_metadata.source_capture_path);
-        }
-        report.sections.push_back(std::move(section));
-    }
+    report.sections.push_back(make_input_section(overview.input_metadata));
 
     {
         FrontendStatisticsReportSection section {
@@ -638,6 +679,8 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
         };
         add_field(section, "Average captured packet size", metrics.average_captured_packet_size_text);
         add_field(section, "Average original packet size", metrics.average_original_packet_size_text);
+        add_field(section, "Average packets per flow", metrics.average_packets_per_flow_text);
+        add_field(section, "Flows per 1M packets", metrics.flows_per_1m_packets_text);
         add_field(section, "Average packet rate", metrics.average_packet_rate_text);
         add_field(section, "Average captured data rate", metrics.average_captured_data_rate_text);
         add_field(section, "Average original data rate", metrics.average_original_data_rate_text);

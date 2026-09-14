@@ -284,6 +284,7 @@ FrontendInputMetadataDto build_frontend_input_metadata(const CaptureSession& ses
 
     if (session.opened_from_index() && !session.expected_source_capture_path().empty()) {
         metadata.source_capture_path = path_to_string(session.expected_source_capture_path());
+        metadata.source_capture_file_size = session.source_info().file_size;
     }
 
     return metadata;
@@ -2052,7 +2053,7 @@ FrontendOverviewDto build_frontend_overview(
         : std::vector<FrontendProtocolPathPresentationDto> {};
     const auto input_metadata = build_frontend_input_metadata(session);
     const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
-    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
+    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics, session.summary().flow_count);
     const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
     const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
         flow_characteristics_statistics,
@@ -2617,9 +2618,7 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
             std::chrono::system_clock::now()
         ),
         .statistics_scope = statistics_report_scope_text(session_.is_partial_open()),
-        .index_revision = session_.opened_from_index()
-            ? std::optional<std::uint32_t> {kCaptureIndexStableIndexRevision}
-            : std::nullopt,
+        .index_revision = session_.loaded_index_revision(),
     };
 
     const FrontendStatisticsReportInput input {
@@ -2663,6 +2662,10 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
     result.exported = true;
     result.output_path = path_to_string(output_path);
     return result;
+}
+
+std::optional<std::uint32_t> FrontendSessionAdapter::loaded_index_revision() const noexcept {
+    return session_.loaded_index_revision();
 }
 
 std::vector<FrontendByteExportFormatDto> FrontendSessionAdapter::get_byte_export_formats() const {

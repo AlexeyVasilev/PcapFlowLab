@@ -80,9 +80,10 @@ index. Options that require full flow metadata, such as `--out-flows-list`, use
 the normal full-session index path instead. Raw capture input continues to use
 the normal import/session path.
 
-Fast v16 index summaries do not open, fingerprint, or otherwise probe the
-recorded source capture. If the `Input` section shows a stored source-capture
-name, it is recorded index identity only, not an accessibility verdict.
+Fast v16 index summaries do not open, fingerprint, stat for current
+availability, or otherwise probe the recorded source capture. If the `Input`
+section shows a stored source-capture name, it is recorded index identity only,
+not an accessibility verdict.
 
 ## Basic output
 
@@ -159,6 +160,8 @@ Important details:
 - `Capture Metrics` renders:
   - average captured packet size;
   - average original packet size;
+  - average packets per flow;
+  - flows per 1M packets;
   - average packet rate;
   - average captured data rate;
   - average original data rate;
@@ -269,8 +272,19 @@ Report information includes:
 - Generated at: UTC timestamp in `YYYY-MM-DD HH:MM:SS UTC` form
 - Statistics scope: `Complete` or `Partial`
 
-For fast v16 index reports, report metadata may also include the stable index
-revision already read from the index header.
+For index input, report metadata includes the revision of the actual loaded
+index. The fast v16 path gets that value directly from the stable header it
+already read; the full-open/session path gets it from the loaded
+`CaptureSession` index header. Direct PCAP/PCAPNG reports do not have an Index
+revision field.
+
+For fast v16 index reports, `Source capture path` and `Source capture file
+size` are recorded source identity metadata from the index. They do not prove
+that the source capture is currently accessible. Because this path deliberately
+does not probe the recorded source capture, `Source capture status` is reported
+as `Not checked`. Full-open/session-backed index reports use the actual
+`CaptureSession` source availability result and report `Available` or
+`Unavailable`.
 
 The full report intentionally includes only the Protocol Path Identity tree. It
 does not duplicate the standalone Protocol Path `kind-overview` or

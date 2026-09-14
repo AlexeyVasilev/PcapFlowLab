@@ -3575,6 +3575,8 @@
     captureMetricsDetails: document.getElementById("captureMetricsDetails"),
     averageCapturedPacketSizeValue: document.getElementById("averageCapturedPacketSizeValue"),
     averageOriginalPacketSizeValue: document.getElementById("averageOriginalPacketSizeValue"),
+    averagePacketsPerFlowValue: document.getElementById("averagePacketsPerFlowValue"),
+    flowsPer1MPacketsValue: document.getElementById("flowsPer1MPacketsValue"),
     averagePacketRateValue: document.getElementById("averagePacketRateValue"),
     averageCapturedDataRateValue: document.getElementById("averageCapturedDataRateValue"),
     averageOriginalDataRateValue: document.getElementById("averageOriginalDataRateValue"),
@@ -7353,6 +7355,8 @@
     setStatisticsText(elements.captureDurationValue, "");
     setStatisticsText(elements.averageCapturedPacketSizeValue, "");
     setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+    setStatisticsText(elements.averagePacketsPerFlowValue, "");
+    setStatisticsText(elements.flowsPer1MPacketsValue, "");
     setStatisticsText(elements.averagePacketRateValue, "");
     setStatisticsText(elements.averageCapturedDataRateValue, "");
     setStatisticsText(elements.averageOriginalDataRateValue, "");
@@ -7862,6 +7866,8 @@
       setStatisticsText(elements.captureDurationValue, "");
       setStatisticsText(elements.averageCapturedPacketSizeValue, "");
       setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketsPerFlowValue, "");
+      setStatisticsText(elements.flowsPer1MPacketsValue, "");
       setStatisticsText(elements.averagePacketRateValue, "");
       setStatisticsText(elements.averageCapturedDataRateValue, "");
       setStatisticsText(elements.averageOriginalDataRateValue, "");
@@ -7899,6 +7905,8 @@
       setStatisticsText(elements.captureDurationValue, "");
       setStatisticsText(elements.averageCapturedPacketSizeValue, "");
       setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketsPerFlowValue, "");
+      setStatisticsText(elements.flowsPer1MPacketsValue, "");
       setStatisticsText(elements.averagePacketRateValue, "");
       setStatisticsText(elements.averageCapturedDataRateValue, "");
       setStatisticsText(elements.averageOriginalDataRateValue, "");
@@ -7936,6 +7944,8 @@
       setStatisticsText(elements.captureDurationValue, "");
       setStatisticsText(elements.averageCapturedPacketSizeValue, "");
       setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketsPerFlowValue, "");
+      setStatisticsText(elements.flowsPer1MPacketsValue, "");
       setStatisticsText(elements.averagePacketRateValue, "");
       setStatisticsText(elements.averageCapturedDataRateValue, "");
       setStatisticsText(elements.averageOriginalDataRateValue, "");
@@ -7972,6 +7982,8 @@
     setStatisticsText(elements.captureDurationValue, captureTime?.duration_text);
     setStatisticsText(elements.averageCapturedPacketSizeValue, captureMetrics?.average_captured_packet_size_text);
     setStatisticsText(elements.averageOriginalPacketSizeValue, captureMetrics?.average_original_packet_size_text);
+    setStatisticsText(elements.averagePacketsPerFlowValue, captureMetrics?.average_packets_per_flow_text);
+    setStatisticsText(elements.flowsPer1MPacketsValue, captureMetrics?.flows_per_1m_packets_text);
     setStatisticsText(elements.averagePacketRateValue, captureMetrics?.average_packet_rate_text);
     setStatisticsText(elements.averageCapturedDataRateValue, captureMetrics?.average_captured_data_rate_text);
     setStatisticsText(elements.averageOriginalDataRateValue, captureMetrics?.average_original_data_rate_text);
@@ -8089,10 +8101,10 @@
             );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             const valueText = showingOriginalBytes
-              ? String(bucket?.original_byte_count_text || "0 B")
+              ? String(bucket?.original_byte_count_with_total_percent_text || bucket?.original_byte_count_text || "0 B")
               : (showingCapturedBytes
-                  ? String(bucket?.captured_byte_count_text || "0 B")
-                  : formatNumber(flowCount));
+                  ? String(bucket?.captured_byte_count_with_total_percent_text || bucket?.captured_byte_count_text || "0 B")
+                  : String(bucket?.flow_count_with_total_percent_text || formatNumber(flowCount)));
             return `
               <div class="statistics-histogram-row">
                 <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
@@ -12890,6 +12902,7 @@
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
     [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
     [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
+    [elements.topFlowsDetails, statisticsSectionKeys.topFlows],
     [elements.topEndpointsPortsDetails, statisticsSectionKeys.topEndpointsPorts],
   ]) {
     detailsElement?.addEventListener("toggle", () => {

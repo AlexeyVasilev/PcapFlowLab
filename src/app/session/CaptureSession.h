@@ -216,6 +216,7 @@ public:
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool source_capture_accessible() const noexcept;
     [[nodiscard]] bool opened_from_index() const noexcept;
+    [[nodiscard]] std::optional<std::uint32_t> loaded_index_revision() const noexcept;
     [[nodiscard]] bool is_partial_open() const noexcept;
     [[nodiscard]] const OpenFailureInfo& partial_open_failure() const noexcept;
     [[nodiscard]] const std::string& last_open_error_text() const noexcept;

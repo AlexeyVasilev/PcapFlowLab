@@ -182,6 +182,10 @@ std::string optional_size_json(const std::optional<std::size_t>& value) {
     return value.has_value() ? std::to_string(*value) : "null";
 }
 
+std::string optional_bool_json(const std::optional<bool> value) {
+    return value.has_value() ? bool_json(*value) : "null";
+}
+
 std::string advanced_flow_query_status_json(const pfl::FrontendAdvancedFlowQueryStatus status) {
     switch (status) {
     case pfl::FrontendAdvancedFlowQueryStatus::ok:
@@ -1585,6 +1589,22 @@ std::string capture_metrics_json(const pfl::FrontendCaptureMetricsDto& metrics) 
     }
     out << ','
         << "\"average_original_packet_size_text\":" << json_string(metrics.average_original_packet_size_text) << ','
+        << "\"average_packets_per_flow\":";
+    if (metrics.average_packets_per_flow.has_value()) {
+        out << *metrics.average_packets_per_flow;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"average_packets_per_flow_text\":" << json_string(metrics.average_packets_per_flow_text) << ','
+        << "\"flows_per_1m_packets\":";
+    if (metrics.flows_per_1m_packets.has_value()) {
+        out << *metrics.flows_per_1m_packets;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"flows_per_1m_packets_text\":" << json_string(metrics.flows_per_1m_packets_text) << ','
         << "\"average_packet_rate\":";
     if (metrics.average_packet_rate.has_value()) {
         out << *metrics.average_packet_rate;
@@ -1748,7 +1768,14 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         out << "null";
     }
     out << ','
-        << "\"source_capture_accessible\":" << bool_json(overview.input_metadata.source_capture_accessible)
+        << "\"source_capture_file_size\":";
+    if (overview.input_metadata.source_capture_file_size.has_value()) {
+        out << *overview.input_metadata.source_capture_file_size;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"source_capture_accessible\":" << optional_bool_json(overview.input_metadata.source_capture_accessible)
         << "},"
         << "\"capture_time\":" << capture_time_statistics_json(overview.capture_time) << ','
         << "\"capture_metrics\":" << capture_metrics_json(overview.capture_metrics) << ','

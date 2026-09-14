@@ -275,7 +275,7 @@ std::string render_basic_summary_text(
     if (overview.input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index &&
         overview.input_metadata.source_capture_path.has_value()) {
         auto source_capture = basename_for_display(*overview.input_metadata.source_capture_path);
-        if (render_source_capture_availability && !overview.input_metadata.source_capture_accessible) {
+        if (render_source_capture_availability && overview.input_metadata.source_capture_accessible == false) {
             source_capture += " (not available)";
         }
         append_key_value_line(out, "Source capture", source_capture, input_label_width);
@@ -524,10 +524,10 @@ FrontendOverviewDto build_fast_v16_overview(
         .input_path = index_path.string(),
         .input_kind = FrontendInputKind::pcap_flow_lab_index,
         .input_file_size = index_file_size,
-        .source_capture_accessible = false,
     };
     if (!header.source_capture_path_utf8.empty()) {
         input_metadata.source_capture_path = source_info.capture_path.string();
+        input_metadata.source_capture_file_size = source_info.file_size;
     }
 
     return FrontendOverviewDto {
@@ -550,7 +550,7 @@ FrontendOverviewDto build_fast_v16_overview(
         },
         .input_metadata = std::move(input_metadata),
         .capture_time = build_frontend_capture_time_statistics(packet_statistics),
-        .capture_metrics = build_frontend_capture_metrics(packet_statistics),
+        .capture_metrics = build_frontend_capture_metrics(packet_statistics, snapshot.total_flow_count),
         .flow_characteristics = build_frontend_flow_characteristics(general_statistics.flow_characteristics),
         .packet_direction_distribution = build_frontend_packet_direction_distribution(
             general_statistics.flow_characteristics,
@@ -673,13 +673,6 @@ FrontendStatisticsReportMetadata make_cli_statistics_report_metadata(
     };
 }
 
-std::optional<std::uint32_t> cli_statistics_report_index_revision(const FrontendOverviewDto& overview) noexcept {
-    if (overview.input_metadata.input_kind == FrontendInputKind::pcap_flow_lab_index) {
-        return kCaptureIndexStableIndexRevision;
-    }
-    return std::nullopt;
-}
-
 FrontendStatisticsReportInput make_statistics_report_input(
     FrontendStatisticsReportMetadata metadata,
     FrontendOverviewDto overview,
@@ -723,9 +716,11 @@ std::string render_extended_summary_text(
 ) {
     std::ostringstream out {};
 
-    constexpr std::array<std::string_view, 8> capture_metrics_labels {
+    constexpr std::array<std::string_view, 10> capture_metrics_labels {
         "Average captured packet size",
         "Average original packet size",
+        "Average packets per flow",
+        "Flows per 1M packets",
         "Average packet rate",
         "Average captured data rate",
         "Average original data rate",
@@ -784,6 +779,18 @@ std::string render_extended_summary_text(
         out,
         "Average original packet size",
         overview.capture_metrics.average_original_packet_size_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average packets per flow",
+        overview.capture_metrics.average_packets_per_flow_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Flows per 1M packets",
+        overview.capture_metrics.flows_per_1m_packets_text,
         capture_metrics_label_width
     );
     append_key_value_line(
@@ -1552,7 +1559,7 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
 
     if (summary_statistics_report_requested(options)) {
         const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
-            make_cli_statistics_report_metadata(overview, cli_statistics_report_index_revision(overview)),
+            make_cli_statistics_report_metadata(overview, adapter.loaded_index_revision()),
             overview,
             build_summary_statistics_dtos(adapter, kStatisticsReportTopEndpointPortLimit),
             adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree)

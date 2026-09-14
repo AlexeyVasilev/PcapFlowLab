@@ -443,6 +443,10 @@ pub struct CaptureMetricsDto {
     pub average_captured_packet_size_text: String,
     pub average_original_packet_size: Option<f64>,
     pub average_original_packet_size_text: String,
+    pub average_packets_per_flow: Option<f64>,
+    pub average_packets_per_flow_text: String,
+    pub flows_per_1m_packets: Option<f64>,
+    pub flows_per_1m_packets_text: String,
     pub average_packet_rate: Option<f64>,
     pub average_packet_rate_text: String,
     pub average_captured_data_rate: Option<f64>,
@@ -578,6 +582,16 @@ pub struct TopPortDto {
     pub packet_count_text: String,
     pub total_bytes: u64,
     pub total_bytes_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputMetadataDto {
+    pub input_path: String,
+    pub input_kind: String,
+    pub input_file_size: u64,
+    pub source_capture_path: Option<String>,
+    pub source_capture_file_size: Option<u64>,
+    pub source_capture_accessible: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -749,6 +763,7 @@ pub struct OverviewDto {
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub whole_capture_totals: WholeCaptureTotalsDto,
+    pub input_metadata: InputMetadataDto,
     pub capture_time: CaptureTimeStatisticsDto,
     pub capture_metrics: CaptureMetricsDto,
     pub flow_characteristics: FlowCharacteristicsDto,

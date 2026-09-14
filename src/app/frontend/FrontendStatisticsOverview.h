@@ -26,7 +26,8 @@ namespace pfl {
     const std::optional<std::uint64_t>& duration_us
 );
 [[nodiscard]] FrontendCaptureMetricsDto build_frontend_capture_metrics(
-    const CapturePacketStatistics& packet_statistics
+    const CapturePacketStatistics& packet_statistics,
+    std::uint64_t total_flow_count
 );
 [[nodiscard]] FrontendFlowCharacteristicsDto build_frontend_flow_characteristics(
     const CaptureFlowCharacteristicsStatistics& flow_characteristics

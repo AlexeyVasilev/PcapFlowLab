@@ -1064,14 +1064,15 @@ Item {
                                 }
 
                                 Label {
-                                    Layout.preferredWidth: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows ? 70 : 110
+                                    objectName: "flowPacketHistogramValueLabel"
+                                    Layout.preferredWidth: 140
                                     Layout.minimumWidth: 0
                                     horizontalAlignment: Text.AlignRight
                                     text: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
-                                        ? root.groupInteger(modelData.flowCount)
+                                        ? modelData.flowCountWithTotalPercentText
                                         : (root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
-                                            ? modelData.capturedByteCountText
-                                            : modelData.originalByteCountText)
+                                            ? modelData.capturedByteCountWithTotalPercentText
+                                            : modelData.originalByteCountWithTotalPercentText)
                                     color: "#334155"
                                     elide: Text.ElideLeft
                                 }
@@ -1471,6 +1472,18 @@ Item {
                             title: "Average Original Packet Size"
                             valueText: root.statisticsText(root.captureMetrics, "averageOriginalPacketSizeText")
                             valueObjectName: "averageOriginalPacketSizeValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average packets per flow"
+                            valueText: root.statisticsText(root.captureMetrics, "averagePacketsPerFlowText")
+                            valueObjectName: "averagePacketsPerFlowValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Flows per 1M packets"
+                            valueText: root.statisticsText(root.captureMetrics, "flowsPer1MPacketsText")
+                            valueObjectName: "flowsPer1MPacketsValue"
                         }
 
                         OverviewMetricBlock {

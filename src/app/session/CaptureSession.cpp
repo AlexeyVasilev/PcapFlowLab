@@ -3091,6 +3091,13 @@ bool CaptureSession::opened_from_index() const noexcept {
     return opened_from_index_;
 }
 
+std::optional<std::uint32_t> CaptureSession::loaded_index_revision() const noexcept {
+    if (!v16_storage_.has_value()) {
+        return std::nullopt;
+    }
+    return v16_storage_->header.index_revision;
+}
+
 bool CaptureSession::flow_grouping_ignores_vlan_and_mpls_layers() const noexcept {
     return flow_grouping_ignores_vlan_and_mpls_layers_;
 }

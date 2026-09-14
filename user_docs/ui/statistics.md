@@ -96,11 +96,13 @@ for example:
 
 ### Capture Metrics
 
-`Capture Metrics` is a collapsible section that summarizes packet-level
-properties derived from the whole surfaced capture:
+`Capture Metrics` is a collapsible section that summarizes packet-level and
+flow-workload properties derived from the whole surfaced capture:
 
 - `Average Captured Packet Size`
 - `Average Original Packet Size`
+- `Average packets per flow`
+- `Flows per 1M packets`
 - `Average Packet Rate`
 - `Average Captured Data Rate`
 - `Average Original Data Rate`
@@ -112,6 +114,10 @@ Current semantics:
 
 - average packet sizes divide captured/original byte totals by surfaced packet
   count when at least one packet is present;
+- `Average packets per flow` divides surfaced packet count by user-visible Flow
+  count;
+- `Flows per 1M packets` normalizes user-visible Flow count to one million
+  surfaced packets;
 - packet and data rates use capture duration, so a valid zero-duration
   one-packet capture still shows rate fields as unavailable rather than
   `inf`/`NaN`;

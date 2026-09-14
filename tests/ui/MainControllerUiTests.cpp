@@ -4053,6 +4053,8 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "captureDurationValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedPacketSizeValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averagePacketsPerFlowValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowsPer1MPacketsValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averagePacketRateValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalDataRateValue") != nullptr);
@@ -4119,6 +4121,8 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("captureMetrics", QVariantMap {
             {QStringLiteral("averageCapturedPacketSizeText"), QStringLiteral("54 B")},
             {QStringLiteral("averageOriginalPacketSizeText"), QStringLiteral("54 B")},
+            {QStringLiteral("averagePacketsPerFlowText"), QStringLiteral("2.24")},
+            {QStringLiteral("flowsPer1MPacketsText"), QStringLiteral("17 251")},
             {QStringLiteral("averagePacketRateText"), QStringLiteral("13 333.33 pkt/s")},
             {QStringLiteral("averageCapturedDataRateText"), QStringLiteral("720 KB/s")},
             {QStringLiteral("averageOriginalDataRateText"), QStringLiteral("720 KB/s")},
@@ -4240,6 +4244,10 @@ int main(int argc, char* argv[]) {
             == QStringLiteral("54 B"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue")->property("text").toString()
             == QStringLiteral("54 B"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketsPerFlowValue")->property("text").toString()
+            == QStringLiteral("2.24"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowsPer1MPacketsValue")->property("text").toString()
+            == QStringLiteral("17 251"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketRateValue")->property("text").toString()
             == QStringLiteral("13 333.33 pkt/s"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue")->property("text").toString()
@@ -4397,10 +4405,13 @@ int main(int argc, char* argv[]) {
             QVariantMap {
                 {QStringLiteral("label"), QStringLiteral("1")},
                 {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("1 (50%)")},
                 {QStringLiteral("capturedByteCount"), QVariant::fromValue<qulonglong>(512U)},
                 {QStringLiteral("capturedByteCountText"), QStringLiteral("512 B")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("512 B (33%)")},
                 {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(0U)},
                 {QStringLiteral("originalByteCountText"), QStringLiteral("0 B")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("0 B (0%)")},
                 {QStringLiteral("normalizedFlowFraction"), 1.0},
                 {QStringLiteral("normalizedCapturedByteFraction"), 0.5},
                 {QStringLiteral("normalizedOriginalByteFraction"), 0.0},
@@ -4408,10 +4419,13 @@ int main(int argc, char* argv[]) {
             QVariantMap {
                 {QStringLiteral("label"), QStringLiteral("3-5")},
                 {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("1 (50%)")},
                 {QStringLiteral("capturedByteCount"), QVariant::fromValue<qulonglong>(1024U)},
                 {QStringLiteral("capturedByteCountText"), QStringLiteral("1 KB")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("1 KB (67%)")},
                 {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(1536U)},
                 {QStringLiteral("originalByteCountText"), QStringLiteral("1.5 KB")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("1.5 KB (100%)")},
                 {QStringLiteral("normalizedFlowFraction"), 1.0},
                 {QStringLiteral("normalizedCapturedByteFraction"), 1.0},
                 {QStringLiteral("normalizedOriginalByteFraction"), 1.0},
@@ -4425,14 +4439,22 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeCapturedBytesButton") != nullptr);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton") != nullptr);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
+        auto* flow_packet_histogram_value_label = find_quick_item_by_object_name(
+            qobject_cast<QQuickItem*>(statistics_pane.object.get()),
+            QStringLiteral("flowPacketHistogramValueLabel")
+        );
+        UI_REQUIRE(flow_packet_histogram_value_label != nullptr);
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("1 (50%)"));
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 1);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramState").toInt() == section_ready);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeCapturedBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("512 B (33%)"));
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 2);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_packet_histogram_value_label->property("text").toString() == QStringLiteral("0 B (0%)"));
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", false);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -4506,6 +4528,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("2")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("flowCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
 
@@ -4515,8 +4538,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(histogram_controller.flowPacketHistogramRows() == histogram_rows);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCount")).toULongLong() > 0U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCountText")).toString().endsWith(QStringLiteral("B")));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCount")).toULongLong() > 0U);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountText")).toString().endsWith(QStringLiteral("B")));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountWithTotalPercentText")).toString().contains(QChar('%')));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFlowFraction")).toDouble() == 1.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedCapturedByteFraction")).toDouble() >= 0.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedOriginalByteFraction")).toDouble() >= 0.0);
@@ -4877,6 +4902,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(markdown_report, "| Client | Qt |"));
         UI_EXPECT(contains_text(markdown_report, "| Generated at |"));
         UI_EXPECT(contains_text(markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(!contains_text(markdown_report, "| Index revision |"));
         UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree"));
         UI_EXPECT(!contains_text(markdown_report, "Kind overview"));
         UI_EXPECT(!contains_text(markdown_report, "Terminal paths"));
@@ -4884,6 +4910,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(html_report, "<th>Application</th><td>Pcap Flow Lab</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Version</th><td>9.9.9-ui-test</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Client</th><td>Qt</td>"));
+        UI_EXPECT(!contains_text(html_report, "<th>Index revision</th>"));
         UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
         UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
@@ -4917,6 +4944,10 @@ int main(int argc, char* argv[]) {
         std::filesystem::remove(report_index_path, remove_error);
         std::filesystem::remove(moved_report_index_source_path, remove_error);
         UI_EXPECT(report_index_seed_session.save_index(report_index_path));
+        CaptureSession report_index_revision_probe {};
+        UI_EXPECT(report_index_revision_probe.load_v16_index_for_testing(report_index_path));
+        const auto report_index_revision = report_index_revision_probe.loaded_index_revision();
+        UI_REQUIRE(report_index_revision.has_value());
         std::filesystem::rename(report_index_capture_path, moved_report_index_source_path);
 
         MainController index_report_controller {};
@@ -4926,16 +4957,40 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(index_report_controller.canExportStatisticsReport());
         const auto index_markdown_report_path =
             std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index.md";
+        const auto attached_index_markdown_report_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_statistics_report_index_attached.md";
         std::filesystem::remove(index_markdown_report_path, remove_error);
+        std::filesystem::remove(attached_index_markdown_report_path, remove_error);
         UI_EXPECT(index_report_controller.exportStatisticsReportMarkdown(
             QString::fromStdWString(index_markdown_report_path.wstring())));
         UI_EXPECT(!index_report_controller.statusIsError());
         const auto index_markdown_report = read_text_file_text(index_markdown_report_path);
         UI_EXPECT(contains_text(index_markdown_report, "PcapFlowLab Index"));
-        UI_EXPECT(contains_text(index_markdown_report, "Recorded source capture"));
+        UI_EXPECT(contains_text(index_markdown_report, "Index file size"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture path"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture file size"));
+        UI_EXPECT(contains_text(index_markdown_report, "Source capture status"));
+        UI_EXPECT(!contains_text(index_markdown_report, "Input file size"));
         UI_EXPECT(contains_text(index_markdown_report, "| Client | Qt |"));
         UI_EXPECT(contains_text(index_markdown_report, "| Statistics scope | Complete |"));
+        UI_EXPECT(contains_text(
+            index_markdown_report,
+            std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
+        ));
         UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));
+
+        UI_EXPECT(index_report_controller.attachSourceCapture(
+            QString::fromStdWString(moved_report_index_source_path.wstring())));
+        UI_EXPECT(index_report_controller.hasSourceCapture());
+        UI_EXPECT(index_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(attached_index_markdown_report_path.wstring())));
+        UI_EXPECT(!index_report_controller.statusIsError());
+        const auto attached_index_markdown_report = read_text_file_text(attached_index_markdown_report_path);
+        UI_EXPECT(contains_text(
+            attached_index_markdown_report,
+            std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
+        ));
+        UI_EXPECT(contains_text(attached_index_markdown_report, "| Source capture status | Available |"));
 
         QCoreApplication::setApplicationVersion(previous_application_version);
     });

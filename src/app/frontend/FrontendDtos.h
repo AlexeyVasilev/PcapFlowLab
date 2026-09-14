@@ -202,7 +202,8 @@ struct FrontendInputMetadataDto {
     FrontendInputKind input_kind {FrontendInputKind::unknown};
     std::uint64_t input_file_size {0};
     std::optional<std::string> source_capture_path {};
-    bool source_capture_accessible {false};
+    std::optional<std::uint64_t> source_capture_file_size {};
+    std::optional<bool> source_capture_accessible {};
 };
 
 struct FrontendWholeCaptureTotalsDto {
@@ -387,6 +388,10 @@ struct FrontendCaptureMetricsDto {
     std::string average_captured_packet_size_text {};
     std::optional<double> average_original_packet_size {};
     std::string average_original_packet_size_text {};
+    std::optional<double> average_packets_per_flow {};
+    std::string average_packets_per_flow_text {};
+    std::optional<double> flows_per_1m_packets {};
+    std::string flows_per_1m_packets_text {};
     std::optional<double> average_packet_rate {};
     std::string average_packet_rate_text {};
     std::optional<double> average_captured_data_rate {};
