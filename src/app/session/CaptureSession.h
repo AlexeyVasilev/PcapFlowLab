@@ -622,9 +622,11 @@ private:
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const noexcept;
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> cached_quic_client_initial_connection_id_for_packet_source(
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>>
+    cached_or_bounded_quic_client_initial_connection_id_for_packet_source(
         std::size_t flow_index,
-        const session_detail::SelectedFlowPacketAccessSource& source
+        const session_detail::SelectedFlowPacketAccessSource& source,
+        std::optional<Direction> preferred_client_direction
     ) const;
     [[nodiscard]] const std::vector<session_detail::ListedConnectionRef>& listed_connections(bool* cache_hit = nullptr) const;
     void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;

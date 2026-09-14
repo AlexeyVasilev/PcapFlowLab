@@ -88,7 +88,7 @@ Common current read-path rule:
   Reassemble only the requested bounded prefix for first-load UI.
 
 - Bounded QUIC discovery.
-  QUIC Initial and CID discovery for first-load should not scan the full flow.
+  QUIC Initial and CID discovery for selected-packet runtime presentation should scan only a small likely-client prefix, and a bounded miss must not be cached as an authoritative full-flow miss.
 
 - Cheap protocol precheck or gating.
   Use service hints and bounded-prefix sniffing to avoid expensive TLS or HTTP branches when they are unlikely to succeed.

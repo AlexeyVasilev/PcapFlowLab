@@ -158,6 +158,7 @@ struct QuicStreamPacketPresentation {
 enum class QuicInitialConnectionIdDiscoveryStatus : std::uint8_t {
     found,
     not_found,
+    bounded_not_found,
     access_failed,
 };
 
@@ -214,6 +215,13 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
 QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_for_packet_source_result(
     const CaptureSession& session,
     const SelectedFlowPacketAccessSource& source,
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
+QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+    const CaptureSession& session,
+    const SelectedFlowPacketAccessSource& source,
+    std::optional<Direction> preferred_client_direction = std::nullopt,
     std::optional<std::size_t> flow_index = std::nullopt
 );
 

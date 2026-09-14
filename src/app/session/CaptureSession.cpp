@@ -84,7 +84,7 @@ using session_detail::packet_count;
 using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
 using session_detail::find_quic_client_initial_connection_id_for_packets;
-using session_detail::find_quic_client_initial_connection_id_for_packet_source_result;
+using session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result;
 using session_detail::has_confirming_quic_long_header_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
 using session_detail::build_quic_stream_packet_presentation;
@@ -1174,6 +1174,33 @@ std::uint16_t directional_key_dst_port(const FlowDirectionalKey& key) noexcept {
 
 bool directional_key_uses_port(const FlowDirectionalKey& key, const std::uint16_t port) noexcept {
     return directional_key_src_port(key) == port || directional_key_dst_port(key) == port;
+}
+
+std::optional<Direction> likely_quic_client_initial_direction(
+    const session_detail::CanonicalFlowMetadata& flow
+) noexcept {
+    constexpr std::uint16_t kQuicServerPort = 443U;
+
+    const auto try_direction = [kQuicServerPort](
+        const std::optional<FlowDirectionalKey>& flow_key,
+        const Direction direction
+    )
+        -> std::optional<Direction> {
+        if (!flow_key.has_value()) {
+            return std::nullopt;
+        }
+
+        return directional_key_src_port(*flow_key) != kQuicServerPort &&
+                directional_key_dst_port(*flow_key) == kQuicServerPort
+            ? std::optional<Direction> {direction}
+            : std::nullopt;
+    };
+
+    if (const auto direction = try_direction(directional_flow_key(flow, Direction::a_to_b), Direction::a_to_b);
+        direction.has_value()) {
+        return direction;
+    }
+    return try_direction(directional_flow_key(flow, Direction::b_to_a), Direction::b_to_a);
 }
 
 std::size_t selected_flow_packet_count(const session_detail::SelectedFlowPacketAccessSource& source) noexcept {
@@ -5003,9 +5030,10 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         return std::nullopt;
     }
 
-    const auto initial_secret_connection_id = cached_quic_client_initial_connection_id_for_packet_source(
+    const auto initial_secret_connection_id = cached_or_bounded_quic_client_initial_connection_id_for_packet_source(
         flow_index,
-        *packet_source
+        *packet_source,
+        likely_quic_client_initial_direction(*flow_metadata)
     );
     const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
         ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
@@ -5027,9 +5055,11 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
     );
 }
 
-std::optional<std::vector<std::uint8_t>> CaptureSession::cached_quic_client_initial_connection_id_for_packet_source(
+std::optional<std::vector<std::uint8_t>>
+CaptureSession::cached_or_bounded_quic_client_initial_connection_id_for_packet_source(
     const std::size_t flow_index,
-    const session_detail::SelectedFlowPacketAccessSource& source
+    const session_detail::SelectedFlowPacketAccessSource& source,
+    const std::optional<Direction> preferred_client_direction
 ) const {
     if (const auto cached = quic_initial_connection_id_cache_.lookup(flow_index); cached.has_value()) {
         return cached->status == QuicInitialConnectionIdDiscoveryStatus::found
@@ -5037,7 +5067,12 @@ std::optional<std::vector<std::uint8_t>> CaptureSession::cached_quic_client_init
             : std::nullopt;
     }
 
-    const auto result = find_quic_client_initial_connection_id_for_packet_source_result(*this, source, flow_index);
+    const auto result = find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+        *this,
+        source,
+        preferred_client_direction,
+        flow_index
+    );
     quic_initial_connection_id_cache_.store_authoritative_result(flow_index, result);
     return result.status == QuicInitialConnectionIdDiscoveryStatus::found
         ? std::optional<std::vector<std::uint8_t>> {result.connection_id}

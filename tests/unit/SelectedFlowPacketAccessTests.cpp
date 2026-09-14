@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1270,9 +1271,27 @@ void run_selected_flow_packet_access_tests() {
             session_detail::find_quic_client_initial_connection_id_for_packet_source(session, resident_source, 0U);
         const auto v16_cid =
             session_detail::find_quic_client_initial_connection_id_for_packet_source(session, v16_source, 0U);
+        const auto resident_bounded_cid =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                resident_source,
+                Direction::a_to_b,
+                0U
+            );
+        const auto v16_bounded_cid =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                v16_source,
+                Direction::a_to_b,
+                0U
+            );
         PFL_REQUIRE(resident_cid.has_value());
         PFL_REQUIRE(v16_cid.has_value());
         PFL_EXPECT(*resident_cid == *v16_cid);
+        PFL_REQUIRE(static_cast<bool>(resident_bounded_cid));
+        PFL_REQUIRE(static_cast<bool>(v16_bounded_cid));
+        PFL_EXPECT(resident_bounded_cid.connection_id == *resident_cid);
+        PFL_EXPECT(v16_bounded_cid.connection_id == *v16_cid);
 
         const auto resident_client = session_detail::build_quic_presentation_for_selected_direction(
             session,
@@ -1353,6 +1372,142 @@ void run_selected_flow_packet_access_tests() {
     }
 
     {
+        ScopedTestContext context {"bounded_quic_client_initial_connection_id_provider_finds_early_client_initial"};
+
+        const auto capture_path = write_quic_client_initial_after_non_quic_prefix_capture(
+            0U,
+            true
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        CountingSelectedFlowPacketAccessSource source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                source,
+                Direction::a_to_b,
+                0U
+            );
+        PFL_REQUIRE(static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::found);
+        PFL_EXPECT(result.connection_id == expected_quic_client_initial_dcid());
+        PFL_EXPECT(source.read_call_count() == 1U);
+        PFL_EXPECT(source.total_requested_packets() == 16U);
+    }
+
+    {
+        ScopedTestContext context {"bounded_quic_client_initial_connection_id_provider_uses_merged_prefix_when_direction_is_unknown"};
+
+        const auto capture_path = write_quic_client_initial_after_non_quic_prefix_capture(
+            0U,
+            true
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        CountingSelectedFlowPacketAccessSource source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                source,
+                std::nullopt,
+                0U
+            );
+        PFL_REQUIRE(static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::found);
+        PFL_EXPECT(result.connection_id == expected_quic_client_initial_dcid());
+        PFL_EXPECT(source.read_call_count() == 1U);
+        PFL_EXPECT(source.total_requested_packets() < 1'000U);
+    }
+
+    {
+        ScopedTestContext context {"bounded_quic_client_initial_connection_id_provider_does_not_authoritatively_miss"};
+
+        constexpr std::size_t kNonQuicPrefixPacketCount = 16U;
+        const auto capture_path = write_quic_client_initial_after_non_quic_prefix_capture(
+            kNonQuicPrefixPacketCount,
+            true
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
+
+        const auto ipv4_connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+
+        CountingSelectedFlowPacketAccessSource bounded_source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto bounded_result =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                bounded_source,
+                Direction::a_to_b,
+                0U
+            );
+        PFL_EXPECT(!static_cast<bool>(bounded_result));
+        PFL_EXPECT(bounded_result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::bounded_not_found);
+        PFL_EXPECT(bounded_result.connection_id.empty());
+        PFL_EXPECT(bounded_source.read_call_count() == 1U);
+        PFL_EXPECT(bounded_source.total_requested_packets() == 16U);
+
+        CountingSelectedFlowPacketAccessSource exhaustive_source(
+            ipv4_connections.front()->flow_a.packets,
+            {}
+        );
+        const auto exhaustive_result =
+            session_detail::find_quic_client_initial_connection_id_for_packet_source_result(
+                session,
+                exhaustive_source,
+                0U
+            );
+        PFL_REQUIRE(static_cast<bool>(exhaustive_result));
+        PFL_EXPECT(exhaustive_result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::found);
+        PFL_EXPECT(exhaustive_result.connection_id == expected_quic_client_initial_dcid());
+        PFL_EXPECT(exhaustive_source.read_call_count() == 1U);
+    }
+
+    {
+        ScopedTestContext context {"bounded_quic_client_initial_connection_id_provider_large_miss_stays_bounded"};
+
+        constexpr std::size_t kPacketCount = 100'000U;
+        std::vector<PacketRef> packets {};
+        packets.reserve(kPacketCount);
+        for (std::uint64_t packet_index = 0U; packet_index < kPacketCount; ++packet_index) {
+            packets.push_back(make_packet_ref(packet_index, packet_index, 0U, packet_index));
+        }
+
+        CaptureSession session {};
+        CountingSelectedFlowPacketAccessSource source(
+            std::move(packets),
+            {}
+        );
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                source,
+                Direction::a_to_b
+            );
+        PFL_EXPECT(!static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::bounded_not_found);
+        PFL_EXPECT(source.read_call_count() == 1U);
+        PFL_EXPECT(source.total_requested_packets() == 16U);
+    }
+
+    {
         ScopedTestContext context {"quic_client_initial_connection_id_provider_handles_no_initial_chunks"};
 
         constexpr std::size_t kNonQuicPacketCount = 130U;
@@ -1385,6 +1540,24 @@ void run_selected_flow_packet_access_tests() {
         FailingSelectedFlowPacketAccessSource source {};
         const auto result =
             session_detail::find_quic_client_initial_connection_id_for_packet_source_result(session, source, 0U);
+        PFL_EXPECT(!static_cast<bool>(result));
+        PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::access_failed);
+        PFL_EXPECT(result.connection_id.empty());
+        PFL_EXPECT(result.error_detail == "synthetic read failure");
+    }
+
+    {
+        ScopedTestContext context {"bounded_quic_client_initial_connection_id_provider_keeps_access_failure_distinct"};
+
+        CaptureSession session {};
+        FailingSelectedFlowPacketAccessSource source {};
+        const auto result =
+            session_detail::find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+                session,
+                source,
+                Direction::a_to_b,
+                0U
+            );
         PFL_EXPECT(!static_cast<bool>(result));
         PFL_EXPECT(result.status == session_detail::QuicInitialConnectionIdDiscoveryStatus::access_failed);
         PFL_EXPECT(result.connection_id.empty());
@@ -1432,6 +1605,15 @@ void run_selected_flow_packet_access_tests() {
         const auto still_negative = cache.lookup(1U);
         PFL_REQUIRE(still_negative.has_value());
         PFL_EXPECT(still_negative->status == session_detail::QuicInitialConnectionIdDiscoveryStatus::not_found);
+
+        cache.store_authoritative_result(
+            2U,
+            session_detail::QuicInitialConnectionIdDiscoveryResult {
+                .status = session_detail::QuicInitialConnectionIdDiscoveryStatus::bounded_not_found,
+            }
+        );
+        PFL_EXPECT(!cache.lookup(2U).has_value());
+        PFL_REQUIRE(cache.lookup(1U).has_value());
 
         cache.clear();
         PFL_EXPECT(!cache.lookup(1U).has_value());
