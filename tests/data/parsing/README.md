@@ -66,6 +66,23 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `dhcp/06_dhcp_truncated_before_magic_cookie.pcap`
 - Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
 
+## SSH
+
+`ssh/01_ssh_server_banner_port22.pcap`
+- Purpose: standard TCP/22 SSH server identification baseline.
+
+`ssh/02_ssh_client_banner_port2222.pcap`
+- Purpose: content-based SSH recognition on a non-standard port.
+
+`ssh/03_ssh_banner_after_unmatched_payload.pcap`
+- Purpose: later payload recognition within one TCP Flow.
+
+`ssh/04_ssh_invalid_ssx_prefix_port22.pcap`
+- Purpose: near-miss prefix negative case proving TCP port 22 alone is insufficient.
+
+`ssh/05_ssh_short_prefix_three_bytes.pcap`
+- Purpose: payload-length boundary negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`

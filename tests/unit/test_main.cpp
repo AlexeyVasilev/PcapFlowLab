@@ -50,6 +50,7 @@ void run_packet_details_tests();
 void run_dns_inspection_parser_tests();
 void run_dns_pcap_fixture_tests();
 void run_dhcp_pcap_fixture_tests();
+void run_ssh_pcap_fixture_tests();
 void run_cli_flows_tests();
 void run_cli_export_flows_tests();
 void run_cli_flow_info_tests();
@@ -209,6 +210,7 @@ int main() {
         {"dns_inspection_parser", pfl::tests::run_dns_inspection_parser_tests},
         {"dns_pcap_fixtures", pfl::tests::run_dns_pcap_fixture_tests},
         {"dhcp_pcap_fixtures", pfl::tests::run_dhcp_pcap_fixture_tests},
+        {"ssh_pcap_fixtures", pfl::tests::run_ssh_pcap_fixture_tests},
         {"cli_flows", pfl::tests::run_cli_flows_tests},
         {"cli_export_flows", pfl::tests::run_cli_export_flows_tests},
         {"cli_flow_info", pfl::tests::run_cli_flow_info_tests},

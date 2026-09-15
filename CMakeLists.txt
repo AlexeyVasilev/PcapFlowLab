@@ -402,6 +402,7 @@ if(BUILD_TESTING)
         tests/unit/DnsInspectionParserTests.cpp
         tests/unit/DnsPcapFixtureTests.cpp
         tests/unit/DhcpPcapFixtureTests.cpp
+        tests/unit/SshPcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
