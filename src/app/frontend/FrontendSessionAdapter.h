@@ -138,6 +138,11 @@ public:
         std::size_t limit,
         std::uint64_t stream_item_index
     ) const;
+    [[nodiscard]] FrontendStreamItemDto::StreamItemDataDto get_selected_flow_stream_item_data(
+        std::size_t max_packets_to_scan,
+        std::size_t limit,
+        std::uint64_t stream_item_index
+    ) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(
         std::uint64_t packet_index,
         std::uint64_t flow_packet_index = 0U,

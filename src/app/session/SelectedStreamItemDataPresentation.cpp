@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -78,6 +79,15 @@ SelectedStreamItemDataPresentation make_unavailable_presentation(
         .owned_bytes = {},
         .unavailable_reason = std::move(reason),
     };
+}
+
+std::optional<PacketRef> resolve_selected_flow_packet(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) {
+    const auto context = session.selected_flow_packet_context_for_packet_index(flow_index, packet_index);
+    return context.has_value() ? std::optional<PacketRef> {context->packet} : std::nullopt;
 }
 
 bool is_quic_packet_semantic(const QuicStreamItemSemanticKind semantic_kind) noexcept {
@@ -231,7 +241,10 @@ std::optional<StreamItemCapturedPacketRange> make_transport_packet_range(
         return std::nullopt;
     }
 
-    const auto details = session.read_packet_details(packet);
+    const auto details = session.read_packet_details(
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     if (!details.has_value() || !details->effective_transport_payload.has_value()) {
         return std::nullopt;
     }
@@ -282,14 +295,15 @@ SelectedStreamItemDataPresentation build_tls_presentation(
         : StreamItemDataAssemblyKind::packet_local;
 
     if (row.packet_count == 1U && !row.packet_indices.empty()) {
-        if (const auto packet = session.find_packet(row.packet_indices.front()); packet.has_value()) {
+        const auto packet = resolve_selected_flow_packet(session, flow_index, row.packet_indices.front());
+        if (packet.has_value()) {
             if (const auto offset = packet_local_tls_offset(
-                    session,
-                    flow_index,
-                    *packet,
-                    row,
-                    intra_packet_ordinal
-                );
+                session,
+                flow_index,
+                *packet,
+                row,
+                intra_packet_ordinal
+            );
                 offset.has_value()) {
                 return SelectedStreamItemDataPresentation {
                     .stream_item_index = row.stream_item_index,
@@ -444,7 +458,6 @@ SelectedStreamItemDataPresentation build_quic_packet_presentation(
     const std::size_t flow_index,
     const StreamItemRow& row
 ) {
-    static_cast<void>(flow_index);
     if (!row.quic_stream_presentation.has_value() || row.packet_indices.empty()) {
         return make_unavailable_presentation(
             row.stream_item_index,
@@ -454,7 +467,7 @@ SelectedStreamItemDataPresentation build_quic_packet_presentation(
         );
     }
 
-    const auto packet = session.find_packet(row.packet_indices.front());
+    const auto packet = resolve_selected_flow_packet(session, flow_index, row.packet_indices.front());
     if (!packet.has_value()) {
         return make_unavailable_presentation(
             row.stream_item_index,
@@ -610,7 +623,7 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
         );
     }
 
-    const auto packet = session.find_packet(row.packet_indices.front());
+    const auto packet = resolve_selected_flow_packet(session, flow_index, row.packet_indices.front());
     if (!packet.has_value()) {
         return make_unavailable_presentation(
             row.stream_item_index,
@@ -632,11 +645,13 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
 
     const auto& effective_payload = *details->effective_transport_payload;
     const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
-    const auto declared_length = effective_payload.declared_payload_length.has_value() &&
-            *effective_payload.declared_payload_length >= trim_prefix_bytes
-        ? std::optional<std::uint32_t> {
-            static_cast<std::uint32_t>(*effective_payload.declared_payload_length - trim_prefix_bytes)}
-        : std::nullopt;
+    std::optional<std::uint32_t> declared_length {};
+    if (effective_payload.declared_payload_length.has_value() &&
+        static_cast<std::size_t>(*effective_payload.declared_payload_length) >= trim_prefix_bytes) {
+        declared_length = static_cast<std::uint32_t>(
+            static_cast<std::size_t>(*effective_payload.declared_payload_length) - trim_prefix_bytes
+        );
+    }
     const auto packet_range = make_transport_packet_range(
         session,
         *packet,
@@ -679,7 +694,6 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
     const std::size_t flow_index,
     const StreamItemRow& row
 ) {
-    static_cast<void>(flow_index);
     if (row.packet_indices.size() != 1U) {
         return make_unavailable_presentation(
             row.stream_item_index,
@@ -689,7 +703,7 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
         );
     }
 
-    const auto packet = session.find_packet(row.packet_indices.front());
+    const auto packet = resolve_selected_flow_packet(session, flow_index, row.packet_indices.front());
     if (!packet.has_value()) {
         return make_unavailable_presentation(
             row.stream_item_index,
@@ -709,7 +723,10 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
         );
     }
 
-    const auto details = session.read_packet_details(*packet);
+    const auto details = session.read_packet_details(
+        *packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+    );
     if (details.has_value() && details->effective_transport_payload.has_value()) {
         const auto& effective_payload = *details->effective_transport_payload;
         if (row.byte_count <= effective_payload.captured_payload_length) {

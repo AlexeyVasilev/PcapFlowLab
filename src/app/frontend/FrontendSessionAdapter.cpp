@@ -902,12 +902,7 @@ FrontendStreamItemDto::StreamItemDataDto build_frontend_stream_item_data(
         limit,
         stream_item_index
     );
-    const auto formatted_text = session.format_selected_flow_stream_item_data_hex_dump(
-        flow_index,
-        max_packets_to_scan,
-        limit,
-        stream_item_index
-    );
+    const auto formatted_text = session.format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
     const auto item_data_requires_materialization =
         presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
         presentation.state != session_detail::StreamItemDataState::synthetic;
@@ -3552,29 +3547,16 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
     };
 
     if (!session_.has_capture() || !selected_flow_index_.has_value()) {
-        result.stream_item_data.status_text = "Item data unavailable • No selected flow is active.";
-        result.stream_item_data.unavailable_text = "No selected flow is active.";
-        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         return result;
     }
 
     if (!session_.source_capture_accessible()) {
-        result.stream_item_data.status_text =
-            "Item data unavailable • The original source capture cannot be read.";
-        result.stream_item_data.unavailable_text =
-            "The original source capture cannot be read.";
-        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         return result;
     }
 
     const auto flow_index = *selected_flow_index_;
     const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
     if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
-        result.stream_item_data.status_text =
-            "Item data unavailable • The selected stream window is empty.";
-        result.stream_item_data.unavailable_text =
-            "The selected stream window is empty.";
-        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         return result;
     }
 
@@ -3598,17 +3580,46 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         it != rows.end()) {
         result = to_frontend_stream_item(*it, flow_packet_numbers, true, packet_window_count, limit);
     } else {
-        result.stream_item_data = build_frontend_stream_item_data(
-            session_,
-            flow_index,
-            packet_window_count,
-            limit,
-            stream_item_index
-        );
-        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         result.payload_tab_title = stream_item_payload_tab_title();
     }
     return result;
+}
+
+FrontendStreamItemDto::StreamItemDataDto FrontendSessionAdapter::get_selected_flow_stream_item_data(
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    FrontendStreamItemDto::StreamItemDataDto result {};
+
+    if (!session_.has_capture() || !selected_flow_index_.has_value()) {
+        result.status_text = "Item data unavailable • No selected flow is active.";
+        result.unavailable_text = "No selected flow is active.";
+        return result;
+    }
+
+    if (!session_.source_capture_accessible()) {
+        result.status_text = "Item data unavailable • The original source capture cannot be read.";
+        result.unavailable_text = "The original source capture cannot be read.";
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
+    if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
+        result.status_text = "Item data unavailable • The selected stream window is empty.";
+        result.unavailable_text = "The selected stream window is empty.";
+        return result;
+    }
+
+    const auto packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
+    return build_frontend_stream_item_data(
+        session_,
+        flow_index,
+        packet_window_count,
+        limit,
+        stream_item_index
+    );
 }
 
 FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analysis() const {
@@ -4720,19 +4731,9 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
     const StreamItemRow& row,
     const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
     const bool include_details,
-    const std::size_t max_packets_to_scan,
-    const std::size_t limit
+    const std::size_t,
+    const std::size_t
 ) const {
-    FrontendStreamItemDto::StreamItemDataDto stream_item_data {};
-    if (include_details && selected_flow_index_.has_value()) {
-        stream_item_data = build_frontend_stream_item_data(
-            session_,
-            *selected_flow_index_,
-            max_packets_to_scan,
-            limit,
-            row.stream_item_index
-        );
-    }
     return FrontendStreamItemDto {
         .stream_item_index = row.stream_item_index,
         .direction_text = row.direction_text,
@@ -4748,13 +4749,10 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .badge_text = stream_item_header_badge_text(row),
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
         .summary_layers = include_details ? build_stream_item_summary_layers(row, flow_packet_numbers) : std::vector<session_detail::PacketSummaryLayer> {},
-        .stream_item_data = std::move(stream_item_data),
+        .stream_item_data = {},
         .payload_tab_title = stream_item_payload_tab_title(),
-        .payload_preview_text = include_details ? stream_item_data.formatted_text : std::string {},
-        .payload_preview_unavailable_text =
-            include_details && !stream_item_data.available
-                ? stream_item_data.status_text
-                : std::string {},
+        .payload_preview_text = {},
+        .payload_preview_unavailable_text = {},
     };
 }
 

@@ -82,6 +82,14 @@ Frame {
         return index === 1 ? 1 : 0
     }
 
+    function requestStreamItemDataIfNeeded() {
+        if (streamTabs.currentIndex !== 1 || !root.isStreamItemDetails() || !root.packetDetailsController) {
+            return
+        }
+
+        root.packetDetailsController.loadSelectedStreamItemData()
+    }
+
     function packetByteViews() {
         if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
             return []
@@ -757,6 +765,9 @@ Frame {
             const label = byteExportDialog.targetLabel.length > 0
                 ? byteExportDialog.targetLabel
                 : (byteExportDialog.packetTarget ? "Selected byte view" : "Selected item data")
+            if (!byteExportDialog.packetTarget && root.packetDetailsModel && !root.packetDetailsModel.streamItemDataAvailable) {
+                return label
+            }
             return `${label} \u00b7 ${byteExportDialog.availableLength} bytes`
         }
         readonly property string selectedFormatId: selectedFormatIndex >= 0
@@ -1012,6 +1023,24 @@ Frame {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.isStreamItemDetails() && root.headerPrimaryText().length > 0
+            spacing: 8
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Button {
+                text: "Export Bytes..."
+                enabled: !!root.packetDetailsModel
+                    && root.packetDetailsModel.hasPacket
+                    && root.packetDetailsModel.streamItemDetails
+                onClicked: byteExportDialog.openForStream()
+            }
+        }
+
         TabBar {
             id: packetTabs
             objectName: "packetDetailsPacketTabs"
@@ -1099,7 +1128,9 @@ Frame {
                 const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
                 if (currentIndex !== normalizedIndex) {
                     currentIndex = normalizedIndex
+                    return
                 }
+                root.requestStreamItemDataIfNeeded()
             }
 
             onVisibleChanged: {
@@ -1107,7 +1138,9 @@ Frame {
                     const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
                     if (currentIndex !== normalizedIndex) {
                         currentIndex = normalizedIndex
+                        return
                     }
+                    root.requestStreamItemDataIfNeeded()
                 }
             }
 
@@ -1443,14 +1476,6 @@ Frame {
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
                         }
-
-                        Button {
-                            text: "Export Bytes..."
-                            enabled: !!root.packetDetailsModel
-                                && root.packetDetailsModel.hasPacket
-                                && root.packetDetailsModel.streamItemDataAvailable
-                            onClicked: byteExportDialog.openForStream()
-                        }
                     }
 
                     TextPane {
@@ -1464,6 +1489,13 @@ Frame {
                 }
             }
 
+        }
+
+        Connections {
+            target: root.packetDetailsModel
+            function onChanged() {
+                root.requestStreamItemDataIfNeeded()
+            }
         }
     }
 }

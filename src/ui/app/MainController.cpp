@@ -4426,8 +4426,9 @@ bool MainController::attachSourceCapture(const QString& path) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
-    can_load_more_stream_items_ = false;
-    stream_state_materialized_for_selected_flow_ = false;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
+        can_load_more_stream_items_ = false;
+        stream_state_materialized_for_selected_flow_ = false;
         if (stream_tab_active_) {
             refreshSelectedStreamItems(true);
         } else {
@@ -6250,6 +6251,8 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     pending_analysis_settings_.use_possible_tls_quic = enabled;
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
+        stream_state_materialized_for_selected_flow_ = false;
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
         applyActiveFlowFilterModeToModel();
@@ -6261,6 +6264,9 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
         }
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
+        }
+        if (stream_tab_active_ && selected_flow_index_ >= 0) {
+            refreshSelectedStreamItems(true, true);
         }
         emit stateChanged();
     }
@@ -6612,10 +6618,6 @@ bool MainController::exportSelectedStreamItemData(const QString& formatId) {
         setStatusText(QStringLiteral("The selected stream item is unavailable for export."), true);
         return false;
     }
-    if (!packet_details_model_.streamItemDataAvailable()) {
-        setStatusText(QStringLiteral("The selected stream item data is unavailable for export."), true);
-        return false;
-    }
     if (!ensureSourceCaptureAvailable(QStringLiteral("Export stream item data"))) {
         return false;
     }
@@ -6665,6 +6667,99 @@ bool MainController::exportSelectedStreamItemData(const QString& formatId) {
     setLastDirectoryFromPath(std::filesystem::path {outputPath.toStdWString()});
     setStatusText(QStringLiteral("Stream item data exported to %1.").arg(outputPath));
     return true;
+}
+
+void MainController::invalidateSelectedStreamItemData(const bool clearPresentation) {
+    loaded_stream_item_data_index_ = kInvalidStreamSelection;
+    loaded_stream_item_data_packet_window_count_ = 0U;
+    loaded_stream_item_data_limit_ = 0U;
+    stream_item_data_loading_ = false;
+    if (clearPresentation) {
+        packet_details_model_.clearStreamItemDataPresentation();
+        packet_details_model_.setPayloadText({});
+    }
+}
+
+void MainController::loadSelectedStreamItemData() {
+    if (details_selection_context_ != DetailsSelectionContext::stream ||
+        selected_stream_item_index_ == kInvalidStreamSelection ||
+        selected_flow_index_ < 0) {
+        return;
+    }
+
+    if (!ensureSourceCaptureAvailable()) {
+        showSourceUnavailableStreamDetailsPlaceholder();
+        return;
+    }
+
+    const auto itemIt = std::find_if(current_stream_items_.begin(), current_stream_items_.end(), [&](const StreamItemRow& item) {
+        return item.stream_item_index == static_cast<std::uint64_t>(selected_stream_item_index_);
+    });
+    if (itemIt == current_stream_items_.end()) {
+        return;
+    }
+
+    if (stream_item_data_loading_) {
+        return;
+    }
+
+    const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
+    const auto packet_window_count = stream_packet_window_count_;
+    const auto item_limit = loaded_stream_item_count_ > 0U
+        ? loaded_stream_item_count_
+        : current_stream_items_.size();
+
+    if (loaded_stream_item_data_index_ == selected_stream_item_index_ &&
+        loaded_stream_item_data_packet_window_count_ == packet_window_count &&
+        loaded_stream_item_data_limit_ == item_limit &&
+        (!packet_details_model_.streamItemDataText().isEmpty() || !packet_details_model_.streamItemDataStatusText().isEmpty())) {
+        return;
+    }
+
+    stream_item_data_loading_ = true;
+    const auto presentation = session_.derive_selected_flow_stream_item_data(
+        flow_index,
+        packet_window_count,
+        item_limit,
+        itemIt->stream_item_index
+    );
+    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
+    const auto item_data_available = formatted_text.has_value();
+    const auto item_data_requires_materialization = presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
+        presentation.state != session_detail::StreamItemDataState::synthetic;
+    const auto item_data_status_text = item_data_available || !item_data_requires_materialization
+        ? QString::fromStdString(session_detail::format_selected_stream_item_data_status_text(presentation))
+        : stream_item_data_materialization_failure_text();
+    packet_details_model_.setStreamItemDataPresentation(
+        item_data_available,
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.semantic_kind
+                : session_detail::StreamItemDataSemanticKind::other)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.source_kind
+                : session_detail::StreamItemDataSourceKind::unavailable)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.state
+                : session_detail::StreamItemDataState::unavailable)),
+        QString::fromStdString(session_detail::to_string(presentation.assembly_kind)),
+        item_data_available ? presentation.available_length : 0U,
+        optional_length_variant(presentation.declared_length),
+        optional_length_variant(presentation.contributing_unit_count),
+        presentation.contributing_unit_kind.has_value()
+            ? QString::fromStdString(session_detail::to_string(*presentation.contributing_unit_kind))
+            : QString {},
+        optional_length_variant(presentation.quic_crypto_stream_offset),
+        item_data_status_text,
+        formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {}
+    );
+    packet_details_model_.setPayloadText(formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {});
+    loaded_stream_item_data_index_ = selected_stream_item_index_;
+    loaded_stream_item_data_packet_window_count_ = packet_window_count;
+    loaded_stream_item_data_limit_ = item_limit;
+    stream_item_data_loading_ = false;
 }
 
 void MainController::refreshSelectedPacketByteView() {
@@ -6824,6 +6919,7 @@ void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex
     }
 
     selected_stream_item_index_ = streamItemIndex;
+    invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
     if (selected_stream_item_index_ == kInvalidStreamSelection) {
         if (details_selection_context_ == DetailsSelectionContext::stream) {
             details_selection_context_ = DetailsSelectionContext::none;
@@ -7181,7 +7277,7 @@ void MainController::refreshUnrecognizedPackets(const bool resetRows) {
     }
 }
 
-void MainController::refreshSelectedStreamItems(const bool resetRows) {
+void MainController::refreshSelectedStreamItems(const bool resetRows, const bool forceSelectedDetailsReload) {
     const bool previousLoading = stream_loading_;
     const auto previousLoaded = loaded_stream_item_count_;
     const auto previousTotal = total_stream_item_count_;
@@ -7196,6 +7292,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (previousLoading != stream_loading_
@@ -7216,6 +7313,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (previousLoading != stream_loading_
@@ -7273,6 +7371,11 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         });
         if (selectedIt == current_stream_items_.end()) {
             clearStreamSelection();
+        } else if (forceSelectedDetailsReload || previousLoaded != loaded_stream_item_count_ || previousPacketWindow != stream_packet_window_count_) {
+            invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
+            if (details_selection_context_ == DetailsSelectionContext::stream) {
+                reloadSelectedStreamDetails();
+            }
         }
     }
 
@@ -7530,6 +7633,7 @@ void MainController::clearStreamSelection() {
     const bool selectionChanged = selected_stream_item_index_ != kInvalidStreamSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::stream;
     selected_stream_item_index_ = kInvalidStreamSelection;
+    invalidateSelectedStreamItemData(wasActive);
 
     if (wasActive) {
         details_selection_context_ = DetailsSelectionContext::none;
@@ -8405,56 +8509,7 @@ void MainController::reloadSelectedStreamDetails() {
     packet_details_model_.setHexText({});
     packet_details_model_.setPayloadTabTitle(stream_item_data_tab_title());
     packet_details_model_.clearStreamItemDataPresentation();
-
-    const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
-    const auto packet_window_count = stream_packet_window_count_;
-    const auto item_limit = loaded_stream_item_count_ > 0U
-        ? loaded_stream_item_count_
-        : current_stream_items_.size();
-    const auto presentation = session_.derive_selected_flow_stream_item_data(
-        flow_index,
-        packet_window_count,
-        item_limit,
-        itemIt->stream_item_index
-    );
-    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(
-        flow_index,
-        packet_window_count,
-        item_limit,
-        itemIt->stream_item_index
-    );
-    const auto item_data_available = formatted_text.has_value();
-    const auto item_data_requires_materialization = presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
-        presentation.state != session_detail::StreamItemDataState::synthetic;
-    const auto item_data_status_text = item_data_available || !item_data_requires_materialization
-        ? QString::fromStdString(session_detail::format_selected_stream_item_data_status_text(presentation))
-        : stream_item_data_materialization_failure_text();
-    packet_details_model_.setStreamItemDataPresentation(
-        item_data_available,
-        QString::fromStdString(session_detail::to_string(
-            item_data_available || !item_data_requires_materialization
-                ? presentation.semantic_kind
-                : session_detail::StreamItemDataSemanticKind::other)),
-        QString::fromStdString(session_detail::to_string(
-            item_data_available || !item_data_requires_materialization
-                ? presentation.source_kind
-                : session_detail::StreamItemDataSourceKind::unavailable)),
-        QString::fromStdString(session_detail::to_string(
-            item_data_available || !item_data_requires_materialization
-                ? presentation.state
-                : session_detail::StreamItemDataState::unavailable)),
-        QString::fromStdString(session_detail::to_string(presentation.assembly_kind)),
-        item_data_available ? presentation.available_length : 0U,
-        optional_length_variant(presentation.declared_length),
-        optional_length_variant(presentation.contributing_unit_count),
-        presentation.contributing_unit_kind.has_value()
-            ? QString::fromStdString(session_detail::to_string(*presentation.contributing_unit_kind))
-            : QString {},
-        optional_length_variant(presentation.quic_crypto_stream_offset),
-        item_data_status_text,
-        formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {}
-    );
-    packet_details_model_.setPayloadText(formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {});
+    packet_details_model_.setPayloadText({});
 }
 
 void MainController::reloadActiveDetails() {

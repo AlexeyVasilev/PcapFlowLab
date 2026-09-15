@@ -3,6 +3,7 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -758,6 +759,7 @@ public:
     Q_INVOKABLE QVariantList byteExportFormats() const;
     Q_INVOKABLE bool exportSelectedPacketBytes(const QString& formatId);
     Q_INVOKABLE bool exportSelectedStreamItemData(const QString& formatId);
+    Q_INVOKABLE void loadSelectedStreamItemData();
     Q_INVOKABLE void selectUnrecognizedPackets();
     Q_INVOKABLE QString debugInformationText() const;
 
@@ -865,7 +867,7 @@ private:
     void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshUnrecognizedPackets(bool resetRows);
-    void refreshSelectedStreamItems(bool resetRows);
+    void refreshSelectedStreamItems(bool resetRows, bool forceSelectedDetailsReload = false);
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
@@ -957,6 +959,7 @@ private:
     void finalizeAdvancedFlowFilterClearAll();
     void refreshAdvancedFlowFilterEditingPresentation();
     void refreshStatisticsOverviewPresentation();
+    void invalidateSelectedStreamItemData(bool clearPresentation);
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
@@ -1046,6 +1049,10 @@ private:
     std::size_t total_stream_item_count_ {0};
     std::size_t stream_packet_window_count_ {0};
     std::size_t stream_item_budget_count_ {0};
+    qulonglong loaded_stream_item_data_index_ {std::numeric_limits<qulonglong>::max()};
+    std::size_t loaded_stream_item_data_packet_window_count_ {0U};
+    std::size_t loaded_stream_item_data_limit_ {0U};
+    bool stream_item_data_loading_ {false};
     bool stream_tab_active_ {false};
     bool analysis_tab_active_ {false};
     bool unrecognized_packets_selected_ {false};

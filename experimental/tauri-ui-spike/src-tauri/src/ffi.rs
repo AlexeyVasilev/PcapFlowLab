@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDataDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -355,6 +355,12 @@ extern "C" {
         limit: usize,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        max_packets_to_scan: usize,
+        limit: usize,
+        stream_item_index: u64,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_selected_flow_stream_item_data_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         max_packets_to_scan: usize,
         limit: usize,
@@ -1452,6 +1458,23 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<StreamItemDto>(json)
+    }
+
+    pub fn get_selected_flow_stream_item_data(
+        &self,
+        max_packets_to_scan: usize,
+        limit: usize,
+        stream_item_index: u64,
+    ) -> Result<StreamItemDataDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_selected_flow_stream_item_data_json(
+                self.handle,
+                max_packets_to_scan,
+                limit,
+                stream_item_index,
+            )
+        };
+        parse_json_owned::<StreamItemDataDto>(json)
     }
 
     pub fn get_selected_flow_packet_details(

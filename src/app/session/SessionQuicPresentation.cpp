@@ -22,6 +22,7 @@ constexpr std::uint16_t kHttpsPort = 443U;
 constexpr std::size_t kMaxQuicConnectionIdLength = 20U;
 constexpr std::size_t kMaxQuicFrameSummaryCount = 32U;
 constexpr std::size_t kQuicPresentationPacketBudget = 4U;
+constexpr std::uint64_t kRuntimeQuicInitialConnectionIdPacketBudget = 16U;
 
 struct QuicFramePresenceSummary {
     bool ack {false};
@@ -2101,7 +2102,8 @@ void QuicInitialConnectionIdDiscoveryCache::store_authoritative_result(
     const std::size_t flow_index,
     const QuicInitialConnectionIdDiscoveryResult& result
 ) {
-    if (result.status == QuicInitialConnectionIdDiscoveryStatus::access_failed) {
+    if (result.status == QuicInitialConnectionIdDiscoveryStatus::access_failed ||
+        result.status == QuicInitialConnectionIdDiscoveryStatus::bounded_not_found) {
         return;
     }
 
@@ -2189,6 +2191,60 @@ QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_fo
     return QuicInitialConnectionIdDiscoveryResult {
         .status = QuicInitialConnectionIdDiscoveryStatus::not_found,
     };
+}
+
+QuicInitialConnectionIdDiscoveryResult find_quic_client_initial_connection_id_for_bounded_runtime_packet_source_result(
+    const CaptureSession& session,
+    const SelectedFlowPacketAccessSource& source,
+    const std::optional<Direction> preferred_client_direction,
+    const std::optional<std::size_t> flow_index
+) {
+    const auto translate_bounded_result =
+        [](QuicInitialConnectionIdDiscoveryResult result) -> QuicInitialConnectionIdDiscoveryResult {
+        if (result.status == QuicInitialConnectionIdDiscoveryStatus::not_found) {
+            result.status = QuicInitialConnectionIdDiscoveryStatus::bounded_not_found;
+        }
+        return result;
+    };
+
+    if (preferred_client_direction.has_value()) {
+        const auto read_result = source.read_direction(
+            *preferred_client_direction,
+            0U,
+            kRuntimeQuicInitialConnectionIdPacketBudget
+        );
+        if (!read_result) {
+            return QuicInitialConnectionIdDiscoveryResult {
+                .status = QuicInitialConnectionIdDiscoveryStatus::access_failed,
+                .error_detail = read_result.error_detail,
+            };
+        }
+
+        return translate_bounded_result(
+            find_quic_client_initial_connection_id_impl_result(session, read_result.packet_refs, flow_index)
+        );
+    }
+
+    const auto read_result = read_selected_flow_merged_range(
+        source,
+        0U,
+        kRuntimeQuicInitialConnectionIdPacketBudget
+    );
+    if (!read_result) {
+        return QuicInitialConnectionIdDiscoveryResult {
+            .status = QuicInitialConnectionIdDiscoveryStatus::access_failed,
+            .error_detail = read_result.error_detail,
+        };
+    }
+
+    std::vector<PacketRef> packets {};
+    packets.reserve(read_result.packets.size());
+    for (const auto& merged_packet : read_result.packets) {
+        packets.push_back(merged_packet.packet);
+    }
+    return translate_bounded_result(
+        find_quic_client_initial_connection_id_impl_result(session, packets, flow_index)
+    );
 }
 
 bool has_confirming_quic_long_header_for_packets(

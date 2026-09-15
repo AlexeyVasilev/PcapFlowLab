@@ -291,11 +291,25 @@ public:
         std::size_t limit,
         std::uint64_t stream_item_index
     ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> materialize_selected_flow_stream_item_data(
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> materialize_selected_flow_stream_item_data(
+        std::size_t flow_index,
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
     [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
         std::size_t flow_index,
         std::size_t max_packets_to_scan,
         std::size_t limit,
         std::uint64_t stream_item_index
+    ) const;
+    [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
+    [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
+        std::size_t flow_index,
+        const session_detail::SelectedStreamItemDataPresentation& presentation
     ) const;
     [[nodiscard]] bool export_selected_flow_stream_item_data(
         std::size_t flow_index,
@@ -622,9 +636,11 @@ private:
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const noexcept;
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> cached_quic_client_initial_connection_id_for_packet_source(
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>>
+    cached_or_bounded_quic_client_initial_connection_id_for_packet_source(
         std::size_t flow_index,
-        const session_detail::SelectedFlowPacketAccessSource& source
+        const session_detail::SelectedFlowPacketAccessSource& source,
+        std::optional<Direction> preferred_client_direction
     ) const;
     [[nodiscard]] const std::vector<session_detail::ListedConnectionRef>& listed_connections(bool* cache_hit = nullptr) const;
     void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;

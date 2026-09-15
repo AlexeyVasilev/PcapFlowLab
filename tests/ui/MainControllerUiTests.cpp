@@ -8358,9 +8358,23 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
     UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(!stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
+    UI_EXPECT(stream_details_model->streamItemDataStatusText().isEmpty());
+    stream_controller.loadSelectedStreamItemData();
     UI_EXPECT(stream_details_model->streamItemDataAvailable());
     UI_EXPECT(!stream_details_model->streamItemDataText().isEmpty());
     UI_EXPECT(stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
+    const auto loaded_http_item_data_text = stream_details_model->streamItemDataText();
+    stream_controller.loadSelectedStreamItemData();
+    UI_EXPECT(stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(stream_details_model->streamItemDataText() == loaded_http_item_data_text);
+    stream_controller.setUsePossibleTlsQuic(true);
+    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
+    UI_EXPECT(stream_details_model->streamItemDataStatusText().isEmpty());
+    stream_controller.loadSelectedStreamItemData();
+    UI_EXPECT(stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(stream_details_model->streamItemDataText() == loaded_http_item_data_text);
     const auto http_stream_layers = stream_details_model->summaryLayers();
     const auto http_stream_layer = find_top_level_summary_layer(http_stream_layers, QStringLiteral("http"));
     UI_EXPECT(!http_stream_layer.isEmpty());
@@ -8433,6 +8447,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Who has 10.10.12.1? Tell 10.10.12.2")));
     UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
     UI_EXPECT(arp_stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(!arp_stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(arp_stream_details_model->streamItemDataText().isEmpty());
+    arp_stream_controller.loadSelectedStreamItemData();
     UI_EXPECT(arp_stream_details_model->streamItemDataAvailable());
     UI_EXPECT(arp_stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Packet-backed")));
     UI_EXPECT(arp_stream_details_model->streamItemDataText().contains(QStringLiteral("00 01 08 00 06 04 00 01")));
@@ -8478,6 +8495,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Record Type")) == QStringLiteral("Handshake"));
     UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ServerHello"));
     UI_EXPECT(split_tls_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(!split_tls_details_model->streamItemDataAvailable());
+    UI_EXPECT(split_tls_details_model->streamItemDataText().isEmpty());
+    split_tls_controller.loadSelectedStreamItemData();
     UI_EXPECT(split_tls_details_model->streamItemDataAvailable());
     UI_EXPECT(split_tls_details_model->streamItemDataStatusText().contains(QStringLiteral("Reassembled from 2 TCP segments")));
     UI_EXPECT(split_tls_details_model->streamItemDataText().contains(QStringLiteral("16 03 03 00 0a 02 00 00 06")));
@@ -8961,6 +8981,8 @@ int main(int argc, char* argv[]) {
     quic_constricted_controller.setSelectedStreamItemIndex(quic_constricted_stream_item_index);
     UI_EXPECT(quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #13 contributed 32 / 69 bytes")));
     UI_EXPECT(quic_constricted_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(quic_constricted_details_model->streamItemDataStatusText().isEmpty());
+    quic_constricted_controller.loadSelectedStreamItemData();
     UI_EXPECT(quic_constricted_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
 
     const auto ipv6_quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "ipv6_quic_constricted_1.pcap";
@@ -9088,6 +9110,8 @@ int main(int argc, char* argv[]) {
     ipv6_quic_constricted_controller.setSelectedStreamItemIndex(ipv6_quic_stream_item_index);
     UI_EXPECT(ipv6_quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #8 contributed 32 / 80 bytes")));
     UI_EXPECT(ipv6_quic_constricted_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(ipv6_quic_constricted_details_model->streamItemDataStatusText().isEmpty());
+    ipv6_quic_constricted_controller.loadSelectedStreamItemData();
     UI_EXPECT(ipv6_quic_constricted_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
 
     const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
