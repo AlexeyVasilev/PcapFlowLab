@@ -311,6 +311,7 @@
     streamDetailsErrorText: "",
     streamItemDataState: "idle",
     streamItemDataErrorText: "",
+    streamItemDataLoadingContextKey: "",
     streamDetailsTab: "summary",
     analysis: null,
     analysisState: "idle",
@@ -6511,7 +6512,31 @@
     state.streamDetailsErrorText = "";
     state.streamItemDataState = "idle";
     state.streamItemDataErrorText = "";
+    state.streamItemDataLoadingContextKey = "";
     state.streamItemDataRequestToken += 1;
+  }
+
+  function clearLoadedStreamItemDataFields(item) {
+    if (item == null) {
+      return item;
+    }
+
+    const {
+      stream_item_data,
+      stream_item_data_loaded,
+      stream_item_data_context_key,
+      ...rest
+    } = item;
+    return rest;
+  }
+
+  function invalidateSelectedStreamItemData() {
+    state.streamItemDataState = "idle";
+    state.streamItemDataErrorText = "";
+    state.streamItemDataLoadingContextKey = "";
+    state.streamItemDataRequestToken += 1;
+    state.selectedStreamItem = clearLoadedStreamItemDataFields(state.selectedStreamItem);
+    state.selectedStreamItemDetails = clearLoadedStreamItemDataFields(state.selectedStreamItemDetails);
   }
 
   function clearAnalysis(resetFlowListState = true) {
@@ -10436,9 +10461,7 @@
         state.selectedStreamItemDetails = selectedItem;
         state.streamDetailsState = selectedItem ? "loading" : "idle";
         state.streamDetailsErrorText = "";
-        state.streamItemDataState = "idle";
-        state.streamItemDataErrorText = "";
-        state.streamItemDataRequestToken += 1;
+        invalidateSelectedStreamItemData();
         if (selectedItem) {
           void loadSelectedStreamItemDetails(selectedItem.stream_item_index, selectionToken);
         }
@@ -10448,9 +10471,7 @@
         state.selectedStreamItemDetails = null;
         state.streamDetailsState = "idle";
         state.streamDetailsErrorText = "";
-        state.streamItemDataState = "idle";
-        state.streamItemDataErrorText = "";
-        state.streamItemDataRequestToken += 1;
+        invalidateSelectedStreamItemData();
       }
     } catch (error) {
       if (
@@ -10470,9 +10491,7 @@
       state.selectedStreamItemDetails = null;
       state.streamDetailsState = "error";
       state.streamDetailsErrorText = state.streamErrorText;
-      state.streamItemDataState = "idle";
-      state.streamItemDataErrorText = "";
-      state.streamItemDataRequestToken += 1;
+      invalidateSelectedStreamItemData();
       setStatus(state.streamErrorText, "error");
     }
 
@@ -10851,9 +10870,7 @@
       state.selectedStreamItemDetails = null;
       state.streamDetailsState = "idle";
       state.streamDetailsErrorText = "";
-      state.streamItemDataState = "idle";
-      state.streamItemDataErrorText = "";
-      state.streamItemDataRequestToken += 1;
+      invalidateSelectedStreamItemData();
       setStatus("The selected stream item is not available in the current stream window.", "error");
       render();
       return;
@@ -10864,9 +10881,7 @@
     state.selectedStreamItemDetails = item;
     state.streamDetailsState = "loading";
     state.streamDetailsErrorText = "";
-    state.streamItemDataState = "idle";
-    state.streamItemDataErrorText = "";
-    state.streamItemDataRequestToken += 1;
+    invalidateSelectedStreamItemData();
     render();
     void loadSelectedStreamItemDetails(streamItemIndex);
   }
@@ -10907,9 +10922,19 @@
         return;
       }
 
+      const contextKey = streamItemDataContextKey(streamItemIndex);
+      const existingItemData = state.selectedStreamItemDetails?.stream_item_data_loaded === true
+        && state.selectedStreamItemDetails?.stream_item_data_context_key === contextKey
+        ? {
+            stream_item_data: state.selectedStreamItemDetails.stream_item_data,
+            stream_item_data_loaded: true,
+            stream_item_data_context_key: contextKey,
+          }
+        : {};
       state.selectedStreamItemDetails = {
         ...(state.selectedStreamItem || {}),
         ...(details || {}),
+        ...existingItemData,
       };
       state.streamDetailsState = "loaded";
       state.streamDetailsErrorText = "";
@@ -10938,6 +10963,9 @@
     if (state.selectedFlowIndex == null || streamItemIndex == null) {
       return;
     }
+    if (state.streamDetailsState === "loading") {
+      return;
+    }
 
     const item = state.selectedStreamItemDetails || state.selectedStreamItem;
     if (item == null || item.stream_item_index !== streamItemIndex) {
@@ -10948,11 +10976,15 @@
     if (item.stream_item_data_loaded === true && item.stream_item_data_context_key === contextKey) {
       return;
     }
+    if (state.streamItemDataState === "loading" && state.streamItemDataLoadingContextKey === contextKey) {
+      return;
+    }
 
     const requestedFlowIndex = state.selectedFlowIndex;
     const requestToken = ++state.streamItemDataRequestToken;
     state.streamItemDataState = "loading";
     state.streamItemDataErrorText = "";
+    state.streamItemDataLoadingContextKey = contextKey;
     render();
 
     try {
@@ -10978,6 +11010,7 @@
       };
       state.streamItemDataState = "loaded";
       state.streamItemDataErrorText = "";
+      state.streamItemDataLoadingContextKey = "";
     } catch (error) {
       if (
         selectionToken !== state.flowSelectionRequestToken
@@ -10990,6 +11023,7 @@
 
       state.streamItemDataState = "error";
       state.streamItemDataErrorText = `Failed to load stream item data: ${String(error)}`;
+      state.streamItemDataLoadingContextKey = "";
     }
 
     render();
@@ -11545,6 +11579,7 @@
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
     const previousSettings = {
       http_use_path_as_service_hint: Boolean(state.settings.http_use_path_as_service_hint),
+      use_possible_tls_quic: Boolean(state.settings.use_possible_tls_quic),
       ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows),
       ignore_gtpu_teids_when_grouping_inner_flows: Boolean(state.settings.ignore_gtpu_teids_when_grouping_inner_flows),
     };
@@ -11579,6 +11614,23 @@
         state.topEndpointPortStatistics = null;
         if (state.analysisState !== "idle" && state.selectedFlowIndex != null) {
           await loadSelectedFlowAnalysis();
+        }
+      }
+      const streamSemanticSettingsChanged =
+        previousSettings.http_use_path_as_service_hint !== state.settings.http_use_path_as_service_hint ||
+        previousSettings.use_possible_tls_quic !== state.settings.use_possible_tls_quic;
+      if (streamSemanticSettingsChanged) {
+        invalidateSelectedStreamItemData();
+        if (
+          state.openState === "opened" &&
+          state.selectedFlowIndex != null &&
+          (
+            state.streamLoadedForFlowIndex === state.selectedFlowIndex ||
+            state.streamState !== "idle" ||
+            state.streamItems.length > 0
+          )
+        ) {
+          await loadSelectedFlowStream();
         }
       }
       if (state.selectedPacketIndex != null && state.selectedFlowIndex != null && state.packetDetailsState !== "idle") {

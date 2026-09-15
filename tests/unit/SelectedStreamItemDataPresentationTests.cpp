@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -1137,6 +1138,25 @@ void run_selected_stream_item_data_presentation_tests() {
             30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
+
+        auto unresolved_packet_row = *row;
+        unresolved_packet_row.packet_indices = {std::numeric_limits<std::uint64_t>::max()};
+        const auto unresolved_packet_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            unresolved_packet_row,
+            row->materialization_stability,
+            0U,
+            30U
+        );
+        PFL_EXPECT(unresolved_packet_presentation.semantic_kind == session_detail::StreamItemDataSemanticKind::tls_record);
+        PFL_EXPECT(unresolved_packet_presentation.source_kind == session_detail::StreamItemDataSourceKind::retained_item_bytes);
+        PFL_EXPECT(unresolved_packet_presentation.state == presentation.state);
+        PFL_EXPECT(unresolved_packet_presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
+        PFL_EXPECT(unresolved_packet_presentation.available_length == row->summary_payload_bytes.size());
+        PFL_EXPECT(unresolved_packet_presentation.declared_length == presentation.declared_length);
+        PFL_EXPECT(unresolved_packet_presentation.owned_bytes == row->summary_payload_bytes);
     }
 
     {

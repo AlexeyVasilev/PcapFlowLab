@@ -296,43 +296,36 @@ SelectedStreamItemDataPresentation build_tls_presentation(
 
     if (row.packet_count == 1U && !row.packet_indices.empty()) {
         const auto packet = resolve_selected_flow_packet(session, flow_index, row.packet_indices.front());
-        if (!packet.has_value()) {
-            return make_unavailable_presentation(
-                row.stream_item_index,
-                StreamItemDataSemanticKind::tls_record,
-                StreamItemDataState::unavailable,
-                "The source packet for this TLS item is no longer available."
-            );
-        }
-
-        if (const auto offset = packet_local_tls_offset(
+        if (packet.has_value()) {
+            if (const auto offset = packet_local_tls_offset(
                 session,
                 flow_index,
                 *packet,
                 row,
                 intra_packet_ordinal
             );
-            offset.has_value()) {
-            return SelectedStreamItemDataPresentation {
-                .stream_item_index = row.stream_item_index,
-                .semantic_kind = StreamItemDataSemanticKind::tls_record,
-                .source_kind = StreamItemDataSourceKind::captured_packet_range,
-                .state = state,
-                .assembly_kind = StreamItemDataAssemblyKind::packet_local,
-                .available_length = static_cast<std::uint32_t>(row.summary_payload_bytes.size()),
-                .declared_length = declared_length,
-                .captured_packet_range = StreamItemCapturedPacketRange {
-                    .packet_index = packet->packet_index,
-                    .offset = *offset,
+                offset.has_value()) {
+                return SelectedStreamItemDataPresentation {
+                    .stream_item_index = row.stream_item_index,
+                    .semantic_kind = StreamItemDataSemanticKind::tls_record,
+                    .source_kind = StreamItemDataSourceKind::captured_packet_range,
+                    .state = state,
+                    .assembly_kind = StreamItemDataAssemblyKind::packet_local,
                     .available_length = static_cast<std::uint32_t>(row.summary_payload_bytes.size()),
                     .declared_length = declared_length,
-                },
-                .contributing_unit_count = std::nullopt,
-                .contributing_unit_kind = std::nullopt,
-                .quic_crypto_stream_offset = std::nullopt,
-                .owned_bytes = {},
-                .unavailable_reason = {},
-            };
+                    .captured_packet_range = StreamItemCapturedPacketRange {
+                        .packet_index = packet->packet_index,
+                        .offset = *offset,
+                        .available_length = static_cast<std::uint32_t>(row.summary_payload_bytes.size()),
+                        .declared_length = declared_length,
+                    },
+                    .contributing_unit_count = std::nullopt,
+                    .contributing_unit_kind = std::nullopt,
+                    .quic_crypto_stream_offset = std::nullopt,
+                    .owned_bytes = {},
+                    .unavailable_reason = {},
+                };
+            }
         }
     }
 

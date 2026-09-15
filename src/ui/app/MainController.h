@@ -959,6 +959,7 @@ private:
     void finalizeAdvancedFlowFilterClearAll();
     void refreshAdvancedFlowFilterEditingPresentation();
     void refreshStatisticsOverviewPresentation();
+    void invalidateSelectedStreamItemData(bool clearPresentation);
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
@@ -1051,6 +1052,7 @@ private:
     qulonglong loaded_stream_item_data_index_ {std::numeric_limits<qulonglong>::max()};
     std::size_t loaded_stream_item_data_packet_window_count_ {0U};
     std::size_t loaded_stream_item_data_limit_ {0U};
+    bool stream_item_data_loading_ {false};
     bool stream_tab_active_ {false};
     bool analysis_tab_active_ {false};
     bool unrecognized_packets_selected_ {false};

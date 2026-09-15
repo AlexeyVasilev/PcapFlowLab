@@ -4426,9 +4426,7 @@ bool MainController::attachSourceCapture(const QString& path) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
-        loaded_stream_item_data_index_ = kInvalidStreamSelection;
-        loaded_stream_item_data_packet_window_count_ = 0U;
-        loaded_stream_item_data_limit_ = 0U;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (stream_tab_active_) {
@@ -6253,6 +6251,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     pending_analysis_settings_.use_possible_tls_quic = enabled;
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
         applyActiveFlowFilterModeToModel();
@@ -6264,6 +6263,9 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
         }
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
+        }
+        if (stream_tab_active_ && selected_flow_index_ >= 0) {
+            refreshSelectedStreamItems(true);
         }
         emit stateChanged();
     }
@@ -6666,6 +6668,17 @@ bool MainController::exportSelectedStreamItemData(const QString& formatId) {
     return true;
 }
 
+void MainController::invalidateSelectedStreamItemData(const bool clearPresentation) {
+    loaded_stream_item_data_index_ = kInvalidStreamSelection;
+    loaded_stream_item_data_packet_window_count_ = 0U;
+    loaded_stream_item_data_limit_ = 0U;
+    stream_item_data_loading_ = false;
+    if (clearPresentation) {
+        packet_details_model_.clearStreamItemDataPresentation();
+        packet_details_model_.setPayloadText({});
+    }
+}
+
 void MainController::loadSelectedStreamItemData() {
     if (details_selection_context_ != DetailsSelectionContext::stream ||
         selected_stream_item_index_ == kInvalidStreamSelection ||
@@ -6685,6 +6698,10 @@ void MainController::loadSelectedStreamItemData() {
         return;
     }
 
+    if (stream_item_data_loading_) {
+        return;
+    }
+
     const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
     const auto packet_window_count = stream_packet_window_count_;
     const auto item_limit = loaded_stream_item_count_ > 0U
@@ -6698,6 +6715,7 @@ void MainController::loadSelectedStreamItemData() {
         return;
     }
 
+    stream_item_data_loading_ = true;
     const auto presentation = session_.derive_selected_flow_stream_item_data(
         flow_index,
         packet_window_count,
@@ -6740,6 +6758,7 @@ void MainController::loadSelectedStreamItemData() {
     loaded_stream_item_data_index_ = selected_stream_item_index_;
     loaded_stream_item_data_packet_window_count_ = packet_window_count;
     loaded_stream_item_data_limit_ = item_limit;
+    stream_item_data_loading_ = false;
 }
 
 void MainController::refreshSelectedPacketByteView() {
@@ -6899,9 +6918,7 @@ void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex
     }
 
     selected_stream_item_index_ = streamItemIndex;
-    loaded_stream_item_data_index_ = kInvalidStreamSelection;
-    loaded_stream_item_data_packet_window_count_ = 0U;
-    loaded_stream_item_data_limit_ = 0U;
+    invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
     if (selected_stream_item_index_ == kInvalidStreamSelection) {
         if (details_selection_context_ == DetailsSelectionContext::stream) {
             details_selection_context_ = DetailsSelectionContext::none;
@@ -7274,9 +7291,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
-        loaded_stream_item_data_index_ = kInvalidStreamSelection;
-        loaded_stream_item_data_packet_window_count_ = 0U;
-        loaded_stream_item_data_limit_ = 0U;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (previousLoading != stream_loading_
@@ -7297,9 +7312,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         total_stream_item_count_ = 0U;
         stream_packet_window_count_ = 0U;
         stream_item_budget_count_ = 0U;
-        loaded_stream_item_data_index_ = kInvalidStreamSelection;
-        loaded_stream_item_data_packet_window_count_ = 0U;
-        loaded_stream_item_data_limit_ = 0U;
+        invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (previousLoading != stream_loading_
@@ -7358,9 +7371,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         if (selectedIt == current_stream_items_.end()) {
             clearStreamSelection();
         } else if (previousLoaded != loaded_stream_item_count_ || previousPacketWindow != stream_packet_window_count_) {
-            loaded_stream_item_data_index_ = kInvalidStreamSelection;
-            loaded_stream_item_data_packet_window_count_ = 0U;
-            loaded_stream_item_data_limit_ = 0U;
+            invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
             if (details_selection_context_ == DetailsSelectionContext::stream) {
                 reloadSelectedStreamDetails();
             }
@@ -7621,9 +7632,7 @@ void MainController::clearStreamSelection() {
     const bool selectionChanged = selected_stream_item_index_ != kInvalidStreamSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::stream;
     selected_stream_item_index_ = kInvalidStreamSelection;
-    loaded_stream_item_data_index_ = kInvalidStreamSelection;
-    loaded_stream_item_data_packet_window_count_ = 0U;
-    loaded_stream_item_data_limit_ = 0U;
+    invalidateSelectedStreamItemData(wasActive);
 
     if (wasActive) {
         details_selection_context_ = DetailsSelectionContext::none;
