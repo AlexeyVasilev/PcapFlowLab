@@ -83,6 +83,26 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `ssh/05_ssh_short_prefix_three_bytes.pcap`
 - Purpose: payload-length boundary negative case.
 
+## STUN
+
+`stun/01_stun_binding_request_3478.pcap`
+- Purpose: standard positive STUN Binding Request baseline.
+
+`stun/02_stun_binding_request_response.pcap`
+- Purpose: bidirectional STUN request/response Flow baseline.
+
+`stun/03_stun_binding_request_nonstandard_port.pcap`
+- Purpose: content-based STUN recognition on a non-standard UDP port.
+
+`stun/04_stun_bad_magic_cookie.pcap`
+- Purpose: invalid-cookie negative case.
+
+`stun/05_stun_invalid_top_bits.pcap`
+- Purpose: STUN first-two-bits invariant negative case.
+
+`stun/06_stun_declared_length_mismatch.pcap`
+- Purpose: exact declared-length boundary negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
