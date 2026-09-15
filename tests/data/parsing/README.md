@@ -103,6 +103,26 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `stun/06_stun_declared_length_mismatch.pcap`
 - Purpose: exact declared-length boundary negative case.
 
+## BitTorrent
+
+`bittorrent/01_bittorrent_handshake_typical_ports.pcap`
+- Purpose: canonical 68-byte peer-wire handshake positive baseline.
+
+`bittorrent/02_bittorrent_bidirectional_nonstandard_ports.pcap`
+- Purpose: bidirectional canonical handshakes on non-standard ports.
+
+`bittorrent/03_bittorrent_handshake_plus_keepalive.pcap`
+- Purpose: handshake followed by additional peer-wire bytes in one TCP payload.
+
+`bittorrent/04_bittorrent_invalid_pstrlen.pcap`
+- Purpose: invalid pstrlen negative case.
+
+`bittorrent/05_bittorrent_invalid_protocol_string.pcap`
+- Purpose: exact protocol-string negative case.
+
+`bittorrent/06_bittorrent_short_67_byte_handshake.pcap`
+- Purpose: minimum handshake-size boundary negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
