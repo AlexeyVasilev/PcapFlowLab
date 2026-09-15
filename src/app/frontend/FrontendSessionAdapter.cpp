@@ -902,12 +902,7 @@ FrontendStreamItemDto::StreamItemDataDto build_frontend_stream_item_data(
         limit,
         stream_item_index
     );
-    const auto formatted_text = session.format_selected_flow_stream_item_data_hex_dump(
-        flow_index,
-        max_packets_to_scan,
-        limit,
-        stream_item_index
-    );
+    const auto formatted_text = session.format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
     const auto item_data_requires_materialization =
         presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
         presentation.state != session_detail::StreamItemDataState::synthetic;

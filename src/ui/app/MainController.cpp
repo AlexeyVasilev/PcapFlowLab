@@ -6704,12 +6704,7 @@ void MainController::loadSelectedStreamItemData() {
         item_limit,
         itemIt->stream_item_index
     );
-    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(
-        flow_index,
-        packet_window_count,
-        item_limit,
-        itemIt->stream_item_index
-    );
+    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
     const auto item_data_available = formatted_text.has_value();
     const auto item_data_requires_materialization = presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
         presentation.state != session_detail::StreamItemDataState::synthetic;

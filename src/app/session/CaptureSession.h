@@ -291,11 +291,25 @@ public:
         std::size_t limit,
         std::uint64_t stream_item_index
     ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> materialize_selected_flow_stream_item_data(
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> materialize_selected_flow_stream_item_data(
+        std::size_t flow_index,
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
     [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
         std::size_t flow_index,
         std::size_t max_packets_to_scan,
         std::size_t limit,
         std::uint64_t stream_item_index
+    ) const;
+    [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
+        const session_detail::SelectedStreamItemDataPresentation& presentation
+    ) const;
+    [[nodiscard]] std::optional<std::string> format_selected_flow_stream_item_data_hex_dump(
+        std::size_t flow_index,
+        const session_detail::SelectedStreamItemDataPresentation& presentation
     ) const;
     [[nodiscard]] bool export_selected_flow_stream_item_data(
         std::size_t flow_index,

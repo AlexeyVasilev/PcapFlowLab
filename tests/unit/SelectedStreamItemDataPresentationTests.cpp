@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -163,6 +164,54 @@ void expect_hex_dump_matches(
     PFL_EXPECT(*hex_dump == service.format(std::span<const std::uint8_t>(expected_bytes.data(), expected_bytes.size())));
 }
 
+void expect_presentation_based_item_data_matches_indexed(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::size_t packet_budget,
+    const std::size_t item_limit,
+    const std::uint64_t stream_item_index
+) {
+    const auto presentation = session.derive_selected_flow_stream_item_data(
+        flow_index,
+        packet_budget,
+        item_limit,
+        stream_item_index
+    );
+
+    const auto indexed_materialized = session.materialize_selected_flow_stream_item_data(
+        flow_index,
+        packet_budget,
+        item_limit,
+        stream_item_index
+    );
+    if (presentation.captured_packet_range.has_value()) {
+        const auto packet_context = session.selected_flow_packet_context_for_packet_index(
+            flow_index,
+            presentation.captured_packet_range->packet_index
+        );
+        PFL_REQUIRE(packet_context.has_value());
+        PFL_EXPECT(packet_context->packet.packet_index == presentation.captured_packet_range->packet_index);
+    }
+
+    const auto presentation_materialized = session.materialize_selected_flow_stream_item_data(flow_index, presentation);
+    PFL_EXPECT(presentation_materialized.has_value() == indexed_materialized.has_value());
+    if (presentation_materialized.has_value() && indexed_materialized.has_value()) {
+        PFL_EXPECT(*presentation_materialized == *indexed_materialized);
+    }
+
+    const auto indexed_hex_dump = session.format_selected_flow_stream_item_data_hex_dump(
+        flow_index,
+        packet_budget,
+        item_limit,
+        stream_item_index
+    );
+    const auto presentation_hex_dump = session.format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
+    PFL_EXPECT(presentation_hex_dump.has_value() == indexed_hex_dump.has_value());
+    if (presentation_hex_dump.has_value() && indexed_hex_dump.has_value()) {
+        PFL_EXPECT(*presentation_hex_dump == *indexed_hex_dump);
+    }
+}
+
 void expect_same_stream_item_data_presentation(
     const session_detail::SelectedStreamItemDataPresentation& actual,
     const session_detail::SelectedStreamItemDataPresentation& expected
@@ -228,6 +277,7 @@ void run_selected_stream_item_data_presentation_tests() {
         );
         PFL_EXPECT(materialized == expected_bytes);
         expect_hex_dump_matches(session, 0U, 30U, 32U, row.stream_item_index, expected_bytes);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 32U, row.stream_item_index);
 
         auto relabeled_row = row;
         relabeled_row.label = "synthetic label should not choose generic TCP item data";
@@ -415,6 +465,7 @@ void run_selected_stream_item_data_presentation_tests() {
         );
         PFL_EXPECT(materialized == http_request_bytes);
         expect_hex_dump_matches(session, 0U, 30U, 16U, row->stream_item_index, http_request_bytes);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 16U, row->stream_item_index);
 
         auto relabeled_row = *row;
         relabeled_row.label = "synthetic label should not choose HTTP item data";
@@ -1072,6 +1123,7 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized.size() == row->byte_count);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 16U, row->stream_item_index);
 
         auto relabeled_row = *row;
         relabeled_row.label = "synthetic label should not choose QUIC item data";
@@ -1085,6 +1137,50 @@ void run_selected_stream_item_data_presentation_tests() {
             30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
+    }
+
+    {
+        CaptureSession raw_session {};
+        PFL_EXPECT(raw_session.open_capture(fixture_path("parsing/quic/quic_initial_ack_wrong_pkn_1.pcap"), fast_options()));
+
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_stream_item_data_quic_envelope_v16.idx";
+        std::filesystem::remove(index_path);
+        PFL_REQUIRE(raw_session.save_index(index_path));
+
+        CaptureSession indexed_session {};
+        PFL_REQUIRE(indexed_session.load_index(index_path));
+
+        const auto raw_rows = raw_session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto indexed_rows = indexed_session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* raw_row = find_stream_row_by_label(raw_rows, "QUIC Initial");
+        const auto* indexed_row = find_stream_row_by_label(indexed_rows, "QUIC Initial");
+        PFL_REQUIRE(raw_row != nullptr);
+        PFL_REQUIRE(indexed_row != nullptr);
+
+        const auto raw_presentation =
+            require_selected_stream_item_data(raw_session, 0U, 30U, 16U, raw_row->stream_item_index);
+        const auto indexed_presentation =
+            require_selected_stream_item_data(indexed_session, 0U, 30U, 16U, indexed_row->stream_item_index);
+        expect_same_stream_item_data_presentation(indexed_presentation, raw_presentation);
+
+        const auto raw_materialized = raw_session.materialize_selected_flow_stream_item_data(
+            0U,
+            raw_presentation
+        );
+        const auto indexed_materialized = indexed_session.materialize_selected_flow_stream_item_data(
+            0U,
+            indexed_presentation
+        );
+        PFL_REQUIRE(raw_materialized.has_value());
+        PFL_REQUIRE(indexed_materialized.has_value());
+        PFL_EXPECT(*indexed_materialized == *raw_materialized);
+        expect_presentation_based_item_data_matches_indexed(
+            indexed_session,
+            0U,
+            30U,
+            16U,
+            indexed_row->stream_item_index
+        );
     }
 
     {
@@ -1110,6 +1206,7 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized.size() == row->byte_count);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 16U, row->stream_item_index);
     }
 
     {
@@ -1138,6 +1235,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(crypto_presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
         PFL_EXPECT(crypto_presentation.quic_crypto_stream_offset.has_value());
         PFL_EXPECT(crypto_presentation.available_length == crypto_row->byte_count);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 32U, crypto_row->stream_item_index);
 
         const auto zero_rtt_presentation = require_selected_stream_item_data(
             session,

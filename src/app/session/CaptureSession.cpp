@@ -4484,7 +4484,12 @@ std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_fl
         limit,
         stream_item_index
     );
+    return materialize_selected_flow_stream_item_data(flow_index, presentation);
+}
 
+std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_flow_stream_item_data(
+    const session_detail::SelectedStreamItemDataPresentation& presentation
+) const {
     if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
         if (!presentation.captured_packet_range.has_value()) {
             return std::nullopt;
@@ -4494,6 +4499,34 @@ std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_fl
             return std::nullopt;
         }
         const auto packet_bytes = read_packet_data(*packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::materialize_selected_stream_item_data(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+        );
+    }
+
+    return session_detail::materialize_selected_stream_item_data(presentation, {});
+}
+
+std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const session_detail::SelectedStreamItemDataPresentation& presentation
+) const {
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_context = selected_flow_packet_context_for_packet_index(
+            flow_index,
+            presentation.captured_packet_range->packet_index
+        );
+        if (!packet_context.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(packet_context->packet);
         if (packet_bytes.empty()) {
             return std::nullopt;
         }
@@ -4518,6 +4551,12 @@ std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data
         limit,
         stream_item_index
     );
+    return format_selected_flow_stream_item_data_hex_dump(flow_index, presentation);
+}
+
+std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data_hex_dump(
+    const session_detail::SelectedStreamItemDataPresentation& presentation
+) const {
     HexDumpService service {};
 
     if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
@@ -4542,6 +4581,37 @@ std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data
     return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
 }
 
+std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data_hex_dump(
+    const std::size_t flow_index,
+    const session_detail::SelectedStreamItemDataPresentation& presentation
+) const {
+    HexDumpService service {};
+
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_context = selected_flow_packet_context_for_packet_index(
+            flow_index,
+            presentation.captured_packet_range->packet_index
+        );
+        if (!packet_context.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(packet_context->packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::format_selected_stream_item_data_hex_dump(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            service
+        );
+    }
+
+    return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
+}
+
 bool CaptureSession::export_selected_flow_stream_item_data(
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan,
@@ -4551,12 +4621,13 @@ bool CaptureSession::export_selected_flow_stream_item_data(
     const std::filesystem::path& output_path,
     std::string* out_error_text
 ) const {
-    const auto materialized = materialize_selected_flow_stream_item_data(
+    const auto presentation = derive_selected_flow_stream_item_data(
         flow_index,
         max_packets_to_scan,
         limit,
         stream_item_index
     );
+    const auto materialized = materialize_selected_flow_stream_item_data(flow_index, presentation);
     if (!materialized.has_value()) {
         if (out_error_text != nullptr) {
             *out_error_text = "The selected stream item data is unavailable for export.";
