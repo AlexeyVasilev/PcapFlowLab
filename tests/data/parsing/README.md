@@ -46,6 +46,26 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: truly truncated UDP packet with preserved captured/original packet lengths.
 - Used by: import visibility regression and UI checksum/details regression for conservative truncation handling.
 
+## DHCPv4
+
+`dhcp/01_dhcp_discover_broadcast.pcap`
+- Purpose: positive DHCPv4 Discover recognition baseline on UDP 68 -> 67.
+
+`dhcp/02_dhcp_offer_broadcast.pcap`
+- Purpose: positive DHCPv4 Offer recognition baseline on reverse UDP 67 -> 68.
+
+`dhcp/03_dhcp_request_ack_bidirectional.pcap`
+- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow.
+
+`dhcp/04_dhcp_bad_magic_cookie.pcap`
+- Purpose: negative DHCPv4 case showing ports 67/68 alone are insufficient without the valid magic cookie.
+
+`dhcp/05_dhcp_valid_payload_wrong_ports.pcap`
+- Purpose: negative DHCPv4 case showing a valid DHCP-looking payload is not recognized on non-DHCP ports.
+
+`dhcp/06_dhcp_truncated_before_magic_cookie.pcap`
+- Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
