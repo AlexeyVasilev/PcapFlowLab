@@ -6252,6 +6252,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
         invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
+        stream_state_materialized_for_selected_flow_ = false;
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
         applyActiveFlowFilterModeToModel();
@@ -6265,7 +6266,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
             refreshSelectedFlowAnalysis();
         }
         if (stream_tab_active_ && selected_flow_index_ >= 0) {
-            refreshSelectedStreamItems(true);
+            refreshSelectedStreamItems(true, true);
         }
         emit stateChanged();
     }
@@ -7276,7 +7277,7 @@ void MainController::refreshUnrecognizedPackets(const bool resetRows) {
     }
 }
 
-void MainController::refreshSelectedStreamItems(const bool resetRows) {
+void MainController::refreshSelectedStreamItems(const bool resetRows, const bool forceSelectedDetailsReload) {
     const bool previousLoading = stream_loading_;
     const auto previousLoaded = loaded_stream_item_count_;
     const auto previousTotal = total_stream_item_count_;
@@ -7370,7 +7371,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         });
         if (selectedIt == current_stream_items_.end()) {
             clearStreamSelection();
-        } else if (previousLoaded != loaded_stream_item_count_ || previousPacketWindow != stream_packet_window_count_) {
+        } else if (forceSelectedDetailsReload || previousLoaded != loaded_stream_item_count_ || previousPacketWindow != stream_packet_window_count_) {
             invalidateSelectedStreamItemData(details_selection_context_ == DetailsSelectionContext::stream);
             if (details_selection_context_ == DetailsSelectionContext::stream) {
                 reloadSelectedStreamDetails();

@@ -6848,7 +6848,10 @@
       const size = state.byteExportTargetKind === "stream"
         ? Number(state.selectedStreamItemDetails?.stream_item_data?.available_length || 0)
         : Number(state.packetDetails?.selected_byte_view?.available_length || 0);
-      elements.byteExportMetadata.textContent = `${label} · ${formatNumber(size)} bytes`;
+      elements.byteExportMetadata.textContent =
+        state.byteExportTargetKind === "stream" && state.selectedStreamItemDetails?.stream_item_data_loaded !== true
+          ? label
+          : `${label} · ${formatNumber(size)} bytes`;
     }
     if (elements.byteExportFormatList) {
       elements.byteExportFormatList.innerHTML = state.byteExportFormats
@@ -9027,6 +9030,9 @@
     elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
     elements.streamDetailsItemDataTabButton.textContent = "Item Data";
     renderStreamItemSummary(elements.streamDetailsSummaryText, item);
+    if (elements.streamDetailsExportBytesButton) {
+      elements.streamDetailsExportBytesButton.disabled = false;
+    }
 
     if (state.streamItemDataState === "loading") {
       elements.streamDetailsItemDataStateText.textContent = "Loading item data...";
@@ -9046,9 +9052,6 @@
       elements.streamDetailsItemDataStateText.classList.add("is-error");
       elements.streamDetailsItemDataText.textContent = state.streamItemDataErrorText;
       elements.streamDetailsItemDataText.classList.add("is-muted");
-      if (elements.streamDetailsExportBytesButton) {
-        elements.streamDetailsExportBytesButton.disabled = true;
-      }
       return;
     }
 
@@ -9058,16 +9061,10 @@
       elements.streamDetailsItemDataStateText.textContent = "Item data has not been loaded yet.";
       elements.streamDetailsItemDataText.textContent = "Open Item Data to load selected stream item data.";
       elements.streamDetailsItemDataText.classList.add("is-muted");
-      if (elements.streamDetailsExportBytesButton) {
-        elements.streamDetailsExportBytesButton.disabled = true;
-      }
       return;
     }
 
     elements.streamDetailsItemDataStateText.textContent = itemData.status_text || "";
-    if (elements.streamDetailsExportBytesButton) {
-      elements.streamDetailsExportBytesButton.disabled = !(itemData.available);
-    }
     if (itemData.available === false && itemData.state && itemData.state !== "synthetic") {
       elements.streamDetailsItemDataStateText.classList.add("is-error");
     }

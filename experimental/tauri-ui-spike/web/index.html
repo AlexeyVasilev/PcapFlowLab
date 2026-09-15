@@ -285,6 +285,10 @@
                         </div>
                         <span id="streamDetailsHeaderBadge" class="stream-details-header-badge is-hidden"></span>
                       </div>
+                      <div class="byte-export-toolbar">
+                        <span></span>
+                        <button id="streamDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
+                      </div>
                     </div>
                     <div class="inspector-tabbar" aria-label="Stream item details tabs">
                       <button type="button" class="inspector-tab active" data-stream-details-tab="summary">Summary</button>
@@ -297,7 +301,6 @@
                     <section class="stream-details-tab-panel" data-stream-details-panel="item-data">
                       <div class="byte-export-toolbar">
                         <p id="streamDetailsItemDataStateText" class="status-text compact-status-text byte-export-toolbar-status"></p>
-                        <button id="streamDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
                       </div>
                       <pre id="streamDetailsItemDataText" class="details-pre byte-preview-pre">Select a stream item to inspect details.</pre>
                     </section>

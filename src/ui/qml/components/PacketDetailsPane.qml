@@ -765,6 +765,9 @@ Frame {
             const label = byteExportDialog.targetLabel.length > 0
                 ? byteExportDialog.targetLabel
                 : (byteExportDialog.packetTarget ? "Selected byte view" : "Selected item data")
+            if (!byteExportDialog.packetTarget && root.packetDetailsModel && !root.packetDetailsModel.streamItemDataAvailable) {
+                return label
+            }
             return `${label} \u00b7 ${byteExportDialog.availableLength} bytes`
         }
         readonly property string selectedFormatId: selectedFormatIndex >= 0
@@ -1017,6 +1020,24 @@ Frame {
                     font.pixelSize: 13
                     elide: Text.ElideRight
                 }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.isStreamItemDetails() && root.headerPrimaryText().length > 0
+            spacing: 8
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Button {
+                text: "Export Bytes..."
+                enabled: !!root.packetDetailsModel
+                    && root.packetDetailsModel.hasPacket
+                    && root.packetDetailsModel.streamItemDetails
+                onClicked: byteExportDialog.openForStream()
             }
         }
 
@@ -1454,14 +1475,6 @@ Frame {
                             color: "#64748b"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
-                        }
-
-                        Button {
-                            text: "Export Bytes..."
-                            enabled: !!root.packetDetailsModel
-                                && root.packetDetailsModel.hasPacket
-                                && root.packetDetailsModel.streamItemDataAvailable
-                            onClicked: byteExportDialog.openForStream()
                         }
                     }
 

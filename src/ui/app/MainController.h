@@ -867,7 +867,7 @@ private:
     void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshUnrecognizedPackets(bool resetRows);
-    void refreshSelectedStreamItems(bool resetRows);
+    void refreshSelectedStreamItems(bool resetRows, bool forceSelectedDetailsReload = false);
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
