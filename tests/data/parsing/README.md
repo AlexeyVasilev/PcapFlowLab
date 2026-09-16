@@ -180,9 +180,8 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 ## MQTT
 
 These fixtures define the target MQTT detection-only behavior. MQTT support is
-not implemented yet, so current tests establish the no-detected-protocol
-baseline; fixtures 01-04 should be promoted to MQTT positives when the
-recognizer is added.
+implemented as core CONNECT-based recognition; fixtures 01-04 are MQTT
+positive cases and fixtures 05-10 are MQTT negative cases.
 
 `mqtt/01_mqtt311_connect_port1883.pcap`
 - Purpose: MQTT 3.1.1 CONNECT positive baseline on TCP/1883.

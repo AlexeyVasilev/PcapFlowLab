@@ -47,6 +47,12 @@ void expect_no_detected_application_protocol(const std::filesystem::path& relati
     PFL_EXPECT(row.service_hint.empty());
 }
 
+void expect_mqtt_flow(const std::filesystem::path& relative_path, const ExpectedFlowShape& expected) {
+    const auto row = require_single_tcp_flow(relative_path, expected);
+    PFL_EXPECT(row.protocol_hint == "mqtt");
+    PFL_EXPECT(row.service_hint.empty());
+}
+
 ExpectedFlowShape client_to_server_port1883_one_packet() {
     return ExpectedFlowShape {
         .capture_packet_count = 1U,
@@ -62,12 +68,11 @@ ExpectedFlowShape client_to_server_port1883_one_packet() {
 }  // namespace
 
 void run_mqtt_pcap_fixture_tests() {
-    // Pre-implementation baseline. Change fixtures 01-04 to "mqtt" with the MQTT recognizer.
-    expect_no_detected_application_protocol(
+    expect_mqtt_flow(
         "parsing/mqtt/01_mqtt311_connect_port1883.pcap",
         client_to_server_port1883_one_packet());
 
-    expect_no_detected_application_protocol(
+    expect_mqtt_flow(
         "parsing/mqtt/02_mqtt5_rich_connect_nonstandard_port.pcap",
         ExpectedFlowShape {
             .capture_packet_count = 1U,
@@ -79,11 +84,11 @@ void run_mqtt_pcap_fixture_tests() {
             .port_b = 31883U,
         });
 
-    expect_no_detected_application_protocol(
+    expect_mqtt_flow(
         "parsing/mqtt/03_mqtt31_connect_port1883.pcap",
         client_to_server_port1883_one_packet());
 
-    expect_no_detected_application_protocol(
+    expect_mqtt_flow(
         "parsing/mqtt/04_mqtt311_connect_plus_pingreq_same_payload.pcap",
         client_to_server_port1883_one_packet());
 

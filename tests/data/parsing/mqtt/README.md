@@ -1,11 +1,11 @@
 # MQTT Parsing Fixtures
 
-This directory contains the planned permanent PCAP fixture set for the target
-first PcapFlowLab MQTT recognition behavior.
+This directory contains the permanent PCAP fixture set for the first
+PcapFlowLab MQTT recognition behavior.
 
-MQTT detection is not implemented in PcapFlowLab at the time this fixture set
-is introduced. These PCAPs define the target first detection-only contract for
-the future MQTT feature; they do not document current recognized behavior.
+These PCAPs define the first detection-only MQTT contract. The fixture set was
+introduced before the recognizer and kept a no-detected-protocol baseline until
+core MQTT detection was implemented.
 
 ## Target First MQTT Support
 
@@ -36,8 +36,9 @@ Target behavior:
 After implementation, successful MQTT detection should produce Detected
 Protocol `MQTT` / protocol hint `mqtt`, while service hint remains empty.
 
-Before MQTT implementation, PcapFlowLab is expected to leave these positive
-fixtures as ordinary TCP flows.
+The original pre-implementation baseline left these positive fixtures as
+ordinary TCP flows; after core MQTT detection, fixtures 01-04 are expected to
+produce protocol hint `mqtt`.
 
 ## Local Generation
 
@@ -116,7 +117,7 @@ coalesced MQTT frame.
 - Purpose: basic positive MQTT 3.1.1 detection and normal TCP/1883 baseline
 - Future expected PFL behavior: one TCP Flow, Detected Protocol `MQTT`,
   protocol hint `mqtt`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: should normally decode as MQTT
 
 ### `02_mqtt5_rich_connect_nonstandard_port.pcap`
@@ -141,7 +142,7 @@ coalesced MQTT frame.
   protocol hint `mqtt`, empty service hint
 - Future PFL must not expose Client Identifier, Username, Password, or Will
   Topic as service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: because this uses a non-standard TCP port, Wireshark may
   leave it as TCP unless heuristic detection or Decode As is used
 - Boundary: this fixture proves detection is content-based rather than gated
@@ -158,7 +159,7 @@ coalesced MQTT frame.
 - Purpose: positive MQTT 3.1 support and old protocol-name/version pair
 - Future expected PFL behavior: one TCP Flow, Detected Protocol `MQTT`,
   protocol hint `mqtt`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: should normally decode as MQTT if the dissector supports the
   old 3.1 handshake
 
@@ -175,7 +176,7 @@ coalesced MQTT frame.
   frame size
 - Future expected PFL behavior: one TCP Flow, Detected Protocol `MQTT`,
   protocol hint `mqtt`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: should normally show both MQTT frames in the TCP payload
 
 ### `05_mqtt_garbage_port1883.pcap`
@@ -188,7 +189,7 @@ coalesced MQTT frame.
 - Purpose: negative case proving TCP/1883 alone is insufficient
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: may select MQTT because of TCP/1883 and display malformed
   data; this does not define PFL behavior
 
@@ -202,7 +203,7 @@ coalesced MQTT frame.
 - Purpose: negative case proving CONNECT fixed-header flags must be validated
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: may identify MQTT but mark it malformed
 
 ### `07_mqtt_protocol_name_level_mismatch.pcap`
@@ -215,7 +216,7 @@ coalesced MQTT frame.
   name/version pairs; `MQTT` plus arbitrary level is not enough
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: may show MQTT with unsupported or malformed version details
 
 ### `08_mqtt_invalid_connect_flags_reserved_bit.pcap`
@@ -230,7 +231,7 @@ coalesced MQTT frame.
   just fixed header and protocol name
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 
 ### `09_mqtt_declared_remaining_length_too_large.pcap`
 
@@ -244,7 +245,7 @@ coalesced MQTT frame.
   CONNECT frame and not accept a valid-looking prefix
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: may present this as truncated or malformed MQTT
 
 ### `10_mqtt_client_id_length_exceeds_frame.pcap`
@@ -261,7 +262,7 @@ coalesced MQTT frame.
   frame bounds
 - Future expected PFL behavior: one normal TCP Flow, Detected Protocol must
   not be `MQTT`, empty service hint
-- Current pre-implementation PFL behavior: ordinary TCP
+- Original pre-implementation PFL baseline: ordinary TCP
 - Wireshark note: may present this as malformed MQTT
 
 ## Intentionally Omitted Permanent Fixtures
