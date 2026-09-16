@@ -177,6 +177,43 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `imap/05_imap_missing_tag_command_separator_port143.pcap`
 - Purpose: malformed tagged-command separator negative case.
 
+## MQTT
+
+These fixtures define the target MQTT detection-only behavior. MQTT support is
+not implemented yet, so current tests establish the no-detected-protocol
+baseline; fixtures 01-04 should be promoted to MQTT positives when the
+recognizer is added.
+
+`mqtt/01_mqtt311_connect_port1883.pcap`
+- Purpose: MQTT 3.1.1 CONNECT positive baseline on TCP/1883.
+
+`mqtt/02_mqtt5_rich_connect_nonstandard_port.pcap`
+- Purpose: rich MQTT 5 CONNECT on a non-standard port; content-based positive case.
+
+`mqtt/03_mqtt31_connect_port1883.pcap`
+- Purpose: MQTT 3.1 `MQIsdp` / level-3 positive baseline.
+
+`mqtt/04_mqtt311_connect_plus_pingreq_same_payload.pcap`
+- Purpose: CONNECT plus PINGREQ in one TCP payload positive coalescing case.
+
+`mqtt/05_mqtt_garbage_port1883.pcap`
+- Purpose: non-MQTT data on TCP/1883 negative case.
+
+`mqtt/06_mqtt_invalid_fixed_header_flags.pcap`
+- Purpose: invalid CONNECT fixed-header flags negative case.
+
+`mqtt/07_mqtt_protocol_name_level_mismatch.pcap`
+- Purpose: protocol-name / protocol-level mismatch negative case.
+
+`mqtt/08_mqtt_invalid_connect_flags_reserved_bit.pcap`
+- Purpose: invalid reserved bit in CONNECT Flags negative case.
+
+`mqtt/09_mqtt_declared_remaining_length_too_large.pcap`
+- Purpose: declared Remaining Length exceeds available TCP bytes negative case.
+
+`mqtt/10_mqtt_client_id_length_exceeds_frame.pcap`
+- Purpose: inner Client Identifier length exceeds CONNECT frame negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
