@@ -160,6 +160,23 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `pop3/05_pop3_invalid_usxr_port110.pcap`
 - Purpose: TCP/110 near-miss prefix negative case.
 
+## IMAP
+
+`imap/01_imap_greeting_login_port143.pcap`
+- Purpose: bidirectional server greeting + tagged LOGIN positive baseline.
+
+`imap/02_imap_capability_port143.pcap`
+- Purpose: tagged CAPABILITY positive baseline.
+
+`imap/03_imap_login_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition within one TCP Flow.
+
+`imap/04_imap_login_port1143_not_detected.pcap`
+- Purpose: recognizable current LOGIN form on unsupported port negative case.
+
+`imap/05_imap_missing_tag_command_separator_port143.pcap`
+- Purpose: malformed tagged-command separator negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
