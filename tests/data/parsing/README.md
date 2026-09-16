@@ -143,6 +143,23 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `smtp/06_smtp_invalid_ehxlo_port25.pcap`
 - Purpose: port-25 near-miss command prefix negative case.
 
+## POP3
+
+`pop3/01_pop3_greeting_user_port110.pcap`
+- Purpose: bidirectional server greeting + USER positive baseline.
+
+`pop3/02_pop3_pass_port110.pcap`
+- Purpose: PASS command positive baseline.
+
+`pop3/03_pop3_user_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition in one TCP Flow.
+
+`pop3/04_pop3_user_port1110_not_detected.pcap`
+- Purpose: recognized USER prefix on unsupported port negative case.
+
+`pop3/05_pop3_invalid_usxr_port110.pcap`
+- Purpose: TCP/110 near-miss prefix negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`

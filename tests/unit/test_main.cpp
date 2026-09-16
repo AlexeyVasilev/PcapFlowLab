@@ -54,6 +54,7 @@ void run_ssh_pcap_fixture_tests();
 void run_stun_pcap_fixture_tests();
 void run_bittorrent_pcap_fixture_tests();
 void run_smtp_pcap_fixture_tests();
+void run_pop3_pcap_fixture_tests();
 void run_cli_flows_tests();
 void run_cli_export_flows_tests();
 void run_cli_flow_info_tests();
@@ -217,6 +218,7 @@ int main() {
         {"stun_pcap_fixtures", pfl::tests::run_stun_pcap_fixture_tests},
         {"bittorrent_pcap_fixtures", pfl::tests::run_bittorrent_pcap_fixture_tests},
         {"smtp_pcap_fixtures", pfl::tests::run_smtp_pcap_fixture_tests},
+        {"pop3_pcap_fixtures", pfl::tests::run_pop3_pcap_fixture_tests},
         {"cli_flows", pfl::tests::run_cli_flows_tests},
         {"cli_export_flows", pfl::tests::run_cli_export_flows_tests},
         {"cli_flow_info", pfl::tests::run_cli_flow_info_tests},

@@ -406,6 +406,7 @@ if(BUILD_TESTING)
         tests/unit/StunPcapFixtureTests.cpp
         tests/unit/BitTorrentPcapFixtureTests.cpp
         tests/unit/SmtpPcapFixtureTests.cpp
+        tests/unit/Pop3PcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
