@@ -123,6 +123,26 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `bittorrent/06_bittorrent_short_67_byte_handshake.pcap`
 - Purpose: minimum handshake-size boundary negative case.
 
+## SMTP
+
+`smtp/01_smtp_greeting_ehlo_port25.pcap`
+- Purpose: bidirectional SMTP greeting/EHLO positive baseline on TCP/25.
+
+`smtp/02_smtp_helo_port25.pcap`
+- Purpose: HELO recognition positive baseline.
+
+`smtp/03_smtp_mail_from_port587.pcap`
+- Purpose: MAIL FROM recognition on supported submission port 587.
+
+`smtp/04_smtp_ehlo_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition in one TCP Flow.
+
+`smtp/05_smtp_ehlo_port2525_not_detected.pcap`
+- Purpose: valid recognized SMTP prefix on unsupported port negative case.
+
+`smtp/06_smtp_invalid_ehxlo_port25.pcap`
+- Purpose: port-25 near-miss command prefix negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
