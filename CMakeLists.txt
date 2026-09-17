@@ -409,6 +409,7 @@ if(BUILD_TESTING)
         tests/unit/Pop3PcapFixtureTests.cpp
         tests/unit/ImapPcapFixtureTests.cpp
         tests/unit/MqttPcapFixtureTests.cpp
+        tests/unit/AmqpPcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
