@@ -482,7 +482,14 @@ bool looks_like_mqtt_connect(std::span<const std::uint8_t> payload) noexcept {
     const auto will_qos = static_cast<std::uint8_t>((connect_flags >> 3U) & 0x03U);
     const bool has_will = (connect_flags & 0x04U) != 0U;
     const bool has_will_retain = (connect_flags & 0x20U) != 0U;
+    const bool has_password = (connect_flags & 0x40U) != 0U;
+    const bool has_username = (connect_flags & 0x80U) != 0U;
     if ((connect_flags & 0x01U) != 0U || will_qos == 3U || (!has_will && (will_qos != 0U || has_will_retain))) {
+        return false;
+    }
+
+    const bool requires_username_for_password = protocol_level == 3U || protocol_level == 4U;
+    if (requires_username_for_password && has_password && !has_username) {
         return false;
     }
 
@@ -506,13 +513,11 @@ bool looks_like_mqtt_connect(std::span<const std::uint8_t> payload) noexcept {
         }
     }
 
-    if ((connect_flags & 0x80U) != 0U &&
-        !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+    if (has_username && !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
         return false;
     }
 
-    if ((connect_flags & 0x40U) != 0U &&
-        !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+    if (has_password && !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
         return false;
     }
 

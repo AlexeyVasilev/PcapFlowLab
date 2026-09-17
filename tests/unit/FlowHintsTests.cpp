@@ -955,6 +955,39 @@ void run_flow_hints_tests() {
     }
 
     {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQIsdp", 3U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQTT", 4U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQTT", 5U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::mqtt);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
         const auto hint = detect_tcp_flow_hint(make_mqtt5_connect_with_oversized_property_length(), 57000U, 31883U);
         PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
         PFL_EXPECT(hint.service_hint.empty());
