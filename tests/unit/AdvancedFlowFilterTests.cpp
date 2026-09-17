@@ -677,6 +677,79 @@ void run_protocol_and_candidate_scope_tests() {
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
         expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
     }
+
+    {
+        const FlowKeyV4 mqtt_flow_ab {
+            .src_addr = ipv4(10, 0, 1, 10),
+            .dst_addr = ipv4(10, 0, 1, 20),
+            .src_port = 57000,
+            .dst_port = 1883,
+            .protocol = ProtocolId::tcp,
+        };
+        auto mqtt_connection = make_ipv4_connection(
+            mqtt_flow_ab,
+            std::nullopt,
+            fixture.tcp_path_id,
+            3U,
+            0U,
+            300U,
+            0U,
+            280U,
+            1000U,
+            2000U,
+            FlowProtocolHint::mqtt,
+            "",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            128U,
+            120U
+        );
+        const FlowKeyV4 http_flow_ab {
+            .src_addr = ipv4(10, 0, 1, 30),
+            .dst_addr = ipv4(10, 0, 1, 40),
+            .src_port = 57001,
+            .dst_port = 80,
+            .protocol = ProtocolId::tcp,
+        };
+        auto http_connection = make_ipv4_connection(
+            http_flow_ab,
+            std::nullopt,
+            fixture.tcp_path_id,
+            2U,
+            0U,
+            200U,
+            0U,
+            180U,
+            1000U,
+            2000U,
+            FlowProtocolHint::http,
+            "example.test",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            128U,
+            120U
+        );
+        const std::vector<session_detail::ListedConnectionRef> mqtt_connections {
+            {.family = FlowAddressFamily::ipv4, .ipv4 = &mqtt_connection},
+            {.family = FlowAddressFamily::ipv4, .ipv4 = &http_connection},
+        };
+
+        AdvancedFlowFilterSpec spec {};
+        spec.detected_protocol.include = {FlowProtocolHint::mqtt};
+        auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {0U});
+
+        spec.detected_protocol.include.clear();
+        spec.detected_protocol.exclude = {FlowProtocolHint::mqtt};
+        filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {1U});
+    }
 }
 
 void run_protocol_path_tests() {
@@ -2380,6 +2453,22 @@ void run_text_format_tests() {
     }
 
     {
+        const auto parsed = require_parse_success(
+            "format_version = 3\n"
+            "detected_protocol.include = MqTt\n"
+        );
+        const auto& spec = parsed.document.configured_spec;
+        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::mqtt}));
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 3\n"
+                "detected_protocol.include = mqtt\n"
+            )
+        );
+    }
+
+    {
         const auto invalid_family = session_detail::parse_advanced_flow_filter_text(
             "format_version = 3\n"
             "address_family.include = ipx\n"
@@ -3386,7 +3475,24 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.document->canonical_text == "format_version = 3\n");
     PFL_EXPECT(empty.option_catalog.address_family.size() == 2U);
     PFL_EXPECT(empty.option_catalog.flow_protocol.size() == 9U);
-    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 17U);
+    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 18U);
+    const auto mqtt_detected_option_count = std::count_if(
+        empty.option_catalog.detected_protocol.begin(),
+        empty.option_catalog.detected_protocol.end(),
+        [](const auto& option) {
+            return option.stable_id == "mqtt";
+        }
+    );
+    PFL_EXPECT(mqtt_detected_option_count == 1U);
+    const auto mqtt_detected_option = std::find_if(
+        empty.option_catalog.detected_protocol.begin(),
+        empty.option_catalog.detected_protocol.end(),
+        [](const auto& option) {
+            return option.stable_id == "mqtt";
+        }
+    );
+    PFL_REQUIRE(mqtt_detected_option != empty.option_catalog.detected_protocol.end());
+    PFL_EXPECT(mqtt_detected_option->label == "MQTT");
     PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
     PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
     PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
@@ -3869,13 +3975,15 @@ void run_frontend_structured_document_tests() {
             empty.document->canonical_text,
             "detected_protocol",
             true,
-            {"unknown"},
+            {"mqtt"},
             {}
         );
         const auto reparsed = expect_update_matches_direct(updated);
         PFL_EXPECT((reparsed.configured_spec.detected_protocol.include == std::vector<FlowProtocolHint> {
-            FlowProtocolHint::unknown
+            FlowProtocolHint::mqtt
         }));
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->canonical_text.find("detected_protocol.include = mqtt\n") != std::string::npos);
     }
 
     {

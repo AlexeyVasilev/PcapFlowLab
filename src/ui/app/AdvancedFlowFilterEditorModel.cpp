@@ -42,7 +42,7 @@ constexpr std::array<AdvancedFilterOptionDescriptor<ProtocolId>, 8> kAdvancedFil
     {ProtocolId::esp, "ESP", "Esp"},
 }};
 
-constexpr std::array<AdvancedFilterOptionDescriptor<FlowProtocolHint>, 17> kAdvancedFilterDetectedProtocolOptions {{
+constexpr std::array<AdvancedFilterOptionDescriptor<FlowProtocolHint>, 18> kAdvancedFilterDetectedProtocolOptions {{
     {FlowProtocolHint::unknown, "Unknown", "Unknown"},
     {FlowProtocolHint::tls, "TLS", "Tls"},
     {FlowProtocolHint::http, "HTTP", "Http"},
@@ -56,6 +56,7 @@ constexpr std::array<AdvancedFilterOptionDescriptor<FlowProtocolHint>, 17> kAdva
     {FlowProtocolHint::smtp, "SMTP", "Smtp"},
     {FlowProtocolHint::pop3, "POP3", "Pop3"},
     {FlowProtocolHint::imap, "IMAP", "Imap"},
+    {FlowProtocolHint::mqtt, "MQTT", "Mqtt"},
     {FlowProtocolHint::igmp, "IGMP", "Igmp"},
     {FlowProtocolHint::igmpv1, "IGMPv1", "Igmpv1"},
     {FlowProtocolHint::igmpv2, "IGMPv2", "Igmpv2"},

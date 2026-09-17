@@ -2392,7 +2392,7 @@
   ],
   "validation_smoke_checks": [
     "Open the capture and confirm Flows / Analysis / Statistics load without requiring an index.",
-    "Open Statistics -> Detected Protocol Hints and confirm all current confirmed application-hint families have at least one representative row: HTTP, TLS, DNS, QUIC, SSH, STUN, BitTorrent, Mail protocols, DHCP, and mDNS.",
+    "Open Statistics -> Detected Protocol Hints and confirm representative confirmed application-hint rows: HTTP, TLS, DNS, QUIC, SSH, STUN, BitTorrent, Mail protocols, DHCP, and mDNS.",
     "If `use_possible_tls_quic` is enabled before reopening/importing the capture, confirm HINT-POSSIBLE-TLS-01 and HINT-POSSIBLE-QUIC-01 move from Unknown into Possible TLS / Possible QUIC respectively.",
     "Inspect AN-TLS-BULK-01 for TLS SNI, rate phases, packet-size histogram, inter-arrival histogram, and burst/idle regions.",
     "Inspect AN-GRE-TLS-01 for complex protocol path and nested TLS stream/bytes presentation.",
