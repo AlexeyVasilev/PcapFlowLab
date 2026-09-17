@@ -213,6 +213,43 @@ positive cases and fixtures 05-10 are MQTT negative cases.
 `mqtt/10_mqtt_client_id_length_exceeds_frame.pcap`
 - Purpose: inner Client Identifier length exceeds CONNECT frame negative case.
 
+## AMQP
+
+These fixtures define the target first AMQP detection-only behavior before the
+recognizer exists. Fixtures 01-05 are future AMQP positive cases and fixtures
+06-10 are future AMQP negative cases; current pre-implementation behavior is
+ordinary TCP with no AMQP detected protocol.
+
+`amqp/01_amqp091_header_port5672.pcap`
+- Purpose: AMQP 0-9-1 exact protocol-header positive baseline on TCP/5672.
+
+`amqp/02_amqp091_header_nonstandard_port.pcap`
+- Purpose: AMQP 0-9-1 exact protocol-header positive case on a non-standard port.
+
+`amqp/03_amqp10_core_header_port5672.pcap`
+- Purpose: AMQP 1.0 core exact protocol-header positive baseline.
+
+`amqp/04_amqp10_sasl_header_nonstandard_port.pcap`
+- Purpose: explicit AMQP 1.0 SASL protocol-header positive case on a non-standard port.
+
+`amqp/05_amqp10_tls_header_nonstandard_port.pcap`
+- Purpose: explicit AMQP 1.0 TLS protocol-header positive case, not generic TLS/port inference.
+
+`amqp/06_amqp_garbage_port5672.pcap`
+- Purpose: non-AMQP data on TCP/5672 negative case with `AMQP` not at payload offset 0.
+
+`amqp/07_amqp091_wrong_version.pcap`
+- Purpose: AMQP 0-9-1 near-miss wrong-version negative case.
+
+`amqp/08_amqp10_unsupported_protocol_id.pcap`
+- Purpose: unsupported AMQP 1.0 protocol-id negative case.
+
+`amqp/09_amqp10_wrong_revision.pcap`
+- Purpose: AMQP 1.0 wrong revision negative case.
+
+`amqp/10_amqp_truncated_header.pcap`
+- Purpose: seven-byte AMQP-looking prefix negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
