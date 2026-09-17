@@ -113,15 +113,17 @@ constexpr char kCompactPacketRefRebuildMessage[] =
     "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture";
 constexpr char kPreviousStableV15RebuildMessage[] =
     "This index uses revision 15 and must be rebuilt with the current version.";
-constexpr char kOutdatedStableIndexRebuildMessage[] =
-    "stable index revision is outdated; rebuild the index from the source capture";
 constexpr char kFutureStableIndexRevisionMessage[] =
     "stable index revision is newer than this application supports";
 
-[[nodiscard]] const char* outdated_stable_revision_message(const std::uint32_t revision) noexcept {
-    return revision == kCaptureIndexPreviousStableV15Revision
-        ? kPreviousStableV15RebuildMessage
-        : kOutdatedStableIndexRebuildMessage;
+[[nodiscard]] std::string outdated_stable_revision_message(const std::uint32_t revision) {
+    if (revision == kCaptureIndexPreviousStableV15Revision) {
+        return kPreviousStableV15RebuildMessage;
+    }
+
+    return "This index uses revision " + std::to_string(revision) +
+           "; current supported revision is " + std::to_string(kCaptureIndexStableIndexRevision) +
+           ". Rebuild the index from the source capture.";
 }
 
 [[nodiscard]] const char* v16_complete_read_error_text(const detail::CaptureIndexV16CompleteReadResult& result) noexcept {
@@ -451,7 +453,8 @@ bool CaptureIndexReader::read_v16_complete(
         }
 
         if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
-            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            const auto revision_error = outdated_stable_revision_message(stable_header.index_revision);
+            set_error_context(0, revision_error.c_str());
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
             }
@@ -609,7 +612,8 @@ bool CaptureIndexReader::read_v16_fast_statistics(
         }
 
         if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
-            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            const auto revision_error = outdated_stable_revision_message(stable_header.index_revision);
+            set_error_context(0, revision_error.c_str());
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
             }
@@ -763,7 +767,8 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         }
 
         if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
-            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            const auto revision_error = outdated_stable_revision_message(stable_header.index_revision);
+            set_error_context(0, revision_error.c_str());
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
             }

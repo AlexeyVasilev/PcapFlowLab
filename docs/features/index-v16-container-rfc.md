@@ -2,9 +2,9 @@
 
 Status: current stable production index architecture.
 
-Current production writes stable v16 indexes and loads stable v16 indexes
-through the metadata/detail architecture described here. Stable v15 full
-payload load is rebuild-required after the cutover.
+Current production writes stable revision 17 indexes using the v16
+metadata/detail architecture described here. Stable v16 and older full payload
+load is rebuild-required after the current Statistics schema revision bump.
 
 Related RFCs:
 
@@ -35,7 +35,7 @@ The stable outer container remains:
 
 - magic: `PFLIDXV1`
 - `container_format_version = 1`
-- `index_revision = 16`
+- `index_revision = 17`
 
 ### Why the stable revision changes
 
@@ -702,8 +702,9 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC records the current stable v16 layout and the migration boundary:
+This RFC records the current stable revision 17 layout using the v16 physical
+architecture and the migration boundary:
 
-- current production writes and loads stable v16
-- stable v15 full payload load is rebuild-required
+- current production writes and loads stable revision 17
+- stable v16 and older full payload load is rebuild-required
 - header inspection remains independent of full payload compatibility

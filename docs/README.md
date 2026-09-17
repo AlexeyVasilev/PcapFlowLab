@@ -90,8 +90,8 @@ different responsibilities.
   Previous stable v15 container/header and rebuild-required compatibility
   boundary.
 - [Index v16 Container RFC](features/index-v16-container-rfc.md)
-  Current stable v16 Statistics/metadata/detail index layout and
-  compatibility contract.
+  Current stable revision 17 Statistics/metadata/detail index layout using the
+  v16 physical architecture and compatibility contract.
 - [Statistics, Reporting, and Large-Index Architecture RFC](features/statistics-reporting-index-rfc.md)
   Current Statistics/reporting architecture direction and migration rationale
   that pairs with the v16 container RFC.

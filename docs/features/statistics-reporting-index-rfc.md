@@ -2,9 +2,10 @@
 
 Status: design freeze for `feature/statistics-reporting-improvements`.
 
-Current production behavior uses the stable v16 architecture defined in the
-companion [Index v16 Container RFC](index-v16-container-rfc.md). Stable v15
-full payload load is now a rebuild-required compatibility boundary.
+Current production behavior uses stable revision 17 on top of the v16
+physical architecture defined in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
+Stable v16 and older full payload load is now a rebuild-required compatibility
+boundary.
 
 Related current references:
 
@@ -377,21 +378,21 @@ This project decision remains explicit:
 - Stage 4 performs one deliberate format/layout migration after the
   Statistics and Analysis data requirements have been validated
 
-The stable production target is now v16, with exact payload topology defined
-in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
+The stable production target is now revision 17 using the v16 payload
+topology defined in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
 
 ## Index Version And Compatibility Policy
 
-Current production is stable v16:
+Current production uses stable revision 17 with the v16 physical architecture:
 
 - stable magic remains `PFLIDXV1`
 - `container_format_version` remains `1`
-- `index_revision = 16`
-- rebuild-required behavior across the v15/v16 full-payload boundary is
+- `index_revision = 17`
+- rebuild-required behavior for stable v16 and older full-payload indexes is
   acceptable
 - stable-header inspection remains independent of full payload compatibility
 
-`kCaptureIndexStableIndexRevision` and `kCaptureIndexVersion` are now `16`.
+`kCaptureIndexStableIndexRevision` and `kCaptureIndexVersion` are now `17`.
 
 ## Frozen Stage 4 Decisions
 
@@ -456,11 +457,11 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC records the implemented stable v16 layout while preserving the key
-migration boundary:
+This RFC records the implemented stable revision 17 layout using the v16
+physical architecture while preserving the key migration boundary:
 
-- current production is stable v16
-- stable v15 full payload load is rebuild-required
+- current production is stable revision 17
+- stable v16 and older full payload load is rebuild-required
 - Stage 4I fast Statistics-only CLI loading is implemented for compatible
   v16 index-backed `summary` invocations
 - Qt/Tauri session/frontend staged loading remains future work

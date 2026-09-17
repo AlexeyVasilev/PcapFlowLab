@@ -352,7 +352,7 @@ void run_index_tests() {
         PFL_EXPECT(decoded_bidirectional.has_flow_b);
         PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
-        PFL_EXPECT(kCaptureIndexVersion == 16U);
+        PFL_EXPECT(kCaptureIndexVersion == 17U);
     }
     {
         OpenContext ctx {};

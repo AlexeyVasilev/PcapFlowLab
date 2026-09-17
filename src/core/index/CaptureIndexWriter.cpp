@@ -1456,7 +1456,7 @@ bool CaptureIndexWriter::rewrite_v16_with_source_header(
         existing_header.magic != kStableCaptureIndexMagic ||
         existing_header.container_format_version != kCaptureIndexStableContainerFormatVersion ||
         existing_header.index_revision != kCaptureIndexVersion) {
-        set_error_text(out_error_text, "Existing index is not a current v16 index.");
+        set_error_text(out_error_text, "Existing index is not a current stable index.");
         return false;
     }
 

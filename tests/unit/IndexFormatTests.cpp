@@ -1360,8 +1360,8 @@ void run_index_format_tests() {
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
         PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 16U);
-        PFL_EXPECT(kCaptureIndexVersion == 16U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 17U);
+        PFL_EXPECT(kCaptureIndexVersion == 17U);
 
         detail::CaptureIndexStableHeader decoded_header {};
         std::istringstream read_stream(
@@ -3502,6 +3502,34 @@ void run_index_format_tests() {
         detail::filesystem_path_to_generic_utf8(unicode_inspection.source_info.capture_path) ==
         detail::filesystem_path_to_generic_utf8(unicode_source_path)
     );
+
+    {
+        auto revision_16_bytes = read_file_bytes(index_path);
+        write_le32_at(revision_16_bytes, 16U, 16U);
+        const auto revision_16_path = write_temp_binary_file(
+            "pfl_index_revision_16_rebuild_required.idx",
+            revision_16_bytes
+        );
+        const std::string revision_16_error =
+            "This index uses revision 16; current supported revision is 17. Rebuild the index from the source capture.";
+
+        detail::CaptureIndexV16CompleteReadResult revision_16_read {};
+        PFL_EXPECT(!index_reader.read_v16_complete(revision_16_path, revision_16_read));
+        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+
+        detail::CaptureIndexV16FastStatisticsTier revision_16_fast_tier {};
+        detail::CaptureIndexV16FastStatisticsTierReadResult revision_16_fast_read {};
+        PFL_EXPECT(!index_reader.read_v16_fast_statistics(
+            revision_16_path,
+            revision_16_fast_tier,
+            revision_16_fast_read
+        ));
+        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+
+        CaptureSession revision_16_session {};
+        PFL_EXPECT(!revision_16_session.load_index(revision_16_path));
+        PFL_EXPECT(revision_16_session.last_open_error_text().find(revision_16_error) != std::string::npos);
+    }
 
     {
         auto previous_stable_revision_bytes = read_file_bytes(index_path);
