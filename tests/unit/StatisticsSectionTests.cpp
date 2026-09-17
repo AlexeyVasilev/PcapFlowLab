@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -1415,7 +1416,7 @@ void expect_capture_packet_size_statistics_survives_index_roundtrip() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_capture_packet_size_roundtrip.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(session.save_index(index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 16U);
+    PFL_EXPECT(kCaptureIndexVersion == 17U);
 
     CaptureSession loaded_session {};
     PFL_REQUIRE(loaded_session.load_index(index_path));
@@ -1682,8 +1683,17 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(overview.statistics_partial_open_warning_text.empty());
 
     PFL_EXPECT(hint_statistics.has_capture);
-    PFL_EXPECT(hint_statistics.protocol_hints.size() == 13U);
+    PFL_EXPECT(hint_statistics.protocol_hints.size() == 14U);
     PFL_REQUIRE(!hint_statistics.protocol_hints.empty());
+    PFL_EXPECT(
+        std::any_of(
+            hint_statistics.protocol_hints.begin(),
+            hint_statistics.protocol_hints.end(),
+            [](const FrontendProtocolHintStatsDto& row) {
+                return row.protocol_label == "MQTT";
+            }
+        )
+    );
     PFL_EXPECT(hint_statistics.protocol_hints.back().protocol_label == "Unknown");
     PFL_EXPECT(hint_statistics.protocol_hints.back().flow_count_text == "3 (100%)");
     PFL_EXPECT(hint_statistics.protocol_hints.back().packet_count_text == "4 (100%)");

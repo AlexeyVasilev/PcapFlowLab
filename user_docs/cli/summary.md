@@ -176,8 +176,8 @@ This workflow shows that:
 - the full Protocol Path Tree can be exported as a side output;
 - this summary workflow does not require packet-byte-backed inspection.
 
-For current v16 indexes, standard summary output, `--extended`, Protocol Path
-Tree preview, and Protocol Path Tree export are read from the index's fast
+For current revision 17 indexes using the v16 physical architecture, standard
+summary output, `--extended`, Protocol Path Tree preview, and Protocol Path Tree export are read from the index's fast
 Statistics tier. This means the command can report summary data without
 opening the original capture file and without scanning the later flow-detail
 parts of the index.
@@ -481,8 +481,8 @@ For `summary`, an index is meant to be self-sufficient for summary data.
 Unlike byte-backed inspection commands, `summary` does not need
 `--source-capture`.
 
-For current v16 indexes, summary-style outputs use the index fast Statistics
-tier when possible. This is a quick metadata read, not a full validation of
+For current revision 17 indexes using the v16 physical architecture,
+summary-style outputs use the index fast Statistics tier when possible. This is a quick metadata read, not a full validation of
 every later flow-detail section in the index.
 
 ## Invalid combinations and errors

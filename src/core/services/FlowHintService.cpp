@@ -50,10 +50,17 @@ constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
 constexpr std::uint32_t kDhcpMagicCookie = 0x63825363U;
 constexpr std::string_view kBitTorrentHandshakeProtocol = "BitTorrent protocol";
 constexpr std::size_t kBitTorrentHandshakeSize = 68U;
+constexpr std::uint8_t kMqttConnectFixedHeaderByte = 0x10U;
+constexpr std::uint32_t kMqttMaximumVariableByteInteger = 268'435'455U;
 
 struct FlowHintDetectionSettings {
     AnalysisSettings analysis_settings {};
     bool enable_quic_initial_sni {false};
+};
+
+struct MqttVariableByteInteger {
+    std::uint32_t value {0U};
+    std::size_t encoded_size {0U};
 };
 
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
@@ -343,6 +350,178 @@ bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
 
     const auto protocol_name = payload_as_text(payload.subspan(1U, kBitTorrentHandshakeProtocol.size()));
     return protocol_name == kBitTorrentHandshakeProtocol;
+}
+
+std::optional<MqttVariableByteInteger> decode_mqtt_variable_byte_integer(
+    std::span<const std::uint8_t> payload,
+    const std::size_t offset
+) noexcept {
+    std::uint32_t value = 0U;
+    std::uint32_t multiplier = 1U;
+
+    for (std::size_t byte_index = 0U; byte_index < 4U; ++byte_index) {
+        if (offset + byte_index >= payload.size()) {
+            return std::nullopt;
+        }
+
+        const auto encoded_byte = payload[offset + byte_index];
+        const auto digit = static_cast<std::uint32_t>(encoded_byte & 0x7FU);
+        if (digit > ((kMqttMaximumVariableByteInteger - value) / multiplier)) {
+            return std::nullopt;
+        }
+        value += digit * multiplier;
+
+        if ((encoded_byte & 0x80U) == 0U) {
+            return MqttVariableByteInteger {
+                .value = value,
+                .encoded_size = byte_index + 1U,
+            };
+        }
+
+        if (byte_index == 3U) {
+            return std::nullopt;
+        }
+
+        multiplier *= 128U;
+    }
+
+    return std::nullopt;
+}
+
+bool mqtt_has_available_range(std::span<const std::uint8_t> bytes, const std::size_t offset, const std::size_t length) noexcept {
+    return offset <= bytes.size() && length <= (bytes.size() - offset);
+}
+
+std::optional<std::span<const std::uint8_t>> consume_mqtt_length_prefixed_field(
+    std::span<const std::uint8_t> payload,
+    std::size_t& cursor
+) noexcept {
+    if (!mqtt_has_available_range(payload, cursor, 2U)) {
+        return std::nullopt;
+    }
+
+    const auto length = static_cast<std::size_t>(read_be16(payload, cursor));
+    cursor += 2U;
+    if (!mqtt_has_available_range(payload, cursor, length)) {
+        return std::nullopt;
+    }
+
+    const auto field = payload.subspan(cursor, length);
+    cursor += length;
+    return field;
+}
+
+bool mqtt_field_equals(
+    std::span<const std::uint8_t> field,
+    const std::string_view expected
+) noexcept {
+    return field.size() == expected.size() &&
+           payload_as_text(field) == expected;
+}
+
+bool consume_mqtt_property_span(
+    std::span<const std::uint8_t> payload,
+    std::size_t& cursor
+) noexcept {
+    const auto length = decode_mqtt_variable_byte_integer(payload, cursor);
+    if (!length.has_value()) {
+        return false;
+    }
+
+    cursor += length->encoded_size;
+    const auto property_length = static_cast<std::size_t>(length->value);
+    if (!mqtt_has_available_range(payload, cursor, property_length)) {
+        return false;
+    }
+
+    cursor += property_length;
+    return true;
+}
+
+bool looks_like_mqtt_connect(std::span<const std::uint8_t> payload) noexcept {
+    if (payload.size() < 2U || payload[0] != kMqttConnectFixedHeaderByte) {
+        return false;
+    }
+
+    const auto remaining_length = decode_mqtt_variable_byte_integer(payload, 1U);
+    if (!remaining_length.has_value()) {
+        return false;
+    }
+
+    const auto fixed_header_size = 1U + remaining_length->encoded_size;
+    if (fixed_header_size > payload.size()) {
+        return false;
+    }
+
+    const auto remaining_size = static_cast<std::size_t>(remaining_length->value);
+    if (remaining_size > payload.size() - fixed_header_size) {
+        return false;
+    }
+
+    const auto frame_body = payload.subspan(fixed_header_size, remaining_size);
+    std::size_t cursor = 0U;
+
+    const auto protocol_name = consume_mqtt_length_prefixed_field(frame_body, cursor);
+    if (!protocol_name.has_value() || !mqtt_has_available_range(frame_body, cursor, 4U)) {
+        return false;
+    }
+
+    const auto protocol_level = frame_body[cursor];
+    ++cursor;
+
+    const bool supported_protocol =
+        (mqtt_field_equals(*protocol_name, "MQIsdp") && protocol_level == 3U) ||
+        (mqtt_field_equals(*protocol_name, "MQTT") && (protocol_level == 4U || protocol_level == 5U));
+    if (!supported_protocol) {
+        return false;
+    }
+
+    const auto connect_flags = frame_body[cursor];
+    ++cursor;
+
+    const auto will_qos = static_cast<std::uint8_t>((connect_flags >> 3U) & 0x03U);
+    const bool has_will = (connect_flags & 0x04U) != 0U;
+    const bool has_will_retain = (connect_flags & 0x20U) != 0U;
+    const bool has_password = (connect_flags & 0x40U) != 0U;
+    const bool has_username = (connect_flags & 0x80U) != 0U;
+    if ((connect_flags & 0x01U) != 0U || will_qos == 3U || (!has_will && (will_qos != 0U || has_will_retain))) {
+        return false;
+    }
+
+    const bool requires_username_for_password = protocol_level == 3U || protocol_level == 4U;
+    if (requires_username_for_password && has_password && !has_username) {
+        return false;
+    }
+
+    cursor += 2U; // Keep Alive.
+
+    if (protocol_level == 5U && !consume_mqtt_property_span(frame_body, cursor)) {
+        return false;
+    }
+
+    if (!consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+        return false;
+    }
+
+    if (has_will) {
+        if (protocol_level == 5U && !consume_mqtt_property_span(frame_body, cursor)) {
+            return false;
+        }
+        if (!consume_mqtt_length_prefixed_field(frame_body, cursor).has_value() ||
+            !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+            return false;
+        }
+    }
+
+    if (has_username && !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+        return false;
+    }
+
+    if (has_password && !consume_mqtt_length_prefixed_field(frame_body, cursor).has_value()) {
+        return false;
+    }
+
+    return cursor == frame_body.size();
 }
 
 bool looks_like_smtp_payload(std::span<const std::uint8_t> payload) noexcept {
@@ -896,6 +1075,16 @@ FlowHintUpdate detect_bittorrent_hint(std::span<const std::uint8_t> payload) {
     };
 }
 
+FlowHintUpdate detect_mqtt_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_mqtt_connect(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::mqtt,
+    };
+}
+
 FlowHintUpdate detect_smtp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
@@ -1118,7 +1307,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_bittorrent_hint(payload_view);
+        {
+            const auto bittorrent_hint = detect_bittorrent_hint(payload_view);
+            if (bittorrent_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return bittorrent_hint;
+            }
+        }
+
+        return detect_mqtt_hint(payload_view);
     case ProtocolId::udp:
         {
             const auto mdns_hint = detect_mdns_hint(payload_view, flow_key);

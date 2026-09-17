@@ -149,6 +149,7 @@ template <typename Connection>
     case FlowProtocolHint::igmpv1:
     case FlowProtocolHint::igmpv2:
     case FlowProtocolHint::igmpv3:
+    case FlowProtocolHint::mqtt:
         return true;
     default:
         return false;

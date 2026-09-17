@@ -252,6 +252,90 @@ std::vector<std::uint8_t> make_bittorrent_handshake_payload() {
     return payload;
 }
 
+void append_mqtt_variable_byte_integer(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
+    do {
+        auto encoded_byte = static_cast<std::uint8_t>(value % 128U);
+        value /= 128U;
+        if (value > 0U) {
+            encoded_byte |= 0x80U;
+        }
+        bytes.push_back(encoded_byte);
+    } while (value > 0U);
+}
+
+void append_mqtt_utf8_string(std::vector<std::uint8_t>& bytes, const std::string_view value) {
+    append_be16(bytes, static_cast<std::uint16_t>(value.size()));
+    bytes.insert(bytes.end(), value.begin(), value.end());
+}
+
+void append_mqtt_binary_data(std::vector<std::uint8_t>& bytes, const std::vector<std::uint8_t>& value) {
+    append_be16(bytes, static_cast<std::uint16_t>(value.size()));
+    bytes.insert(bytes.end(), value.begin(), value.end());
+}
+
+std::vector<std::uint8_t> make_mqtt_connect_payload(
+    const std::string_view protocol_name = "MQTT",
+    const std::uint8_t protocol_level = 4U,
+    const std::uint8_t connect_flags = 0x02U,
+    const std::string_view client_id = "pfl-mqtt-client",
+    const std::vector<std::uint8_t>& properties = {},
+    const std::vector<std::uint8_t>& will_properties = {},
+    const std::string_view will_topic = {},
+    const std::vector<std::uint8_t>& will_payload = {},
+    const std::string_view username = {},
+    const std::vector<std::uint8_t>& password = {}
+) {
+    std::vector<std::uint8_t> variable_header {};
+    append_mqtt_utf8_string(variable_header, protocol_name);
+    variable_header.push_back(protocol_level);
+    variable_header.push_back(connect_flags);
+    append_be16(variable_header, 60U);
+    if (protocol_level == 5U) {
+        append_mqtt_variable_byte_integer(variable_header, static_cast<std::uint32_t>(properties.size()));
+        variable_header.insert(variable_header.end(), properties.begin(), properties.end());
+    }
+
+    std::vector<std::uint8_t> body {};
+    body.insert(body.end(), variable_header.begin(), variable_header.end());
+    append_mqtt_utf8_string(body, client_id);
+    if ((connect_flags & 0x04U) != 0U) {
+        if (protocol_level == 5U) {
+            append_mqtt_variable_byte_integer(body, static_cast<std::uint32_t>(will_properties.size()));
+            body.insert(body.end(), will_properties.begin(), will_properties.end());
+        }
+        append_mqtt_utf8_string(body, will_topic);
+        append_mqtt_binary_data(body, will_payload);
+    }
+    if ((connect_flags & 0x80U) != 0U) {
+        append_mqtt_utf8_string(body, username);
+    }
+    if ((connect_flags & 0x40U) != 0U) {
+        append_mqtt_binary_data(body, password);
+    }
+
+    std::vector<std::uint8_t> payload {};
+    payload.push_back(0x10U);
+    append_mqtt_variable_byte_integer(payload, static_cast<std::uint32_t>(body.size()));
+    payload.insert(payload.end(), body.begin(), body.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_mqtt5_connect_with_oversized_property_length() {
+    std::vector<std::uint8_t> body {};
+    append_mqtt_utf8_string(body, "MQTT");
+    body.push_back(5U);
+    body.push_back(0x02U);
+    append_be16(body, 60U);
+    body.push_back(5U);
+    body.push_back(0x11U);
+
+    std::vector<std::uint8_t> payload {};
+    payload.push_back(0x10U);
+    append_mqtt_variable_byte_integer(payload, static_cast<std::uint32_t>(body.size()));
+    payload.insert(payload.end(), body.begin(), body.end());
+    return payload;
+}
+
 std::vector<std::uint8_t> make_smtp_greeting_payload() {
     constexpr char greeting[] = "220 mail.example.org ESMTP ready\r\n";
     return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
@@ -832,6 +916,97 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows.size() == 1);
         PFL_EXPECT(rows[0].protocol_hint.empty());
         PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_mqtt_connect_payload(), 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::mqtt);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint({0x10U, 0x80U}, 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint({0x10U, 0x80U, 0x80U, 0x80U, 0x80U, 0x00U}, 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_mqtt_connect_payload("MQTT", 4U, 0x1EU), 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_mqtt_connect_payload("MQTT", 4U, 0x0AU), 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_mqtt_connect_payload("MQTT", 4U, 0x22U), 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQIsdp", 3U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQTT", 4U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const std::vector<std::uint8_t> mqtt_password {'p', 'a', 's', 's'};
+
+        const auto hint = detect_tcp_flow_hint(
+            make_mqtt_connect_payload("MQTT", 5U, 0x42U, "pfl-mqtt-client", {}, {}, {}, {}, {}, mqtt_password),
+            57000U,
+            31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::mqtt);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_mqtt5_connect_with_oversized_property_length(), 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        auto payload = make_mqtt_connect_payload();
+        payload.push_back(0xC0U);
+        payload.push_back(0x00U);
+
+        const auto hint = detect_tcp_flow_hint(payload, 57000U, 31883U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::mqtt);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        ConnectionV4 connection {};
+        connection.protocol_hint = FlowProtocolHint::mqtt;
+        PFL_EXPECT(connection.hint_detection_settled());
     }
 
     {

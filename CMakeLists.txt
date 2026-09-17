@@ -401,6 +401,14 @@ if(BUILD_TESTING)
         tests/unit/PacketDetailsTests.cpp
         tests/unit/DnsInspectionParserTests.cpp
         tests/unit/DnsPcapFixtureTests.cpp
+        tests/unit/DhcpPcapFixtureTests.cpp
+        tests/unit/SshPcapFixtureTests.cpp
+        tests/unit/StunPcapFixtureTests.cpp
+        tests/unit/BitTorrentPcapFixtureTests.cpp
+        tests/unit/SmtpPcapFixtureTests.cpp
+        tests/unit/Pop3PcapFixtureTests.cpp
+        tests/unit/ImapPcapFixtureTests.cpp
+        tests/unit/MqttPcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp

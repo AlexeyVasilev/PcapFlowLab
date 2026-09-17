@@ -819,6 +819,9 @@ std::optional<FlowProtocolHint> parse_flow_protocol_hint_token(const std::string
     if (equals_ascii_case_insensitive(token, "imap")) {
         return FlowProtocolHint::imap;
     }
+    if (equals_ascii_case_insensitive(token, "mqtt")) {
+        return FlowProtocolHint::mqtt;
+    }
     if (equals_ascii_case_insensitive(token, "igmp")) {
         return FlowProtocolHint::igmp;
     }
@@ -1447,6 +1450,8 @@ std::string format_flow_protocol_hint_token(const FlowProtocolHint hint) {
         return "pop3";
     case FlowProtocolHint::imap:
         return "imap";
+    case FlowProtocolHint::mqtt:
+        return "mqtt";
     case FlowProtocolHint::possible_tls:
         return {};
     case FlowProtocolHint::possible_quic:

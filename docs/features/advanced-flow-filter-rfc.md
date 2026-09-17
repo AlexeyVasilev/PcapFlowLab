@@ -225,6 +225,10 @@ flow_protocol.exclude = <protocol>
 detected_protocol.include = <hint>
 detected_protocol.exclude = <hint>
 
+Where `<hint>` is one of `unknown`, `tls`, `http`, `dns`, `quic`, `ssh`,
+`stun`, `bittorrent`, `dhcp`, `mdns`, `smtp`, `pop3`, `imap`, `mqtt`, `igmp`,
+`igmpv1`, `igmpv2`, or `igmpv3`.
+
 tls_version.include = <tls_version>
 tls_version.exclude = <tls_version>
 

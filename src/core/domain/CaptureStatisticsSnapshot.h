@@ -81,10 +81,11 @@ enum class CaptureStatisticsDetectedProtocolCategory : std::uint8_t {
     smtp = 9,
     pop3 = 10,
     imap = 11,
-    mail_protocols = 12,
-    possible_tls_candidate = 13,
-    possible_quic_candidate = 14,
-    unknown_without_possible = 15,
+    mqtt = 12,
+    mail_protocols = 13,
+    possible_tls_candidate = 14,
+    possible_quic_candidate = 15,
+    unknown_without_possible = 16,
 };
 
 struct CaptureStatisticsDetectedProtocolRow {

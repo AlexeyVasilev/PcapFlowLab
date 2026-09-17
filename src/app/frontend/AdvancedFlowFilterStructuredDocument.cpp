@@ -35,7 +35,7 @@ constexpr std::array<EnumDescriptor<ProtocolId>, 9> kFlowProtocolDescriptors {{
     {ProtocolId::arp, "arp", "ARP"},
 }};
 
-constexpr std::array<EnumDescriptor<FlowProtocolHint>, 17> kDetectedProtocolDescriptors {{
+constexpr std::array<EnumDescriptor<FlowProtocolHint>, 18> kDetectedProtocolDescriptors {{
     {FlowProtocolHint::unknown, "unknown", "Unknown"},
     {FlowProtocolHint::tls, "tls", "TLS"},
     {FlowProtocolHint::http, "http", "HTTP"},
@@ -49,6 +49,7 @@ constexpr std::array<EnumDescriptor<FlowProtocolHint>, 17> kDetectedProtocolDesc
     {FlowProtocolHint::smtp, "smtp", "SMTP"},
     {FlowProtocolHint::pop3, "pop3", "POP3"},
     {FlowProtocolHint::imap, "imap", "IMAP"},
+    {FlowProtocolHint::mqtt, "mqtt", "MQTT"},
     {FlowProtocolHint::igmp, "igmp", "IGMP"},
     {FlowProtocolHint::igmpv1, "igmpv1", "IGMPv1"},
     {FlowProtocolHint::igmpv2, "igmpv2", "IGMPv2"},

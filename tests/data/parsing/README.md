@@ -46,6 +46,173 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: truly truncated UDP packet with preserved captured/original packet lengths.
 - Used by: import visibility regression and UI checksum/details regression for conservative truncation handling.
 
+## DHCPv4
+
+`dhcp/01_dhcp_discover_broadcast.pcap`
+- Purpose: positive DHCPv4 Discover recognition baseline on UDP 68 -> 67.
+
+`dhcp/02_dhcp_offer_broadcast.pcap`
+- Purpose: positive DHCPv4 Offer recognition baseline on reverse UDP 67 -> 68.
+
+`dhcp/03_dhcp_request_ack_bidirectional.pcap`
+- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow.
+
+`dhcp/04_dhcp_bad_magic_cookie.pcap`
+- Purpose: negative DHCPv4 case showing ports 67/68 alone are insufficient without the valid magic cookie.
+
+`dhcp/05_dhcp_valid_payload_wrong_ports.pcap`
+- Purpose: negative DHCPv4 case showing a valid DHCP-looking payload is not recognized on non-DHCP ports.
+
+`dhcp/06_dhcp_truncated_before_magic_cookie.pcap`
+- Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
+
+## SSH
+
+`ssh/01_ssh_server_banner_port22.pcap`
+- Purpose: standard TCP/22 SSH server identification baseline.
+
+`ssh/02_ssh_client_banner_port2222.pcap`
+- Purpose: content-based SSH recognition on a non-standard port.
+
+`ssh/03_ssh_banner_after_unmatched_payload.pcap`
+- Purpose: later payload recognition within one TCP Flow.
+
+`ssh/04_ssh_invalid_ssx_prefix_port22.pcap`
+- Purpose: near-miss prefix negative case proving TCP port 22 alone is insufficient.
+
+`ssh/05_ssh_short_prefix_three_bytes.pcap`
+- Purpose: payload-length boundary negative case.
+
+## STUN
+
+`stun/01_stun_binding_request_3478.pcap`
+- Purpose: standard positive STUN Binding Request baseline.
+
+`stun/02_stun_binding_request_response.pcap`
+- Purpose: bidirectional STUN request/response Flow baseline.
+
+`stun/03_stun_binding_request_nonstandard_port.pcap`
+- Purpose: content-based STUN recognition on a non-standard UDP port.
+
+`stun/04_stun_bad_magic_cookie.pcap`
+- Purpose: invalid-cookie negative case.
+
+`stun/05_stun_invalid_top_bits.pcap`
+- Purpose: STUN first-two-bits invariant negative case.
+
+`stun/06_stun_declared_length_mismatch.pcap`
+- Purpose: exact declared-length boundary negative case.
+
+## BitTorrent
+
+`bittorrent/01_bittorrent_handshake_typical_ports.pcap`
+- Purpose: canonical 68-byte peer-wire handshake positive baseline.
+
+`bittorrent/02_bittorrent_bidirectional_nonstandard_ports.pcap`
+- Purpose: bidirectional canonical handshakes on non-standard ports.
+
+`bittorrent/03_bittorrent_handshake_plus_keepalive.pcap`
+- Purpose: handshake followed by additional peer-wire bytes in one TCP payload.
+
+`bittorrent/04_bittorrent_invalid_pstrlen.pcap`
+- Purpose: invalid pstrlen negative case.
+
+`bittorrent/05_bittorrent_invalid_protocol_string.pcap`
+- Purpose: exact protocol-string negative case.
+
+`bittorrent/06_bittorrent_short_67_byte_handshake.pcap`
+- Purpose: minimum handshake-size boundary negative case.
+
+## SMTP
+
+`smtp/01_smtp_greeting_ehlo_port25.pcap`
+- Purpose: bidirectional SMTP greeting/EHLO positive baseline on TCP/25.
+
+`smtp/02_smtp_helo_port25.pcap`
+- Purpose: HELO recognition positive baseline.
+
+`smtp/03_smtp_mail_from_port587.pcap`
+- Purpose: MAIL FROM recognition on supported submission port 587.
+
+`smtp/04_smtp_ehlo_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition in one TCP Flow.
+
+`smtp/05_smtp_ehlo_port2525_not_detected.pcap`
+- Purpose: valid recognized SMTP prefix on unsupported port negative case.
+
+`smtp/06_smtp_invalid_ehxlo_port25.pcap`
+- Purpose: port-25 near-miss command prefix negative case.
+
+## POP3
+
+`pop3/01_pop3_greeting_user_port110.pcap`
+- Purpose: bidirectional server greeting + USER positive baseline.
+
+`pop3/02_pop3_pass_port110.pcap`
+- Purpose: PASS command positive baseline.
+
+`pop3/03_pop3_user_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition in one TCP Flow.
+
+`pop3/04_pop3_user_port1110_not_detected.pcap`
+- Purpose: recognized USER prefix on unsupported port negative case.
+
+`pop3/05_pop3_invalid_usxr_port110.pcap`
+- Purpose: TCP/110 near-miss prefix negative case.
+
+## IMAP
+
+`imap/01_imap_greeting_login_port143.pcap`
+- Purpose: bidirectional server greeting + tagged LOGIN positive baseline.
+
+`imap/02_imap_capability_port143.pcap`
+- Purpose: tagged CAPABILITY positive baseline.
+
+`imap/03_imap_login_after_unmatched_payload.pcap`
+- Purpose: later independent payload recognition within one TCP Flow.
+
+`imap/04_imap_login_port1143_not_detected.pcap`
+- Purpose: recognizable current LOGIN form on unsupported port negative case.
+
+`imap/05_imap_missing_tag_command_separator_port143.pcap`
+- Purpose: malformed tagged-command separator negative case.
+
+## MQTT
+
+These fixtures define the target MQTT detection-only behavior. MQTT support is
+implemented as core CONNECT-based recognition; fixtures 01-04 are MQTT
+positive cases and fixtures 05-10 are MQTT negative cases.
+
+`mqtt/01_mqtt311_connect_port1883.pcap`
+- Purpose: MQTT 3.1.1 CONNECT positive baseline on TCP/1883.
+
+`mqtt/02_mqtt5_rich_connect_nonstandard_port.pcap`
+- Purpose: rich MQTT 5 CONNECT on a non-standard port; content-based positive case.
+
+`mqtt/03_mqtt31_connect_port1883.pcap`
+- Purpose: MQTT 3.1 `MQIsdp` / level-3 positive baseline.
+
+`mqtt/04_mqtt311_connect_plus_pingreq_same_payload.pcap`
+- Purpose: CONNECT plus PINGREQ in one TCP payload positive coalescing case.
+
+`mqtt/05_mqtt_garbage_port1883.pcap`
+- Purpose: non-MQTT data on TCP/1883 negative case.
+
+`mqtt/06_mqtt_invalid_fixed_header_flags.pcap`
+- Purpose: invalid CONNECT fixed-header flags negative case.
+
+`mqtt/07_mqtt_protocol_name_level_mismatch.pcap`
+- Purpose: protocol-name / protocol-level mismatch negative case.
+
+`mqtt/08_mqtt_invalid_connect_flags_reserved_bit.pcap`
+- Purpose: invalid reserved bit in CONNECT Flags negative case.
+
+`mqtt/09_mqtt_declared_remaining_length_too_large.pcap`
+- Purpose: declared Remaining Length exceeds available TCP bytes negative case.
+
+`mqtt/10_mqtt_client_id_length_exceeds_frame.pcap`
+- Purpose: inner Client Identifier length exceeds CONNECT frame negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`

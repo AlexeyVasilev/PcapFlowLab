@@ -82,7 +82,7 @@ std::optional<std::string> extract_marked_block(
 
 void expect_catalog_row_contracts() {
     const auto rows = session_detail::supported_protocol_catalog_rows();
-    PFL_EXPECT(rows.size() == 35U);
+    PFL_EXPECT(rows.size() == 36U);
 
     std::set<std::string> ids {};
     for (const auto& row : rows) {
@@ -119,6 +119,12 @@ void expect_status_descriptor_contracts() {
 }
 
 void expect_representative_rows() {
+    const auto rows = session_detail::supported_protocol_catalog_rows();
+    const auto mqtt_row_count = std::count_if(rows.begin(), rows.end(), [](const auto& row) {
+        return row.stable_id == "mqtt";
+    });
+    PFL_EXPECT(mqtt_row_count == 1U);
+
     const auto* tls = find_row("tls");
     PFL_REQUIRE(tls != nullptr);
     PFL_EXPECT(tls->service == session_detail::SupportedProtocolCapabilityStatus::partial);
@@ -156,6 +162,18 @@ void expect_representative_rows() {
     const auto* dhcp = find_row("dhcp");
     PFL_REQUIRE(dhcp != nullptr);
     PFL_EXPECT(dhcp->protocol == "DHCPv4");
+
+    const auto* mqtt = find_row("mqtt");
+    PFL_REQUIRE(mqtt != nullptr);
+    PFL_EXPECT(mqtt->protocol == "MQTT");
+    PFL_EXPECT(mqtt->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(mqtt->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(mqtt->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(mqtt->packet_summary == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(mqtt->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(mqtt->notes.find("CONNECT") != std::string_view::npos);
+    PFL_EXPECT(mqtt->notes.find("MQTT 3.1") != std::string_view::npos);
+    PFL_EXPECT(mqtt->notes.find("5.0") != std::string_view::npos);
 }
 
 void expect_markdown_escaping() {
@@ -180,7 +198,7 @@ void expect_markdown_escaping() {
 void expect_frontend_catalog_exposure_without_capture() {
     FrontendSessionAdapter adapter {};
     const auto catalog = adapter.get_supported_protocol_catalog();
-    PFL_EXPECT(catalog.rows.size() == 35U);
+    PFL_EXPECT(catalog.rows.size() == 36U);
     PFL_REQUIRE(!catalog.rows.empty());
     PFL_EXPECT(catalog.rows.front().category_id == "link_and_encapsulation");
     PFL_EXPECT(catalog.rows.front().recognition_status_id == "yes");
