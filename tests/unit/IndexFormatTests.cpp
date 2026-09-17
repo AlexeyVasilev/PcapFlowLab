@@ -736,8 +736,9 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
     snapshot.detected_protocols[2].counters = capture_statistics_counters(1U, 1U, 80U, 90U);
     snapshot.detected_protocols[3].counters = capture_statistics_counters(1U, 2U, 250U, 300U);
     snapshot.detected_protocols[12].counters = capture_statistics_counters(1U, 3U, 300U, 360U);
-    snapshot.detected_protocols[13].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
-    snapshot.detected_protocols[15].counters = capture_statistics_counters(1U, 2U, 120U, 150U);
+    snapshot.detected_protocols[13].counters = capture_statistics_counters(1U, 2U, 210U, 240U);
+    snapshot.detected_protocols[14].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
+    snapshot.detected_protocols[16].counters = capture_statistics_counters(1U, 2U, 120U, 150U);
     snapshot.quic_recognition = CaptureStatisticsQuicRecognition {
         .flow_count = 1U,
         .with_sni_count = 1U,

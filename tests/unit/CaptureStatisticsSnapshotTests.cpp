@@ -167,10 +167,11 @@ CaptureStatisticsSnapshot make_valid_snapshot() {
     snapshot.detected_protocols[2].counters = counters(1U, 1U, 80U, 90U);
     snapshot.detected_protocols[3].counters = counters(1U, 2U, 250U, 300U);
     snapshot.detected_protocols[12].counters = counters(1U, 1U, 70U, 80U);
-    snapshot.detected_protocols[13].counters = counters(1U, 3U, 300U, 360U);
-    snapshot.detected_protocols[14].counters = counters(1U, 1U, 40U, 50U);
-    snapshot.detected_protocols[15].counters = counters(0U, 0U, 0U, 0U);
-    snapshot.detected_protocols[16].counters = counters(1U, 2U, 120U, 150U);
+    snapshot.detected_protocols[13].counters = counters(1U, 2U, 210U, 240U);
+    snapshot.detected_protocols[14].counters = counters(1U, 3U, 300U, 360U);
+    snapshot.detected_protocols[15].counters = counters(1U, 1U, 40U, 50U);
+    snapshot.detected_protocols[16].counters = counters(0U, 0U, 0U, 0U);
+    snapshot.detected_protocols[17].counters = counters(1U, 2U, 120U, 150U);
     snapshot.quic_recognition = CaptureStatisticsQuicRecognition {
         .flow_count = 1U,
         .with_sni_count = 1U,
@@ -617,6 +618,16 @@ void expect_runtime_builder_projects_current_statistics() {
     PFL_EXPECT(snapshot.tcp_flags.rst_packet_count == 2U);
     PFL_EXPECT(snapshot.flow_packet_count_histogram.total_flow_count == 4U);
     PFL_EXPECT(snapshot.flow_packet_count_histogram.excluded_zero_packet_flow_count == 0U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::mqtt) == 12U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::mail_protocols) == 13U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate) == 14U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate) == 15U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::unknown_without_possible) == 16U);
+    PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::amqp) == 17U);
+    PFL_REQUIRE(snapshot.detected_protocols.size() == 18U);
+    PFL_EXPECT(snapshot.detected_protocols[12].category == CaptureStatisticsDetectedProtocolCategory::mqtt);
+    PFL_EXPECT(snapshot.detected_protocols[13].category == CaptureStatisticsDetectedProtocolCategory::amqp);
+    PFL_EXPECT(snapshot.detected_protocols[14].category == CaptureStatisticsDetectedProtocolCategory::mail_protocols);
     PFL_REQUIRE(find_transport_protocol_row(snapshot, CaptureStatisticsTransportProtocolCategory::tcp) != nullptr);
     PFL_EXPECT(
         find_transport_protocol_row(snapshot, CaptureStatisticsTransportProtocolCategory::tcp)->counters.captured_bytes
@@ -625,6 +636,11 @@ void expect_runtime_builder_projects_current_statistics() {
     PFL_REQUIRE(find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate) != nullptr);
     PFL_EXPECT(
         find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate)
+            ->counters.flow_count == 1U
+    );
+    PFL_REQUIRE(find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::amqp) != nullptr);
+    PFL_EXPECT(
+        find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::amqp)
             ->counters.flow_count == 1U
     );
     PFL_REQUIRE(find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::unknown_without_possible) != nullptr);

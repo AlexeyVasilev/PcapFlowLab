@@ -169,6 +169,9 @@ void observe_protocol_hint(
     case FlowProtocolHint::mqtt:
         add_protocol_stats(statistics.hint_mqtt, connection);
         break;
+    case FlowProtocolHint::amqp:
+        add_protocol_stats(statistics.hint_amqp, connection);
+        break;
     case FlowProtocolHint::possible_tls:
         add_protocol_stats(statistics.hint_possible_tls_candidate, connection);
         break;
@@ -1343,6 +1346,7 @@ std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const
     append_row("Confirmed", "STUN", summary.hint_stun);
     append_row("Confirmed", "BitTorrent", summary.hint_bittorrent);
     append_row("Confirmed", "MQTT", summary.hint_mqtt);
+    append_row("Confirmed", "AMQP", summary.hint_amqp);
     append_row("Confirmed", "Mail protocols", summary.hint_mail_protocols);
     append_row("Confirmed", "DHCP", summary.hint_dhcp);
     append_row("Confirmed", "mDNS", summary.hint_mdns);
@@ -1475,6 +1479,9 @@ void project_detected_protocol_row(
         break;
     case CaptureStatisticsDetectedProtocolCategory::mqtt:
         protocol.hint_mqtt = project_protocol_stats(row.counters);
+        break;
+    case CaptureStatisticsDetectedProtocolCategory::amqp:
+        protocol.hint_amqp = project_protocol_stats(row.counters);
         break;
     case CaptureStatisticsDetectedProtocolCategory::mail_protocols:
         protocol.hint_mail_protocols = project_protocol_stats(row.counters);
@@ -1956,6 +1963,7 @@ CaptureProtocolSummary project_protocol_summary(
         .hint_pop3 = statistics.protocol.hint_pop3,
         .hint_imap = statistics.protocol.hint_imap,
         .hint_mqtt = statistics.protocol.hint_mqtt,
+        .hint_amqp = statistics.protocol.hint_amqp,
         .hint_mail_protocols = statistics.protocol.hint_mail_protocols,
         .hint_unknown = statistics.protocol.hint_unknown_without_possible,
     };
@@ -2498,6 +2506,10 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
         CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::mqtt,
             .counters = make_protocol_counters(general_statistics.protocol.hint_mqtt),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::amqp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_amqp),
         },
         CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::mail_protocols,

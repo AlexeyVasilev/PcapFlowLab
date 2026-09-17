@@ -215,10 +215,8 @@ positive cases and fixtures 05-10 are MQTT negative cases.
 
 ## AMQP
 
-These fixtures define the target first AMQP detection-only behavior before the
-recognizer exists. Fixtures 01-05 are future AMQP positive cases and fixtures
-06-10 are future AMQP negative cases; current pre-implementation behavior is
-ordinary TCP with no AMQP detected protocol.
+These fixtures define the first AMQP detection-only behavior. Fixtures 01-05
+are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 
 `amqp/01_amqp091_header_port5672.pcap`
 - Purpose: AMQP 0-9-1 exact protocol-header positive baseline on TCP/5672.

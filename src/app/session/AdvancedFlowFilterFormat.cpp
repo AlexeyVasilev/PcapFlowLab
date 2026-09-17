@@ -822,6 +822,9 @@ std::optional<FlowProtocolHint> parse_flow_protocol_hint_token(const std::string
     if (equals_ascii_case_insensitive(token, "mqtt")) {
         return FlowProtocolHint::mqtt;
     }
+    if (equals_ascii_case_insensitive(token, "amqp")) {
+        return FlowProtocolHint::amqp;
+    }
     if (equals_ascii_case_insensitive(token, "igmp")) {
         return FlowProtocolHint::igmp;
     }
@@ -1453,7 +1456,7 @@ std::string format_flow_protocol_hint_token(const FlowProtocolHint hint) {
     case FlowProtocolHint::mqtt:
         return "mqtt";
     case FlowProtocolHint::amqp:
-        return {};
+        return "amqp";
     case FlowProtocolHint::possible_tls:
         return {};
     case FlowProtocolHint::possible_quic:

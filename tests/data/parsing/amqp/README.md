@@ -1,11 +1,9 @@
 # AMQP Parsing Fixtures
 
-This directory contains the planned permanent PCAP fixture set for the first
+This directory contains the permanent PCAP fixture set for the first
 PcapFlowLab AMQP recognition behavior.
 
-These PCAPs define the future detection-only AMQP contract. The fixture set is
-created before the recognizer, so the current pre-implementation executable
-baseline remains ordinary TCP with no AMQP detected protocol.
+These PCAPs define the detection-only AMQP contract.
 
 ## Target First AMQP Support
 
@@ -32,8 +30,8 @@ Target behavior:
   `service_hint`.
 - No AMQP-specific Packet Summary, Stream rows, or byte views.
 
-After implementation, successful AMQP detection should produce Detected
-Protocol `AMQP` / protocol hint `amqp`, while service hint remains empty.
+Successful AMQP detection produces Detected Protocol `AMQP` / protocol hint
+`amqp`, while service hint remains empty.
 
 ## Local Generation
 
@@ -122,9 +120,8 @@ SASL traffic is AMQP.
 - Payload: exactly `41 4D 51 50 00 00 09 01`
 - Meaning: AMQP 0-9-1 protocol header
 - Purpose: primary AMQP 0-9-1 positive baseline on standard TCP/5672
-- Future expected PFL behavior: one TCP Flow, Detected Protocol `AMQP`,
+- Expected PFL behavior: one TCP Flow, Detected Protocol `AMQP`,
   protocol hint `amqp`, empty service hint
-- Current pre-implementation PFL baseline: ordinary TCP
 
 ### `02_amqp091_header_nonstandard_port.pcap`
 
@@ -134,8 +131,7 @@ SASL traffic is AMQP.
 - Payload: exactly `41 4D 51 50 00 00 09 01`
 - Purpose: positive content-based AMQP 0-9-1 recognition without requiring
   TCP/5672
-- Future expected PFL behavior: Detected Protocol `AMQP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: Detected Protocol `AMQP`, empty service hint
 
 ### `03_amqp10_core_header_port5672.pcap`
 
@@ -145,8 +141,7 @@ SASL traffic is AMQP.
 - Payload: exactly `41 4D 51 50 00 01 00 00`
 - Meaning: AMQP 1.0 core protocol header, protocol-id `0`, version `1.0.0`
 - Purpose: AMQP 1.0 core positive baseline
-- Future expected PFL behavior: Detected Protocol `AMQP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: Detected Protocol `AMQP`, empty service hint
 
 ### `04_amqp10_sasl_header_nonstandard_port.pcap`
 
@@ -156,8 +151,7 @@ SASL traffic is AMQP.
 - Payload: exactly `41 4D 51 50 03 01 00 00`
 - Meaning: AMQP 1.0 SASL protocol header, protocol-id `3`, version `1.0.0`
 - Purpose: explicit AMQP SASL-layer positive case on a non-standard port
-- Future expected PFL behavior: Detected Protocol `AMQP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: Detected Protocol `AMQP`, empty service hint
 - Boundary: this does not imply generic SASL traffic is AMQP.
 
 ### `05_amqp10_tls_header_nonstandard_port.pcap`
@@ -170,8 +164,7 @@ SASL traffic is AMQP.
   version `1.0.0`
 - Purpose: explicit AMQP TLS negotiation header positive case without
   port-based AMQPS inference
-- Future expected PFL behavior: Detected Protocol `AMQP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: Detected Protocol `AMQP`, empty service hint
 - Boundary: a real TLS ClientHello on TCP/5671 remains TLS, not AMQP.
 
 ### `06_amqp_garbage_port5672.pcap`
@@ -182,8 +175,7 @@ SASL traffic is AMQP.
 - Payload: ASCII `PFL-NOT-AMQP\r\n`
 - Purpose: negative case proving TCP/5672 alone is insufficient; the payload
   contains `AMQP` later, but not at offset `0`
-- Future expected PFL behavior: NOT AMQP
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: NOT AMQP
 
 ### `07_amqp091_wrong_version.pcap`
 
@@ -192,8 +184,7 @@ SASL traffic is AMQP.
 - IPv4/TCP: `192.0.2.150:58000` -> `192.0.2.160:5672`
 - Payload: exactly `41 4D 51 50 00 00 09 00`
 - Purpose: near-miss negative case proving exact AMQP 0-9-1 header matching
-- Future expected PFL behavior: NOT AMQP
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: NOT AMQP
 
 ### `08_amqp10_unsupported_protocol_id.pcap`
 
@@ -203,8 +194,7 @@ SASL traffic is AMQP.
 - Payload: exactly `41 4D 51 50 01 01 00 00`
 - Purpose: negative case proving the first implementation accepts only AMQP
   1.0 protocol IDs `0`, `2`, and `3`
-- Future expected PFL behavior: NOT AMQP
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: NOT AMQP
 
 ### `09_amqp10_wrong_revision.pcap`
 
@@ -213,8 +203,7 @@ SASL traffic is AMQP.
 - IPv4/TCP: `192.0.2.150:58000` -> `192.0.2.160:5672`
 - Payload: exactly `41 4D 51 50 00 01 00 01`
 - Purpose: negative case proving exact AMQP 1.0 version tuple validation
-- Future expected PFL behavior: NOT AMQP
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: NOT AMQP
 
 ### `10_amqp_truncated_header.pcap`
 
@@ -224,8 +213,7 @@ SASL traffic is AMQP.
 - Payload: exactly seven bytes, `41 4D 51 50 00 01 00`
 - Purpose: minimum-length boundary proving a valid-looking prefix is
   insufficient without the complete 8-byte protocol header
-- Future expected PFL behavior: NOT AMQP
-- Current pre-implementation PFL baseline: ordinary TCP
+- Expected PFL behavior: NOT AMQP
 
 ## Intentionally Omitted Permanent Fixtures
 
@@ -269,8 +257,8 @@ After generating the fixtures, useful manual checks include:
   documented accepted AMQP protocol headers.
 - For fixtures 01-05, Wireshark may decode standard-port traffic
   automatically; non-standard ports may require Decode As.
-- For fixtures 01-05, PcapFlowLab is currently expected to show ordinary TCP
-  until the AMQP recognizer is implemented.
+- For fixtures 01-05, PcapFlowLab is expected to show Detected Protocol
+  `AMQP` with an empty service hint.
 - For fixtures 06-10, verify the malformed or near-miss payload bytes exactly.
 - Wireshark behavior for the negative fixtures is informational only and does
   not define the PcapFlowLab detection contract.
@@ -279,5 +267,5 @@ After generating the fixtures, useful manual checks include:
 
 Future AMQP work may add deeper parsing, protocol-aware Stream presentation,
 or selected-packet Summary support. That work is intentionally outside this
-fixture-definition pass. The first implementation should stay a cheap,
-bounded, content-based protocol hint.
+fixture contract. The first implementation stays a cheap, bounded,
+content-based protocol hint.

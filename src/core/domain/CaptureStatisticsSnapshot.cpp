@@ -27,7 +27,7 @@ constexpr std::array<CaptureStatisticsIpFamilyCategory, 2> kIpFamilyCategories {
     CaptureStatisticsIpFamilyCategory::ipv6,
 }};
 
-constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 17> kDetectedProtocolCategories {{
+constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 18> kDetectedProtocolCategories {{
     CaptureStatisticsDetectedProtocolCategory::http,
     CaptureStatisticsDetectedProtocolCategory::tls,
     CaptureStatisticsDetectedProtocolCategory::dns,
@@ -41,6 +41,7 @@ constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 17> kDetectedPro
     CaptureStatisticsDetectedProtocolCategory::pop3,
     CaptureStatisticsDetectedProtocolCategory::imap,
     CaptureStatisticsDetectedProtocolCategory::mqtt,
+    CaptureStatisticsDetectedProtocolCategory::amqp,
     CaptureStatisticsDetectedProtocolCategory::mail_protocols,
     CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate,
     CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate,

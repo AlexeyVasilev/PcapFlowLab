@@ -86,6 +86,7 @@ enum class CaptureStatisticsDetectedProtocolCategory : std::uint8_t {
     possible_tls_candidate = 14,
     possible_quic_candidate = 15,
     unknown_without_possible = 16,
+    amqp = 17,
 };
 
 struct CaptureStatisticsDetectedProtocolRow {
