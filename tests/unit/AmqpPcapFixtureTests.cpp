@@ -47,6 +47,12 @@ void expect_no_detected_application_protocol(const std::filesystem::path& relati
     PFL_EXPECT(row.service_hint.empty());
 }
 
+void expect_detected_amqp_protocol(const std::filesystem::path& relative_path, const ExpectedFlowShape& expected) {
+    const auto row = require_single_tcp_flow(relative_path, expected);
+    PFL_EXPECT(row.protocol_hint == "amqp");
+    PFL_EXPECT(row.service_hint.empty());
+}
+
 ExpectedFlowShape client_to_server_one_packet(const std::uint16_t server_port) {
     return ExpectedFlowShape {
         .capture_packet_count = 1U,
@@ -59,34 +65,24 @@ ExpectedFlowShape client_to_server_one_packet(const std::uint16_t server_port) {
     };
 }
 
-void expect_target_positive_preimplementation_baseline() {
-    // Target after AMQP implementation: AMQP 0-9-1 exact header on TCP/5672.
-    // Current pre-implementation baseline: no detected protocol.
-    expect_no_detected_application_protocol(
+void expect_target_positive_detection() {
+    expect_detected_amqp_protocol(
         "parsing/amqp/01_amqp091_header_port5672.pcap",
         client_to_server_one_packet(5672U));
 
-    // Target after AMQP implementation: AMQP 0-9-1 exact header on a non-standard port.
-    // Current pre-implementation baseline: no detected protocol.
-    expect_no_detected_application_protocol(
+    expect_detected_amqp_protocol(
         "parsing/amqp/02_amqp091_header_nonstandard_port.pcap",
         client_to_server_one_packet(35672U));
 
-    // Target after AMQP implementation: AMQP 1.0 core exact header.
-    // Current pre-implementation baseline: no detected protocol.
-    expect_no_detected_application_protocol(
+    expect_detected_amqp_protocol(
         "parsing/amqp/03_amqp10_core_header_port5672.pcap",
         client_to_server_one_packet(5672U));
 
-    // Target after AMQP implementation: AMQP 1.0 SASL exact header.
-    // Current pre-implementation baseline: no detected protocol.
-    expect_no_detected_application_protocol(
+    expect_detected_amqp_protocol(
         "parsing/amqp/04_amqp10_sasl_header_nonstandard_port.pcap",
         client_to_server_one_packet(35672U));
 
-    // Target after AMQP implementation: AMQP 1.0 TLS security-layer exact header.
-    // Current pre-implementation baseline: no detected protocol.
-    expect_no_detected_application_protocol(
+    expect_detected_amqp_protocol(
         "parsing/amqp/05_amqp10_tls_header_nonstandard_port.pcap",
         client_to_server_one_packet(35672U));
 }
@@ -116,7 +112,7 @@ void expect_permanent_negative_baseline() {
 }  // namespace
 
 void run_amqp_pcap_fixture_tests() {
-    expect_target_positive_preimplementation_baseline();
+    expect_target_positive_detection();
     expect_permanent_negative_baseline();
 }
 

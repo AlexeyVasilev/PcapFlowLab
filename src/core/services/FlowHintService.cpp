@@ -1085,6 +1085,49 @@ FlowHintUpdate detect_mqtt_hint(std::span<const std::uint8_t> payload) {
     };
 }
 
+bool matches_prefix(std::span<const std::uint8_t> payload, std::span<const std::uint8_t> prefix) noexcept {
+    if (payload.size() < prefix.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < prefix.size(); ++index) {
+        if (payload[index] != prefix[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool looks_like_amqp_header(std::span<const std::uint8_t> payload) noexcept {
+    static constexpr std::array<std::uint8_t, 8U> kAmqp091Header {
+        'A', 'M', 'Q', 'P', 0x00U, 0x00U, 0x09U, 0x01U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10CoreHeader {
+        'A', 'M', 'Q', 'P', 0x00U, 0x01U, 0x00U, 0x00U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10TlsHeader {
+        'A', 'M', 'Q', 'P', 0x02U, 0x01U, 0x00U, 0x00U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10SaslHeader {
+        'A', 'M', 'Q', 'P', 0x03U, 0x01U, 0x00U, 0x00U,
+    };
+
+    return matches_prefix(payload, kAmqp091Header) ||
+           matches_prefix(payload, kAmqp10CoreHeader) ||
+           matches_prefix(payload, kAmqp10TlsHeader) ||
+           matches_prefix(payload, kAmqp10SaslHeader);
+}
+
+FlowHintUpdate detect_amqp_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_amqp_header(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::amqp,
+    };
+}
+
 FlowHintUpdate detect_smtp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
@@ -1314,7 +1357,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_mqtt_hint(payload_view);
+        {
+            const auto mqtt_hint = detect_mqtt_hint(payload_view);
+            if (mqtt_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return mqtt_hint;
+            }
+        }
+
+        return detect_amqp_hint(payload_view);
     case ProtocolId::udp:
         {
             const auto mdns_hint = detect_mdns_hint(payload_view, flow_key);

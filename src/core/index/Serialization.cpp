@@ -1519,7 +1519,7 @@ bool is_valid_protocol_id(const std::uint8_t value) noexcept {
 }
 
 bool is_valid_flow_protocol_hint(const std::uint8_t value) noexcept {
-    return value <= static_cast<std::uint8_t>(FlowProtocolHint::mqtt);
+    return value <= static_cast<std::uint8_t>(FlowProtocolHint::amqp);
 }
 
 bool is_valid_capture_statistics_scope(const std::uint8_t value) noexcept {

@@ -786,8 +786,8 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .endpoint_a = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 40'001U},
             .endpoint_b = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 2), .port = 443U},
             .flow_protocol = ProtocolId::tcp,
-            .protocol_hint = FlowProtocolHint::tls,
-            .service_hint = "alpha.example",
+            .protocol_hint = FlowProtocolHint::amqp,
+            .service_hint = "",
             .protocol_path_id = 11U,
             .packet_count = 4U,
             .captured_bytes = 500U,
@@ -1029,9 +1029,7 @@ CaptureState make_v16_metadata_capture_state_fixture() {
             .tcp_flags = static_cast<std::uint8_t>(0x01U),
         }
     );
-    ipv4_connection.protocol_hint = FlowProtocolHint::tls;
-    ipv4_connection.service_hint = "bulk-download.example.test";
-    ipv4_connection.tls_version = TlsVersionHint::tls13;
+    ipv4_connection.protocol_hint = FlowProtocolHint::amqp;
 
     const FlowKeyV6 ipv6_flow_a {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),

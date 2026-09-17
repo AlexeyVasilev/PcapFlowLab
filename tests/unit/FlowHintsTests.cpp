@@ -336,6 +336,17 @@ std::vector<std::uint8_t> make_mqtt5_connect_with_oversized_property_length() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_amqp_header_payload(
+    const std::uint8_t protocol_id,
+    const std::uint8_t major,
+    const std::uint8_t minor,
+    const std::uint8_t revision
+) {
+    return std::vector<std::uint8_t> {
+        'A', 'M', 'Q', 'P', protocol_id, major, minor, revision,
+    };
+}
+
 std::vector<std::uint8_t> make_smtp_greeting_payload() {
     constexpr char greeting[] = "220 mail.example.org ESMTP ready\r\n";
     return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
@@ -1004,9 +1015,95 @@ void run_flow_hints_tests() {
     }
 
     {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x02U, 0x01U, 0x00U, 0x00U), 58000U, 5671U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x03U, 0x01U, 0x00U, 0x00U), 58000U, 35672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U), 58000U, 35672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        auto payload = make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U);
+        payload.insert(payload.end(), {'t', 'r', 'a', 'i', 'l', 'i', 'n', 'g'});
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        auto payload = make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U);
+        payload.pop_back();
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x01U, 0x01U, 0x00U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x01U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        std::vector<std::uint8_t> payload {'P', 'F', 'L', '-'};
+        const auto amqp_header = make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U);
+        payload.insert(payload.end(), amqp_header.begin(), amqp_header.end());
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
         ConnectionV4 connection {};
         connection.protocol_hint = FlowProtocolHint::mqtt;
         PFL_EXPECT(connection.hint_detection_settled());
+    }
+
+    {
+        ConnectionV4 connection {};
+        connection.protocol_hint = FlowProtocolHint::amqp;
+        PFL_EXPECT(connection.hint_detection_settled());
+    }
+
+    {
+        PFL_EXPECT(std::string_view(flow_protocol_hint_text(FlowProtocolHint::amqp)) == "amqp");
     }
 
     {

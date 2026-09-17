@@ -1452,6 +1452,8 @@ std::string format_flow_protocol_hint_token(const FlowProtocolHint hint) {
         return "imap";
     case FlowProtocolHint::mqtt:
         return "mqtt";
+    case FlowProtocolHint::amqp:
+        return {};
     case FlowProtocolHint::possible_tls:
         return {};
     case FlowProtocolHint::possible_quic:

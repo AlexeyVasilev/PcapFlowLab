@@ -26,6 +26,7 @@ enum class FlowProtocolHint : std::uint8_t {
     igmpv2 = 17,
     igmpv3 = 18,
     mqtt = 19,
+    amqp = 20,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -112,6 +113,8 @@ struct FlowHintUpdate {
         return "igmpv3";
     case FlowProtocolHint::mqtt:
         return "mqtt";
+    case FlowProtocolHint::amqp:
+        return "amqp";
     default:
         return "unknown";
     }
