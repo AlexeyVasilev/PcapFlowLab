@@ -7,9 +7,12 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "core/dissection/CommonDirectDissection.h"
 #include "core/domain/Connection.h"
+#include "core/domain/ConnectionKey.h"
 #include "core/domain/FlowKey.h"
 #include "core/io/LinkType.h"
+#include "core/services/CaptureImportApplication.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketPayloadService.h"
 #include "PcapTestUtils.h"
@@ -575,6 +578,20 @@ std::vector<std::uint8_t> payload_suffix(const std::vector<std::uint8_t>& payloa
         payload.begin() + static_cast<std::vector<std::uint8_t>::difference_type>(offset),
         payload.end()
     );
+}
+
+RawPcapPacket make_import_packet(
+    std::vector<std::uint8_t> bytes,
+    const std::uint64_t packet_index = 0U
+) {
+    const auto packet_size = static_cast<std::uint32_t>(bytes.size());
+    return RawPcapPacket {
+        .packet_index = packet_index,
+        .captured_length = packet_size,
+        .original_length = packet_size,
+        .data_link_type = kLinkTypeEthernet,
+        .bytes = std::move(bytes),
+    };
 }
 
 std::vector<std::uint8_t> make_ipv4_tls_packet(
@@ -1234,6 +1251,62 @@ void run_flow_hints_tests() {
             tcp_next_sequence(sequence_number, first_payload.size(), 0x18U)
         );
         PFL_EXPECT(short_second_hint.service_hint.empty());
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        const auto registry_result = dissection::make_common_direct_registry();
+        PFL_REQUIRE(registry_result.ok());
+        PFL_REQUIRE(registry_result.registry.has_value());
+
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 11, 1), ipv4(10, 80, 11, 2));
+        const auto first_payload = make_unknown_tcp_payload();
+        const auto second_payload = make_unknown_tcp_payload();
+        constexpr std::uint32_t sequence_number = 8000U;
+
+        CaptureState state {};
+        FlowHintService service {};
+        auto first_packet = make_import_packet(
+            make_ipv4_tls_packet(flow_key, sequence_number, first_payload),
+            0U
+        );
+        PFL_REQUIRE(process_packet_with_unified_dissection(
+            first_packet,
+            state,
+            *registry_result.registry,
+            service
+        ));
+
+        auto* connection = state.ipv4_connections.find(make_connection_key(flow_key));
+        PFL_REQUIRE(connection != nullptr);
+        PFL_EXPECT(connection->service_hint.empty());
+
+        set_pending_tls_client_hello(connection->hint_search_state, ConnectionFlowSlot::flow_a);
+        PFL_REQUIRE(has_pending_tls_client_hello(connection->hint_search_state));
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+
+        auto second_packet = make_import_packet(
+            make_ipv4_tls_packet(
+                flow_key,
+                tcp_next_sequence(sequence_number, first_payload.size(), 0x18U),
+                second_payload
+            ),
+            1U
+        );
+        PFL_REQUIRE(process_packet_with_unified_dissection(
+            second_packet,
+            state,
+            *registry_result.registry,
+            service
+        ));
+
+        connection = state.ipv4_connections.find(make_connection_key(flow_key));
+        PFL_REQUIRE(connection != nullptr);
+        PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
+        PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(connection->service_hint.empty());
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
         PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
     }
 
