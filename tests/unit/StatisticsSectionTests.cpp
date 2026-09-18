@@ -521,7 +521,7 @@ void expect_shared_statistics_formatting_helpers() {
 
 void expect_protocol_hint_statistics_rows_handle_zero_denominators() {
     const auto rows = session_detail::build_protocol_hint_statistics_rows(CaptureProtocolSummary {});
-    PFL_EXPECT(rows.size() == 13U);
+    PFL_EXPECT(rows.size() == 16U);
     for (const auto& row : rows) {
         PFL_EXPECT(row.flow_count == 0U);
         PFL_EXPECT(row.packet_count == 0U);
@@ -1416,7 +1416,7 @@ void expect_capture_packet_size_statistics_survives_index_roundtrip() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_capture_packet_size_roundtrip.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(session.save_index(index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 17U);
+    PFL_EXPECT(kCaptureIndexVersion == 18U);
 
     CaptureSession loaded_session {};
     PFL_REQUIRE(loaded_session.load_index(index_path));
@@ -1683,7 +1683,7 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(overview.statistics_partial_open_warning_text.empty());
 
     PFL_EXPECT(hint_statistics.has_capture);
-    PFL_EXPECT(hint_statistics.protocol_hints.size() == 14U);
+    PFL_EXPECT(hint_statistics.protocol_hints.size() == 16U);
     PFL_REQUIRE(!hint_statistics.protocol_hints.empty());
     PFL_EXPECT(
         std::any_of(
@@ -1694,6 +1694,44 @@ void expect_overview_excludes_optional_statistics_sections() {
             }
         )
     );
+    PFL_EXPECT(
+        std::any_of(
+            hint_statistics.protocol_hints.begin(),
+            hint_statistics.protocol_hints.end(),
+            [](const FrontendProtocolHintStatsDto& row) {
+                return row.protocol_label == "AMQP";
+            }
+        )
+    );
+    PFL_EXPECT(
+        std::any_of(
+            hint_statistics.protocol_hints.begin(),
+            hint_statistics.protocol_hints.end(),
+            [](const FrontendProtocolHintStatsDto& row) {
+                return row.protocol_label == "NTP";
+            }
+        )
+    );
+    const auto protocol_hint_position = [&](const std::string_view label) {
+        return std::find_if(
+            hint_statistics.protocol_hints.begin(),
+            hint_statistics.protocol_hints.end(),
+            [label](const FrontendProtocolHintStatsDto& row) {
+                return row.protocol_label == label;
+            }
+        );
+    };
+    const auto mqtt_position = protocol_hint_position("MQTT");
+    const auto amqp_position = protocol_hint_position("AMQP");
+    const auto ntp_position = protocol_hint_position("NTP");
+    const auto mail_position = protocol_hint_position("Mail protocols");
+    PFL_REQUIRE(mqtt_position != hint_statistics.protocol_hints.end());
+    PFL_REQUIRE(amqp_position != hint_statistics.protocol_hints.end());
+    PFL_REQUIRE(ntp_position != hint_statistics.protocol_hints.end());
+    PFL_REQUIRE(mail_position != hint_statistics.protocol_hints.end());
+    PFL_EXPECT(mqtt_position < amqp_position);
+    PFL_EXPECT(amqp_position < ntp_position);
+    PFL_EXPECT(ntp_position < mail_position);
     PFL_EXPECT(hint_statistics.protocol_hints.back().protocol_label == "Unknown");
     PFL_EXPECT(hint_statistics.protocol_hints.back().flow_count_text == "3 (100%)");
     PFL_EXPECT(hint_statistics.protocol_hints.back().packet_count_text == "4 (100%)");

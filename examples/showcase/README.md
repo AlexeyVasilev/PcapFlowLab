@@ -15,7 +15,7 @@ Version `1.0.0` establishes:
 
 - four Analysis hero flows;
 - core application-protocol demonstrations;
-- representative Ethernet-compatible protocol-family coverage from `tests/data/parsing`;
+- complete Ethernet-compatible supported-protocol coverage for the current Supported Protocol Catalog, with companion-capture exceptions documented explicitly;
 - identity/grouping showcase pairs for VLAN, MPLS, GTP-U, VXLAN, and Geneve;
 - key Packet Details / Bytes edge cases;
 - curated Unrecognized Packets coverage with distinct current reason classes;
@@ -26,9 +26,9 @@ Version `1.0.0` establishes:
 
 Rough capture totals for `1.0.0`:
 
-- total packets: about `1557`
-- total duration: about `114.02 s`
-- file size: about `729 KB`
+- total packets after the local final-showcase regeneration: about `1567`
+- total duration after the local final-showcase regeneration: about `115.54 s`
+- file size after the local final-showcase regeneration: about `730 KB`
 - link type: classic Ethernet (`DLT_EN10MB`)
 
 ## Stable Scenario Identification
@@ -86,6 +86,9 @@ Short protocol demos:
 - `APP-POP3-01`
 - `APP-IMAP-01`
 - `APP-DHCP-01`
+- `APP-MQTT-01`
+- `APP-AMQP-01`
+- `APP-NTP-01`
 - `HINT-POSSIBLE-TLS-01`
 - `HINT-POSSIBLE-QUIC-01`
 - `APP-SCTP-01`
@@ -147,7 +150,7 @@ Each top-level family is classified as one of:
 Current `1.0.0` highlights:
 
 - `represented`
-  Includes `ah`, `arp`, `dns`, `eoip`, `esp`, `geneve`, `gre`, `gtpu`, `http`, `icmp`, `igmp`, `ip_encapsulation`, `ip_options`, `llc_snap`, `mdns`, `mpls`, `mpls_pw`, `pbb`, `pppoe`, `quic`, `sctp`, `tcp_options`, `tls`, `vlan`, and `vxlan`.
+  Includes `ah`, `amqp`, `arp`, `dns`, `eoip`, `esp`, `geneve`, `gre`, `gtpu`, `http`, `icmp`, `igmp`, `ip_encapsulation`, `ip_options`, `llc_snap`, `mdns`, `mqtt`, `ntp`, `mpls`, `mpls_pw`, `pbb`, `pppoe`, `quic`, `sctp`, `tcp_options`, `tls`, `vlan`, and `vxlan`.
 - `already-covered`
   `tcp` and `udp` remain covered by existing hero/application scenarios and do not need redundant generic flows.
 - `companion-capture`
@@ -203,7 +206,7 @@ Three short UDP flows intentionally exercise unusually large captured packet rec
 4. Open `AN-GRE-TLS-01` and verify:
    complex Protocol Path, nested TLS Packet Summary, TLS Stream rows, and Analysis view.
 5. Open `Statistics` and inspect `Detected Protocol Hints`.
-   This showcase now contains representative confirmed rows for `HTTP`, `TLS`, `DNS`, `QUIC`, `SSH`, `STUN`, `BitTorrent`, `Mail protocols`, `DHCP`, and `mDNS`.
+   This showcase now contains confirmed rows for `HTTP`, `TLS`, `DNS`, `QUIC`, `SSH`, `STUN`, `BitTorrent`, `MQTT`, `AMQP`, `NTP`, `Mail protocols`, `DHCP`, and `mDNS`.
 6. In Qt/Tauri Settings, enable the setting that allows `Possible TLS / Possible QUIC` fallback hints, then reopen/reimport the capture and confirm:
    `HINT-POSSIBLE-TLS-01` appears as `Possible TLS`, while `HINT-POSSIBLE-QUIC-01` appears as `Possible QUIC`.
    With the default setting disabled, both scenarios stay in `Unknown`.
@@ -211,8 +214,9 @@ Three short UDP flows intentionally exercise unusually large captured packet rec
    Initial `CRYPTO`, structured TLS `ClientHello`, `0-RTT`, reverse Initial `ACK`, reverse Initial `ServerHello`, and later Handshake / Protected Payload presentation.
 8. Open `APP-QUIC-MULTICRYPTO-01` and `APP-QUIC-MULTICRYPTO-02` as richer QUIC Stream examples with multi-CRYPTO Initial structure, bidirectional packet exchange, and reverse ServerHello / Handshake progression.
 9. Open `APP-QUIC-NEG-01` and confirm the coarse undecryptable Initial presentation remains honest and separate from the positive QUIC flows.
-10. Open `APP-HTTP-02`, `APP-HTTP-LARGEBODY-01`, `APP-DNS-02`, `APP-TLS-03`, `APP-TLS-SEGMENTED-01`, `APP-SSH-01`, `APP-STUN-01`, `APP-BITTORRENT-01`, `APP-SMTP-01`, `APP-POP3-01`, `APP-IMAP-01`, and `APP-DHCP-01` as the confirmed-hint application demos.
+10. Open `APP-HTTP-02`, `APP-HTTP-LARGEBODY-01`, `APP-DNS-02`, `APP-TLS-03`, `APP-TLS-SEGMENTED-01`, `APP-SSH-01`, `APP-STUN-01`, `APP-BITTORRENT-01`, `APP-MQTT-01`, `APP-AMQP-01`, `APP-NTP-01`, `APP-SMTP-01`, `APP-POP3-01`, `APP-IMAP-01`, and `APP-DHCP-01` as the confirmed-hint application demos.
     `APP-HTTP-LARGEBODY-01` is the dedicated large HTTP reassembly showcase: inspect several response packets in `Packet Details`, switch to `Stream`, select the reconstructed `HTTP 200 OK` item, and confirm that `Summary` remains structured while `Item Data` still reports the current HTTP authoritative-byte limitation.
+    `APP-MQTT-01` is a valid MQTT 3.1.1 CONNECT on TCP destination port `1883`, `APP-AMQP-01` is the exact AMQP 0-9-1 protocol header on TCP destination port `5672`, and `APP-NTP-01` is one bidirectional UDP flow with an NTPv4 mode-3 request and mode-4 response on UDP/123.
 11. Open `APP-TLS-SEGMENTED-01` to demonstrate the segmented TLS ClientHello case where initial import detects `TLS` while Service remains empty, then bounded selected-flow reconstruction recovers `edge.microsoft.com` because the SNI lives in the second TCP segment.
 12. Open `APP-MDNS-01` for multicast DNS-SD behavior and `APP-MDNS6-01` for the compact IPv6 UDP/mDNS/DNS-SD AAAA example.
    The scenario intentionally spans two multicast source flows under one stable `scenario_id`; use the manifest's `expected_flow_count` to validate it scenario-wide.
@@ -245,6 +249,12 @@ Current exception:
 - These two richer QUIC examples retain the public SNI/service names `web.whatsapp.com` and `ep2.adtrafficquality.google` because the captures were intentionally recorded for testing rather than taken from private production/user traffic.
 
 The local generator used to materialize the capture is intentionally **not committed**. Only the generated showcase artifacts belong in the repository.
+
+For the final Supported Protocol Catalog parity update, `tmp/generate_showcase_protocol_parity.py` is a local append-only helper that updates the existing materialized PCAP with the MQTT, AMQP, and NTP flows described above. Run it manually from the repository root when regenerating the showcase:
+
+```sh
+python tmp/generate_showcase_protocol_parity.py --input examples/showcase/pcap_flow_lab_showcase.pcap --output examples/showcase/pcap_flow_lab_showcase.pcap --force
+```
 
 ## Known Limitations
 

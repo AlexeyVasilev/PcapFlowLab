@@ -735,9 +735,67 @@ void run_protocol_and_candidate_scope_tests() {
             128U,
             120U
         );
+        const FlowKeyV4 amqp_flow_ab {
+            .src_addr = ipv4(10, 0, 1, 50),
+            .dst_addr = ipv4(10, 0, 1, 60),
+            .src_port = 58000,
+            .dst_port = 5672,
+            .protocol = ProtocolId::tcp,
+        };
+        auto amqp_connection = make_ipv4_connection(
+            amqp_flow_ab,
+            std::nullopt,
+            fixture.tcp_path_id,
+            1U,
+            0U,
+            100U,
+            0U,
+            100U,
+            1000U,
+            2000U,
+            FlowProtocolHint::amqp,
+            "",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            100U,
+            100U
+        );
+        const FlowKeyV4 ntp_flow_ab {
+            .src_addr = ipv4(10, 0, 1, 70),
+            .dst_addr = ipv4(10, 0, 1, 80),
+            .src_port = 59000,
+            .dst_port = 123,
+            .protocol = ProtocolId::udp,
+        };
+        auto ntp_connection = make_ipv4_connection(
+            ntp_flow_ab,
+            std::nullopt,
+            fixture.udp_path_id,
+            1U,
+            0U,
+            100U,
+            0U,
+            100U,
+            1000U,
+            2000U,
+            FlowProtocolHint::ntp,
+            "",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            100U,
+            100U
+        );
         const std::vector<session_detail::ListedConnectionRef> mqtt_connections {
             {.family = FlowAddressFamily::ipv4, .ipv4 = &mqtt_connection},
             {.family = FlowAddressFamily::ipv4, .ipv4 = &http_connection},
+            {.family = FlowAddressFamily::ipv4, .ipv4 = &amqp_connection},
+            {.family = FlowAddressFamily::ipv4, .ipv4 = &ntp_connection},
         };
 
         AdvancedFlowFilterSpec spec {};
@@ -748,7 +806,27 @@ void run_protocol_and_candidate_scope_tests() {
         spec.detected_protocol.include.clear();
         spec.detected_protocol.exclude = {FlowProtocolHint::mqtt};
         filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {1U});
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {1U, 2U, 3U});
+
+        spec.detected_protocol.exclude.clear();
+        spec.detected_protocol.include = {FlowProtocolHint::amqp};
+        filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {2U});
+
+        spec.detected_protocol.include.clear();
+        spec.detected_protocol.exclude = {FlowProtocolHint::amqp};
+        filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {0U, 1U, 3U});
+
+        spec.detected_protocol.exclude.clear();
+        spec.detected_protocol.include = {FlowProtocolHint::ntp};
+        filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {3U});
+
+        spec.detected_protocol.include.clear();
+        spec.detected_protocol.exclude = {FlowProtocolHint::ntp};
+        filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(mqtt_connections, filter), {0U, 1U, 2U});
     }
 }
 
@@ -2456,14 +2534,22 @@ void run_text_format_tests() {
         const auto parsed = require_parse_success(
             "format_version = 3\n"
             "detected_protocol.include = MqTt\n"
+            "detected_protocol.include = AMQP\n"
+            "detected_protocol.include = NTP\n"
         );
         const auto& spec = parsed.document.configured_spec;
-        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::mqtt}));
+        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {
+            FlowProtocolHint::mqtt,
+            FlowProtocolHint::amqp,
+            FlowProtocolHint::ntp,
+        }));
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
                 "format_version = 3\n"
                 "detected_protocol.include = mqtt\n"
+                "detected_protocol.include = amqp\n"
+                "detected_protocol.include = ntp\n"
             )
         );
     }
@@ -3475,7 +3561,7 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.document->canonical_text == "format_version = 3\n");
     PFL_EXPECT(empty.option_catalog.address_family.size() == 2U);
     PFL_EXPECT(empty.option_catalog.flow_protocol.size() == 9U);
-    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 18U);
+    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 20U);
     const auto mqtt_detected_option_count = std::count_if(
         empty.option_catalog.detected_protocol.begin(),
         empty.option_catalog.detected_protocol.end(),
@@ -3493,6 +3579,24 @@ void run_frontend_structured_document_tests() {
     );
     PFL_REQUIRE(mqtt_detected_option != empty.option_catalog.detected_protocol.end());
     PFL_EXPECT(mqtt_detected_option->label == "MQTT");
+    const auto amqp_detected_option = std::find_if(
+        empty.option_catalog.detected_protocol.begin(),
+        empty.option_catalog.detected_protocol.end(),
+        [](const auto& option) {
+            return option.stable_id == "amqp";
+        }
+    );
+    PFL_REQUIRE(amqp_detected_option != empty.option_catalog.detected_protocol.end());
+    PFL_EXPECT(amqp_detected_option->label == "AMQP");
+    const auto ntp_detected_option = std::find_if(
+        empty.option_catalog.detected_protocol.begin(),
+        empty.option_catalog.detected_protocol.end(),
+        [](const auto& option) {
+            return option.stable_id == "ntp";
+        }
+    );
+    PFL_REQUIRE(ntp_detected_option != empty.option_catalog.detected_protocol.end());
+    PFL_EXPECT(ntp_detected_option->label == "NTP");
     PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
     PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
     PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
@@ -3975,15 +4079,19 @@ void run_frontend_structured_document_tests() {
             empty.document->canonical_text,
             "detected_protocol",
             true,
-            {"mqtt"},
+            {"mqtt", "amqp", "ntp"},
             {}
         );
         const auto reparsed = expect_update_matches_direct(updated);
         PFL_EXPECT((reparsed.configured_spec.detected_protocol.include == std::vector<FlowProtocolHint> {
-            FlowProtocolHint::mqtt
+            FlowProtocolHint::mqtt,
+            FlowProtocolHint::amqp,
+            FlowProtocolHint::ntp,
         }));
         PFL_REQUIRE(updated.document.has_value());
         PFL_EXPECT(updated.document->canonical_text.find("detected_protocol.include = mqtt\n") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("detected_protocol.include = amqp\n") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("detected_protocol.include = ntp\n") != std::string::npos);
     }
 
     {

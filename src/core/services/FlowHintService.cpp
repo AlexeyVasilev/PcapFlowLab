@@ -29,6 +29,7 @@ constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
+constexpr std::uint16_t kNtpPort = 123;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
@@ -44,6 +45,7 @@ constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x0
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
 constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
 constexpr std::size_t kStunHeaderSize = 20U;
+constexpr std::size_t kNtpBasicHeaderSize = 48U;
 constexpr std::size_t kBootpFixedHeaderSize = 236U;
 constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
 constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
@@ -337,6 +339,64 @@ bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
     }
 
     return read_be32(payload, 4U) == kStunMagicCookie;
+}
+
+std::optional<std::size_t> declared_udp_payload_length_for_terminal_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t payload_offset
+) noexcept {
+    if (payload_offset < 8U || payload_offset > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto udp_offset = payload_offset - 8U;
+    if (udp_offset + 8U > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto udp_length = static_cast<std::size_t>(read_be16(packet_bytes, udp_offset + 4U));
+    if (udp_length < 8U) {
+        return std::nullopt;
+    }
+
+    return udp_length - 8U;
+}
+
+bool looks_like_ntp_message(std::span<const std::uint8_t> packet_bytes,
+                            std::span<const std::uint8_t> payload,
+                            const std::size_t payload_offset,
+                            const std::uint16_t src_port,
+                            const std::uint16_t dst_port) noexcept {
+    if (payload.size() != kNtpBasicHeaderSize) {
+        return false;
+    }
+
+    const auto declared_udp_payload_length =
+        declared_udp_payload_length_for_terminal_payload(packet_bytes, payload_offset);
+    if (!declared_udp_payload_length.has_value() ||
+        *declared_udp_payload_length != kNtpBasicHeaderSize) {
+        return false;
+    }
+
+    const auto version = static_cast<std::uint8_t>((payload[0] >> 3U) & 0x07U);
+    if (version != 3U && version != 4U) {
+        return false;
+    }
+
+    const auto mode = static_cast<std::uint8_t>(payload[0] & 0x07U);
+    if (mode == 3U) {
+        if (dst_port != kNtpPort) {
+            return false;
+        }
+    } else if (mode == 4U) {
+        if (src_port != kNtpPort) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    return payload[1] <= 16U;
 }
 
 bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
@@ -1049,6 +1109,21 @@ FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
         .protocol_hint = FlowProtocolHint::stun,
     };
 }
+
+FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> packet_bytes,
+                               std::span<const std::uint8_t> payload,
+                               const std::size_t payload_offset,
+                               const std::uint16_t src_port,
+                               const std::uint16_t dst_port) {
+    if (!looks_like_ntp_message(packet_bytes, payload, payload_offset, src_port, dst_port)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::ntp,
+    };
+}
+
 FlowHintUpdate detect_dhcp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
@@ -1082,6 +1157,49 @@ FlowHintUpdate detect_mqtt_hint(std::span<const std::uint8_t> payload) {
 
     return FlowHintUpdate {
         .protocol_hint = FlowProtocolHint::mqtt,
+    };
+}
+
+bool matches_prefix(std::span<const std::uint8_t> payload, std::span<const std::uint8_t> prefix) noexcept {
+    if (payload.size() < prefix.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < prefix.size(); ++index) {
+        if (payload[index] != prefix[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool looks_like_amqp_header(std::span<const std::uint8_t> payload) noexcept {
+    static constexpr std::array<std::uint8_t, 8U> kAmqp091Header {
+        'A', 'M', 'Q', 'P', 0x00U, 0x00U, 0x09U, 0x01U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10CoreHeader {
+        'A', 'M', 'Q', 'P', 0x00U, 0x01U, 0x00U, 0x00U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10TlsHeader {
+        'A', 'M', 'Q', 'P', 0x02U, 0x01U, 0x00U, 0x00U,
+    };
+    static constexpr std::array<std::uint8_t, 8U> kAmqp10SaslHeader {
+        'A', 'M', 'Q', 'P', 0x03U, 0x01U, 0x00U, 0x00U,
+    };
+
+    return matches_prefix(payload, kAmqp091Header) ||
+           matches_prefix(payload, kAmqp10CoreHeader) ||
+           matches_prefix(payload, kAmqp10TlsHeader) ||
+           matches_prefix(payload, kAmqp10SaslHeader);
+}
+
+FlowHintUpdate detect_amqp_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_amqp_header(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::amqp,
     };
 }
 
@@ -1314,7 +1432,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_mqtt_hint(payload_view);
+        {
+            const auto mqtt_hint = detect_mqtt_hint(payload_view);
+            if (mqtt_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return mqtt_hint;
+            }
+        }
+
+        return detect_amqp_hint(payload_view);
     case ProtocolId::udp:
         {
             const auto mdns_hint = detect_mdns_hint(payload_view, flow_key);
@@ -1351,7 +1476,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_stun_hint(payload_view);
+        {
+            const auto stun_hint = detect_stun_hint(payload_view);
+            if (stun_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return stun_hint;
+            }
+        }
+
+        return detect_ntp_hint(packet_bytes, payload_view, payload.offset, flow_key.src_port, flow_key.dst_port);
     default:
         return {};
     }

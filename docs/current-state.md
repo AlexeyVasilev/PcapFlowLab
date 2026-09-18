@@ -17,8 +17,8 @@ metadata and bounded decode facts. Saved indexes reopen metadata-backed session
 state without reimporting the original capture.
 
 Indexes are exact-version artifacts. The current stable index baseline is
-revision `17`, with header inspection kept independent from full payload
-compatibility. Stable v16 and older indexes are recognized but require
+revision `18`, with header inspection kept independent from full payload
+compatibility. Stable revision 17 and older indexes are recognized but require
 rebuilding from the source capture for full load. When the saved index revision
 or required section schemas are not supported, the product requires rebuilding
 the index from the source capture.

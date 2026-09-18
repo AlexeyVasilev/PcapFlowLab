@@ -88,7 +88,8 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
          kFlowPacketHistogramBucketBytes) +
         4U + (4U * kProtocolCountersRowBytes) +
         4U + (2U * kProtocolCountersRowBytes) +
-        4U + (16U * kProtocolCountersRowBytes) +
+        4U + (static_cast<std::uint64_t>(kCaptureStatisticsDetectedProtocolCategoryCount) *
+              kProtocolCountersRowBytes) +
         (13U * 8U) +
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopEndpointCapacity) * kTopEndpointRowBytes) +
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopPortCapacity) * kTopPortRowBytes) +

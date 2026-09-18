@@ -736,8 +736,9 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
     snapshot.detected_protocols[2].counters = capture_statistics_counters(1U, 1U, 80U, 90U);
     snapshot.detected_protocols[3].counters = capture_statistics_counters(1U, 2U, 250U, 300U);
     snapshot.detected_protocols[12].counters = capture_statistics_counters(1U, 3U, 300U, 360U);
-    snapshot.detected_protocols[13].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
-    snapshot.detected_protocols[15].counters = capture_statistics_counters(1U, 2U, 120U, 150U);
+    snapshot.detected_protocols[13].counters = capture_statistics_counters(1U, 2U, 210U, 240U);
+    snapshot.detected_protocols[14].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
+    snapshot.detected_protocols[16].counters = capture_statistics_counters(1U, 2U, 120U, 150U);
     snapshot.quic_recognition = CaptureStatisticsQuicRecognition {
         .flow_count = 1U,
         .with_sni_count = 1U,
@@ -761,7 +762,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
         CaptureStatisticsTopEndpointRow {
             .endpoint = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10}),
-                .port = 53U,
+                .port = 123U,
             },
             .flow_count = 1U,
             .packet_count = 2U,
@@ -771,7 +772,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
     };
     snapshot.top_ports = {
         CaptureStatisticsTopPortRow {.port = 443U, .flow_count = 2U, .packet_count = 4U, .captured_bytes = 500U, .original_bytes = 600U},
-        CaptureStatisticsTopPortRow {.port = 53U, .flow_count = 1U, .packet_count = 2U, .captured_bytes = 250U, .original_bytes = 300U},
+        CaptureStatisticsTopPortRow {.port = 123U, .flow_count = 1U, .packet_count = 2U, .captured_bytes = 250U, .original_bytes = 300U},
     };
     snapshot.top_flows = {
         CaptureStatisticsTopFlowRow {
@@ -786,8 +787,8 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .endpoint_a = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 40'001U},
             .endpoint_b = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 2), .port = 443U},
             .flow_protocol = ProtocolId::tcp,
-            .protocol_hint = FlowProtocolHint::tls,
-            .service_hint = "alpha.example",
+            .protocol_hint = FlowProtocolHint::amqp,
+            .service_hint = "",
             .protocol_path_id = 11U,
             .packet_count = 4U,
             .captured_bytes = 500U,
@@ -799,7 +800,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .connection_key = ConnectionKeyV6 {
                 .first = EndpointKeyV6 {
                     .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
-                    .port = 53U,
+                    .port = 123U,
                 },
                 .second = EndpointKeyV6 {
                     .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
@@ -810,14 +811,14 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             },
             .endpoint_a = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
-                .port = 53U,
+                .port = 123U,
             },
             .endpoint_b = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
                 .port = 53'000U,
             },
             .flow_protocol = ProtocolId::udp,
-            .protocol_hint = FlowProtocolHint::dns,
+            .protocol_hint = FlowProtocolHint::ntp,
             .service_hint = "",
             .protocol_path_id = 17U,
             .packet_count = 2U,
@@ -1029,15 +1030,13 @@ CaptureState make_v16_metadata_capture_state_fixture() {
             .tcp_flags = static_cast<std::uint8_t>(0x01U),
         }
     );
-    ipv4_connection.protocol_hint = FlowProtocolHint::tls;
-    ipv4_connection.service_hint = "bulk-download.example.test";
-    ipv4_connection.tls_version = TlsVersionHint::tls13;
+    ipv4_connection.protocol_hint = FlowProtocolHint::amqp;
 
     const FlowKeyV6 ipv6_flow_a {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
         .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
         .src_port = 53000U,
-        .dst_port = 53U,
+        .dst_port = 123U,
         .protocol = ProtocolId::udp,
         .protocol_path_id = ipv6_path_id,
     };
@@ -1054,7 +1053,7 @@ CaptureState make_v16_metadata_capture_state_fixture() {
         packet_ref_for_v16_metadata_test(140U, 80U, 75U, 1562U),
         PacketImportMetadata {.transport_payload_length = 25U}
     );
-    ipv6_connection.protocol_hint = FlowProtocolHint::dns;
+    ipv6_connection.protocol_hint = FlowProtocolHint::ntp;
 
     state.packet_locator = {
         CapturePacketLocatorEntry {.packet_index = 10U, .file_offset = 1000U},
@@ -1360,8 +1359,10 @@ void run_index_format_tests() {
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
         PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 17U);
-        PFL_EXPECT(kCaptureIndexVersion == 17U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 18U);
+        PFL_EXPECT(kCaptureIndexVersion == 18U);
+        PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::amqp) == 20U);
+        PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::ntp) == 21U);
 
         detail::CaptureIndexStableHeader decoded_header {};
         std::istringstream read_stream(
@@ -3504,31 +3505,31 @@ void run_index_format_tests() {
     );
 
     {
-        auto revision_16_bytes = read_file_bytes(index_path);
-        write_le32_at(revision_16_bytes, 16U, 16U);
-        const auto revision_16_path = write_temp_binary_file(
-            "pfl_index_revision_16_rebuild_required.idx",
-            revision_16_bytes
+        auto revision_17_bytes = read_file_bytes(index_path);
+        write_le32_at(revision_17_bytes, 16U, 17U);
+        const auto revision_17_path = write_temp_binary_file(
+            "pfl_index_revision_17_rebuild_required.idx",
+            revision_17_bytes
         );
-        const std::string revision_16_error =
-            "This index uses revision 16; current supported revision is 17. Rebuild the index from the source capture.";
+        const std::string revision_17_error =
+            "This index uses revision 17; current supported revision is 18. Rebuild the index from the source capture.";
 
-        detail::CaptureIndexV16CompleteReadResult revision_16_read {};
-        PFL_EXPECT(!index_reader.read_v16_complete(revision_16_path, revision_16_read));
-        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+        detail::CaptureIndexV16CompleteReadResult revision_17_read {};
+        PFL_EXPECT(!index_reader.read_v16_complete(revision_17_path, revision_17_read));
+        PFL_EXPECT(index_reader.last_error().reason == revision_17_error);
 
-        detail::CaptureIndexV16FastStatisticsTier revision_16_fast_tier {};
-        detail::CaptureIndexV16FastStatisticsTierReadResult revision_16_fast_read {};
+        detail::CaptureIndexV16FastStatisticsTier revision_17_fast_tier {};
+        detail::CaptureIndexV16FastStatisticsTierReadResult revision_17_fast_read {};
         PFL_EXPECT(!index_reader.read_v16_fast_statistics(
-            revision_16_path,
-            revision_16_fast_tier,
-            revision_16_fast_read
+            revision_17_path,
+            revision_17_fast_tier,
+            revision_17_fast_read
         ));
-        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+        PFL_EXPECT(index_reader.last_error().reason == revision_17_error);
 
-        CaptureSession revision_16_session {};
-        PFL_EXPECT(!revision_16_session.load_index(revision_16_path));
-        PFL_EXPECT(revision_16_session.last_open_error_text().find(revision_16_error) != std::string::npos);
+        CaptureSession revision_17_session {};
+        PFL_EXPECT(!revision_17_session.load_index(revision_17_path));
+        PFL_EXPECT(revision_17_session.last_open_error_text().find(revision_17_error) != std::string::npos);
     }
 
     {

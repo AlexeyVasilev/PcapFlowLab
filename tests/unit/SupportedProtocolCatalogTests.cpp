@@ -82,7 +82,7 @@ std::optional<std::string> extract_marked_block(
 
 void expect_catalog_row_contracts() {
     const auto rows = session_detail::supported_protocol_catalog_rows();
-    PFL_EXPECT(rows.size() == 36U);
+    PFL_EXPECT(rows.size() == 38U);
 
     std::set<std::string> ids {};
     for (const auto& row : rows) {
@@ -124,6 +124,14 @@ void expect_representative_rows() {
         return row.stable_id == "mqtt";
     });
     PFL_EXPECT(mqtt_row_count == 1U);
+    const auto amqp_row_count = std::count_if(rows.begin(), rows.end(), [](const auto& row) {
+        return row.stable_id == "amqp";
+    });
+    PFL_EXPECT(amqp_row_count == 1U);
+    const auto ntp_row_count = std::count_if(rows.begin(), rows.end(), [](const auto& row) {
+        return row.stable_id == "ntp";
+    });
+    PFL_EXPECT(ntp_row_count == 1U);
 
     const auto* tls = find_row("tls");
     PFL_REQUIRE(tls != nullptr);
@@ -174,6 +182,29 @@ void expect_representative_rows() {
     PFL_EXPECT(mqtt->notes.find("CONNECT") != std::string_view::npos);
     PFL_EXPECT(mqtt->notes.find("MQTT 3.1") != std::string_view::npos);
     PFL_EXPECT(mqtt->notes.find("5.0") != std::string_view::npos);
+
+    const auto* amqp = find_row("amqp");
+    PFL_REQUIRE(amqp != nullptr);
+    PFL_EXPECT(amqp->protocol == "AMQP");
+    PFL_EXPECT(amqp->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(amqp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(amqp->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(amqp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(amqp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(amqp->notes.find("AMQP 0-9-1") != std::string_view::npos);
+    PFL_EXPECT(amqp->notes.find("AMQP 1.0") != std::string_view::npos);
+    PFL_EXPECT(amqp->notes.find("frame parsing is not implemented") != std::string_view::npos);
+
+    const auto* ntp = find_row("ntp");
+    PFL_REQUIRE(ntp != nullptr);
+    PFL_EXPECT(ntp->protocol == "NTP");
+    PFL_EXPECT(ntp->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(ntp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(ntp->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(ntp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(ntp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(ntp->notes.find("48-byte NTPv3/NTPv4") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("UDP/123 direction semantics") != std::string_view::npos);
 }
 
 void expect_markdown_escaping() {
@@ -198,7 +229,7 @@ void expect_markdown_escaping() {
 void expect_frontend_catalog_exposure_without_capture() {
     FrontendSessionAdapter adapter {};
     const auto catalog = adapter.get_supported_protocol_catalog();
-    PFL_EXPECT(catalog.rows.size() == 36U);
+    PFL_EXPECT(catalog.rows.size() == 38U);
     PFL_REQUIRE(!catalog.rows.empty());
     PFL_EXPECT(catalog.rows.front().category_id == "link_and_encapsulation");
     PFL_EXPECT(catalog.rows.front().recognition_status_id == "yes");

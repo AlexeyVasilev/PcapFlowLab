@@ -193,6 +193,28 @@ FlowHintUpdate detect_tcp_flow_hint(
     });
 }
 
+FlowHintUpdate detect_udp_flow_hint(
+    const std::vector<std::uint8_t>& payload,
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) {
+    FlowHintService service {};
+    const auto packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 0, 1, 1),
+        ipv4(10, 0, 1, 2),
+        src_port,
+        dst_port,
+        payload
+    );
+    return service.detect(packet, FlowKeyV4 {
+        .src_addr = ipv4(10, 0, 1, 1),
+        .dst_addr = ipv4(10, 0, 1, 2),
+        .src_port = src_port,
+        .dst_port = dst_port,
+        .protocol = ProtocolId::udp,
+    });
+}
+
 std::vector<std::uint8_t> require_tls_fixture_transport_payload(
     const std::filesystem::path& relative_path,
     const std::uint64_t packet_index
@@ -333,6 +355,35 @@ std::vector<std::uint8_t> make_mqtt5_connect_with_oversized_property_length() {
     payload.push_back(0x10U);
     append_mqtt_variable_byte_integer(payload, static_cast<std::uint32_t>(body.size()));
     payload.insert(payload.end(), body.begin(), body.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_amqp_header_payload(
+    const std::uint8_t protocol_id,
+    const std::uint8_t major,
+    const std::uint8_t minor,
+    const std::uint8_t revision
+) {
+    return std::vector<std::uint8_t> {
+        'A', 'M', 'Q', 'P', protocol_id, major, minor, revision,
+    };
+}
+
+std::vector<std::uint8_t> make_ntp_payload(
+    const std::uint8_t version,
+    const std::uint8_t mode,
+    const std::uint8_t stratum,
+    const std::uint8_t leap_indicator = 0U
+) {
+    std::vector<std::uint8_t> payload(48U, 0U);
+    payload[0] = static_cast<std::uint8_t>(((leap_indicator & 0x03U) << 6U) |
+                                           ((version & 0x07U) << 3U) |
+                                           (mode & 0x07U));
+    payload[1] = stratum;
+    payload[2] = 6U; // Poll.
+    payload[3] = 0xECU; // Precision -20 encoded as an unsigned byte.
+    payload[40] = 0xE7U;
+    payload[43] = 0x01U;
     return payload;
 }
 
@@ -1004,9 +1055,226 @@ void run_flow_hints_tests() {
     }
 
     {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x02U, 0x01U, 0x00U, 0x00U), 58000U, 5671U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x03U, 0x01U, 0x00U, 0x00U), 58000U, 35672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U), 58000U, 35672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        auto payload = make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U);
+        payload.insert(payload.end(), {'t', 'r', 'a', 'i', 'l', 'i', 'n', 'g'});
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::amqp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        auto payload = make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x01U);
+        payload.pop_back();
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x01U, 0x01U, 0x00U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x00U, 0x09U, 0x00U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x01U), 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        std::vector<std::uint8_t> payload {'P', 'F', 'L', '-'};
+        const auto amqp_header = make_amqp_header_payload(0x00U, 0x01U, 0x00U, 0x00U);
+        payload.insert(payload.end(), amqp_header.begin(), amqp_header.end());
+
+        const auto hint = detect_tcp_flow_hint(payload, 58000U, 5672U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_udp_flow_hint(make_ntp_payload(4U, 3U, 0U), 59000U, 123U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_udp_flow_hint(make_ntp_payload(4U, 4U, 2U), 123U, 59000U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto client_hint = detect_udp_flow_hint(make_ntp_payload(3U, 3U, 0U), 59000U, 123U);
+        PFL_EXPECT(client_hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(client_hint.service_hint.empty());
+
+        const auto server_hint = detect_udp_flow_hint(make_ntp_payload(3U, 4U, 3U), 123U, 59000U);
+        PFL_EXPECT(server_hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(server_hint.service_hint.empty());
+    }
+
+    {
+        const auto kod_hint = detect_udp_flow_hint(make_ntp_payload(4U, 4U, 0U), 123U, 59000U);
+        PFL_EXPECT(kod_hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(kod_hint.service_hint.empty());
+
+        const auto unsynchronized_hint = detect_udp_flow_hint(make_ntp_payload(4U, 3U, 0U, 3U), 59000U, 123U);
+        PFL_EXPECT(unsynchronized_hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(unsynchronized_hint.service_hint.empty());
+    }
+
+    {
+        const auto max_supported_stratum_hint = detect_udp_flow_hint(make_ntp_payload(4U, 4U, 16U), 123U, 59000U);
+        PFL_EXPECT(max_supported_stratum_hint.protocol_hint == FlowProtocolHint::ntp);
+        PFL_EXPECT(max_supported_stratum_hint.service_hint.empty());
+
+        const auto unsupported_stratum_hint = detect_udp_flow_hint(make_ntp_payload(4U, 4U, 17U), 123U, 59000U);
+        PFL_EXPECT(unsupported_stratum_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(unsupported_stratum_hint.service_hint.empty());
+    }
+
+    {
+        const auto ntpv2_hint = detect_udp_flow_hint(make_ntp_payload(2U, 3U, 0U), 59000U, 123U);
+        PFL_EXPECT(ntpv2_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(ntpv2_hint.service_hint.empty());
+
+        const auto broadcast_hint = detect_udp_flow_hint(make_ntp_payload(4U, 5U, 2U), 123U, 59000U);
+        PFL_EXPECT(broadcast_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(broadcast_hint.service_hint.empty());
+    }
+
+    {
+        auto truncated = make_ntp_payload(4U, 3U, 0U);
+        truncated.pop_back();
+        const auto truncated_hint = detect_udp_flow_hint(truncated, 59000U, 123U);
+        PFL_EXPECT(truncated_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(truncated_hint.service_hint.empty());
+
+        auto longer = make_ntp_payload(4U, 3U, 0U);
+        longer.push_back(0U);
+        const auto longer_hint = detect_udp_flow_hint(longer, 59000U, 123U);
+        PFL_EXPECT(longer_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(longer_hint.service_hint.empty());
+    }
+
+    {
+        auto declared_longer_payload = make_ntp_payload(4U, 3U, 0U);
+        declared_longer_payload.push_back(0U);
+        auto truncated_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 0, 1, 1),
+            ipv4(10, 0, 1, 2),
+            59000U,
+            123U,
+            declared_longer_payload
+        );
+        truncated_packet.pop_back();
+
+        FlowHintService service {};
+        const auto hint = service.detect(truncated_packet, FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 1, 1),
+            .dst_addr = ipv4(10, 0, 1, 2),
+            .src_port = 59000U,
+            .dst_port = 123U,
+            .protocol = ProtocolId::udp,
+        });
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto client_direction_mismatch_hint = detect_udp_flow_hint(make_ntp_payload(4U, 3U, 0U), 123U, 59000U);
+        PFL_EXPECT(client_direction_mismatch_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(client_direction_mismatch_hint.service_hint.empty());
+
+        const auto server_direction_mismatch_hint = detect_udp_flow_hint(make_ntp_payload(4U, 4U, 2U), 59000U, 123U);
+        PFL_EXPECT(server_direction_mismatch_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(server_direction_mismatch_hint.service_hint.empty());
+
+        const auto wrong_port_hint = detect_udp_flow_hint(make_ntp_payload(4U, 3U, 0U), 59000U, 30123U);
+        PFL_EXPECT(wrong_port_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(wrong_port_hint.service_hint.empty());
+    }
+
+    {
+        std::vector<std::uint8_t> payload(48U, 0xFFU);
+        const auto hint = detect_udp_flow_hint(payload, 59000U, 123U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_tcp_flow_hint(make_ntp_payload(4U, 3U, 0U), 59000U, 123U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto hint = detect_udp_flow_hint(make_stun_binding_request_payload(), 123U, 59000U);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::stun);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
         ConnectionV4 connection {};
         connection.protocol_hint = FlowProtocolHint::mqtt;
         PFL_EXPECT(connection.hint_detection_settled());
+    }
+
+    {
+        ConnectionV4 connection {};
+        connection.protocol_hint = FlowProtocolHint::amqp;
+        PFL_EXPECT(connection.hint_detection_settled());
+    }
+
+    {
+        ConnectionV4 connection {};
+        connection.protocol_hint = FlowProtocolHint::ntp;
+        PFL_EXPECT(connection.service_hint.empty());
+        PFL_EXPECT(connection.hint_detection_settled());
+    }
+
+    {
+        PFL_EXPECT(std::string_view(flow_protocol_hint_text(FlowProtocolHint::amqp)) == "amqp");
+        PFL_EXPECT(std::string_view(flow_protocol_hint_text(FlowProtocolHint::ntp)) == "ntp");
     }
 
     {

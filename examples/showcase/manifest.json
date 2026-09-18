@@ -981,6 +981,100 @@
       ]
     },
     {
+      "scenario_id": "APP-MQTT-01",
+      "name": "MQTT CONNECT hint demo",
+      "purpose": "Short TCP flow demonstrating current MQTT detection-only behavior with a valid MQTT 3.1.1 CONNECT packet.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "MQTT",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.154:48183",
+        "198.51.100.154:1883"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "MQTT 3.1.1 CONNECT"
+      ],
+      "notes": [
+        "Current UI support is hint-oriented rather than a deep MQTT parser.",
+        "No credentials are present in the CONNECT payload.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.030 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-AMQP-01",
+      "name": "AMQP protocol-header hint demo",
+      "purpose": "Short TCP flow demonstrating current AMQP detection-only behavior with an exact AMQP 0-9-1 protocol header.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "AMQP",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.155:45672",
+        "198.51.100.155:5672"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "AMQP 0-9-1 protocol header"
+      ],
+      "notes": [
+        "Payload is exactly `41 4D 51 50 00 00 09 01`.",
+        "Current UI support is hint-oriented rather than a deep AMQP frame parser.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.030 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-NTP-01",
+      "name": "NTPv4 client/server hint demo",
+      "purpose": "Short bidirectional UDP flow demonstrating current conservative NTP detection-only behavior with classic 48-byte NTPv4 request/response packets.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "NTP",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.156:41230",
+        "198.51.100.156:123"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "NTPv4 client request, mode 3",
+        "NTPv4 server response, mode 4, stratum 2"
+      ],
+      "notes": [
+        "Both packets use exactly the classic 48-byte NTP header with no extension fields, MAC, or NTS.",
+        "Current UI support is hint-oriented rather than a deep NTP parser.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.040 s"
+      ]
+    },
+    {
       "scenario_id": "HINT-POSSIBLE-TLS-01",
       "name": "Settings-gated Possible TLS demo",
       "purpose": "Opaque TCP/443 flow that stays non-confirmed by default and only surfaces as Possible TLS when the fallback setting is enabled.",
@@ -1894,6 +1988,15 @@
       "note": "Validated through normal CLI import and materialized as a recognized AH/TCP flow."
     },
     {
+      "family": "amqp",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-AMQP-01"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic AMQP 0-9-1 protocol-header flow for current detection-only recognition."
+    },
+    {
       "family": "arp",
       "status": "represented",
       "scenario_ids": [
@@ -2039,6 +2142,24 @@
       ],
       "source_fixture": "tests/data/parsing/mdns/05_mdns_ipv6_dns_sd_response_aaaa.pcap",
       "note": "mDNS coverage now includes both the deterministic IPv4 DNS-SD scenario and one exact fixture-backed IPv6 DNS-SD / AAAA response."
+    },
+    {
+      "family": "mqtt",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-MQTT-01"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic MQTT 3.1.1 CONNECT flow for current detection-only recognition."
+    },
+    {
+      "family": "ntp",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-NTP-01"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic NTPv4 mode-3/mode-4 UDP/123 exchange for current conservative detection-only recognition."
     },
     {
       "family": "mpls",
@@ -2265,6 +2386,30 @@
       "note": "Compact UDP/67-68 BOOTP/DHCP magic-cookie demonstration."
     },
     {
+      "detected_protocol": "MQTT",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-MQTT-01"
+      ],
+      "note": "Valid MQTT 3.1.1 CONNECT packet on TCP destination port 1883 demonstrating current detection-only recognition."
+    },
+    {
+      "detected_protocol": "AMQP",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-AMQP-01"
+      ],
+      "note": "Exact AMQP 0-9-1 protocol header on TCP destination port 5672 demonstrating current detection-only recognition."
+    },
+    {
+      "detected_protocol": "NTP",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-NTP-01"
+      ],
+      "note": "Bidirectional NTPv4 mode-3/mode-4 UDP/123 exchange demonstrating current conservative detection-only recognition."
+    },
+    {
       "detected_protocol": "mDNS",
       "status": "confirmed",
       "scenario_ids": [
@@ -2392,11 +2537,11 @@
   ],
   "validation_smoke_checks": [
     "Open the capture and confirm Flows / Analysis / Statistics load without requiring an index.",
-    "Open Statistics -> Detected Protocol Hints and confirm representative confirmed application-hint rows: HTTP, TLS, DNS, QUIC, SSH, STUN, BitTorrent, Mail protocols, DHCP, and mDNS.",
+    "Open Statistics -> Detected Protocol Hints and confirm application-hint rows: HTTP, TLS, DNS, QUIC, SSH, STUN, BitTorrent, MQTT, AMQP, NTP, Mail protocols, DHCP, and mDNS.",
     "If `use_possible_tls_quic` is enabled before reopening/importing the capture, confirm HINT-POSSIBLE-TLS-01 and HINT-POSSIBLE-QUIC-01 move from Unknown into Possible TLS / Possible QUIC respectively.",
     "Inspect AN-TLS-BULK-01 for TLS SNI, rate phases, packet-size histogram, inter-arrival histogram, and burst/idle regions.",
     "Inspect AN-GRE-TLS-01 for complex protocol path and nested TLS stream/bytes presentation.",
-    "Inspect APP-HTTP-02, APP-HTTP-LARGEBODY-01, APP-DNS-02, APP-TLS-03, APP-TLS-SEGMENTED-01, APP-TLS-NOSNI-01, APP-SSH-01, APP-STUN-01, APP-BITTORRENT-01, APP-SMTP-01, APP-POP3-01, APP-IMAP-01, and APP-DHCP-01 for representative confirmed detected-protocol hint coverage.",
+    "Inspect APP-HTTP-02, APP-HTTP-LARGEBODY-01, APP-DNS-02, APP-TLS-03, APP-TLS-SEGMENTED-01, APP-TLS-NOSNI-01, APP-SSH-01, APP-STUN-01, APP-BITTORRENT-01, APP-MQTT-01, APP-AMQP-01, APP-NTP-01, APP-SMTP-01, APP-POP3-01, APP-IMAP-01, and APP-DHCP-01 for confirmed detected-protocol hint coverage.",
     "Inspect APP-TLS-SEGMENTED-01 and confirm that initial import detects TLS while Service starts empty, then selected-flow reconstruction recovers edge.microsoft.com because the SNI resides only in the second TCP segment.",
     "Inspect APP-MDNS6-01 for compact IPv6 UDP/mDNS/DNS-SD behavior with structured PTR, SRV, TXT, and AAAA presentation.",
     "Inspect APP-QUIC-01, APP-QUIC-MULTICRYPTO-01, APP-QUIC-MULTICRYPTO-02, and APP-QUIC-NEG-01 for compact positive, rich positive, and coarse negative QUIC Initial behavior.",
@@ -2409,9 +2554,9 @@
     "Inspect EDGE-UNREC-01, L2-MACSEC-PACKET-01, L2-PPPOE-DISCOVERY-01, L2-LLCSNAP-UNREC-01, and TUN-MPLS-UNREC-01 for distinct unrecognized-packet reasons, packet-inspection depth, and Bytes behavior."
   ],
   "materialization_summary": {
-    "total_packet_count": 1557,
-    "total_duration_seconds": 114.023399,
-    "approximate_pcap_size_bytes": 746411,
+    "total_packet_count": 1567,
+    "total_duration_seconds": 115.54,
+    "approximate_pcap_size_bytes": 747225,
     "classic_pcap_linktype": 1,
     "contains_snaplen_distinction": true,
     "contains_unrecognized_packets": true

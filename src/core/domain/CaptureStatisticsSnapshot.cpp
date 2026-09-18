@@ -27,7 +27,10 @@ constexpr std::array<CaptureStatisticsIpFamilyCategory, 2> kIpFamilyCategories {
     CaptureStatisticsIpFamilyCategory::ipv6,
 }};
 
-constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 17> kDetectedProtocolCategories {{
+constexpr std::array<
+    CaptureStatisticsDetectedProtocolCategory,
+    kCaptureStatisticsDetectedProtocolCategoryCount
+> kDetectedProtocolCategories {{
     CaptureStatisticsDetectedProtocolCategory::http,
     CaptureStatisticsDetectedProtocolCategory::tls,
     CaptureStatisticsDetectedProtocolCategory::dns,
@@ -45,6 +48,8 @@ constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 17> kDetectedPro
     CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate,
     CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate,
     CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
+    CaptureStatisticsDetectedProtocolCategory::amqp,
+    CaptureStatisticsDetectedProtocolCategory::ntp,
 }};
 
 constexpr std::uint64_t kMaximumRepresentableFlowOrdinalCount =

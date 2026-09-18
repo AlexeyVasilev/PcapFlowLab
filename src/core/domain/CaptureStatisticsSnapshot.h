@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -86,7 +87,12 @@ enum class CaptureStatisticsDetectedProtocolCategory : std::uint8_t {
     possible_tls_candidate = 14,
     possible_quic_candidate = 15,
     unknown_without_possible = 16,
+    amqp = 17,
+    ntp = 18,
 };
+
+inline constexpr std::size_t kCaptureStatisticsDetectedProtocolCategoryCount =
+    static_cast<std::size_t>(CaptureStatisticsDetectedProtocolCategory::ntp) + 1U;
 
 struct CaptureStatisticsDetectedProtocolRow {
     CaptureStatisticsDetectedProtocolCategory category {CaptureStatisticsDetectedProtocolCategory::http};
