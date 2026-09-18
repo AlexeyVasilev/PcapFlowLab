@@ -58,6 +58,7 @@ void run_pop3_pcap_fixture_tests();
 void run_imap_pcap_fixture_tests();
 void run_mqtt_pcap_fixture_tests();
 void run_amqp_pcap_fixture_tests();
+void run_ntp_pcap_fixture_tests();
 void run_cli_flows_tests();
 void run_cli_export_flows_tests();
 void run_cli_flow_info_tests();
@@ -225,6 +226,7 @@ int main() {
         {"imap_pcap_fixtures", pfl::tests::run_imap_pcap_fixture_tests},
         {"mqtt_pcap_fixtures", pfl::tests::run_mqtt_pcap_fixture_tests},
         {"amqp_pcap_fixtures", pfl::tests::run_amqp_pcap_fixture_tests},
+        {"ntp_pcap_fixtures", pfl::tests::run_ntp_pcap_fixture_tests},
         {"cli_flows", pfl::tests::run_cli_flows_tests},
         {"cli_export_flows", pfl::tests::run_cli_export_flows_tests},
         {"cli_flow_info", pfl::tests::run_cli_flow_info_tests},
