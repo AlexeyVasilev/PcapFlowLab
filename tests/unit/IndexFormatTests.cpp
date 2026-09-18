@@ -762,7 +762,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
         CaptureStatisticsTopEndpointRow {
             .endpoint = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10}),
-                .port = 53U,
+                .port = 123U,
             },
             .flow_count = 1U,
             .packet_count = 2U,
@@ -772,7 +772,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
     };
     snapshot.top_ports = {
         CaptureStatisticsTopPortRow {.port = 443U, .flow_count = 2U, .packet_count = 4U, .captured_bytes = 500U, .original_bytes = 600U},
-        CaptureStatisticsTopPortRow {.port = 53U, .flow_count = 1U, .packet_count = 2U, .captured_bytes = 250U, .original_bytes = 300U},
+        CaptureStatisticsTopPortRow {.port = 123U, .flow_count = 1U, .packet_count = 2U, .captured_bytes = 250U, .original_bytes = 300U},
     };
     snapshot.top_flows = {
         CaptureStatisticsTopFlowRow {
@@ -787,7 +787,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .endpoint_a = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 40'001U},
             .endpoint_b = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 2), .port = 443U},
             .flow_protocol = ProtocolId::tcp,
-            .protocol_hint = FlowProtocolHint::ntp,
+            .protocol_hint = FlowProtocolHint::amqp,
             .service_hint = "",
             .protocol_path_id = 11U,
             .packet_count = 4U,
@@ -800,7 +800,7 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             .connection_key = ConnectionKeyV6 {
                 .first = EndpointKeyV6 {
                     .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
-                    .port = 53U,
+                    .port = 123U,
                 },
                 .second = EndpointKeyV6 {
                     .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
@@ -811,14 +811,14 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
             },
             .endpoint_a = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
-                .port = 53U,
+                .port = 123U,
             },
             .endpoint_b = EndpointKeyV6 {
                 .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
                 .port = 53'000U,
             },
             .flow_protocol = ProtocolId::udp,
-            .protocol_hint = FlowProtocolHint::dns,
+            .protocol_hint = FlowProtocolHint::ntp,
             .service_hint = "",
             .protocol_path_id = 17U,
             .packet_count = 2U,
@@ -1030,13 +1030,13 @@ CaptureState make_v16_metadata_capture_state_fixture() {
             .tcp_flags = static_cast<std::uint8_t>(0x01U),
         }
     );
-    ipv4_connection.protocol_hint = FlowProtocolHint::ntp;
+    ipv4_connection.protocol_hint = FlowProtocolHint::amqp;
 
     const FlowKeyV6 ipv6_flow_a {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
         .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
         .src_port = 53000U,
-        .dst_port = 53U,
+        .dst_port = 123U,
         .protocol = ProtocolId::udp,
         .protocol_path_id = ipv6_path_id,
     };
@@ -1053,7 +1053,7 @@ CaptureState make_v16_metadata_capture_state_fixture() {
         packet_ref_for_v16_metadata_test(140U, 80U, 75U, 1562U),
         PacketImportMetadata {.transport_payload_length = 25U}
     );
-    ipv6_connection.protocol_hint = FlowProtocolHint::dns;
+    ipv6_connection.protocol_hint = FlowProtocolHint::ntp;
 
     state.packet_locator = {
         CapturePacketLocatorEntry {.packet_index = 10U, .file_offset = 1000U},
@@ -1361,6 +1361,8 @@ void run_index_format_tests() {
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
         PFL_EXPECT(kCaptureIndexStableIndexRevision == 18U);
         PFL_EXPECT(kCaptureIndexVersion == 18U);
+        PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::amqp) == 20U);
+        PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::ntp) == 21U);
 
         detail::CaptureIndexStableHeader decoded_header {};
         std::istringstream read_stream(
