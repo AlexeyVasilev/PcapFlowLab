@@ -47,6 +47,12 @@ void expect_no_detected_application_protocol(const std::filesystem::path& relati
     PFL_EXPECT(row.service_hint.empty());
 }
 
+void expect_detected_ntp_protocol(const std::filesystem::path& relative_path, const ExpectedFlowShape& expected) {
+    const auto row = require_single_udp_flow(relative_path, expected);
+    PFL_EXPECT(row.protocol_hint == "ntp");
+    PFL_EXPECT(row.service_hint.empty());
+}
+
 ExpectedFlowShape client_to_server_one_packet(const std::uint16_t server_port) {
     return ExpectedFlowShape {
         .capture_packet_count = 1U,
@@ -71,29 +77,29 @@ ExpectedFlowShape server_to_client_one_packet() {
     };
 }
 
-void expect_future_target_positive_preimplementation_baseline() {
-    // Future target: NTPv4 mode-3 client request, ephemeral -> UDP/123.
-    expect_no_detected_application_protocol(
+void expect_target_positive_detection() {
+    // Target: NTPv4 mode-3 client request, ephemeral -> UDP/123.
+    expect_detected_ntp_protocol(
         "parsing/ntp/01_ntpv4_client_request_port123.pcap",
         client_to_server_one_packet(123U));
 
-    // Future target: NTPv4 mode-4 server response, UDP/123 -> ephemeral.
-    expect_no_detected_application_protocol(
+    // Target: NTPv4 mode-4 server response, UDP/123 -> ephemeral.
+    expect_detected_ntp_protocol(
         "parsing/ntp/02_ntpv4_server_response_port123.pcap",
         server_to_client_one_packet());
 
-    // Future target: NTPv3 mode-3 client request.
-    expect_no_detected_application_protocol(
+    // Target: NTPv3 mode-3 client request.
+    expect_detected_ntp_protocol(
         "parsing/ntp/03_ntpv3_client_request_port123.pcap",
         client_to_server_one_packet(123U));
 
-    // Future target: NTPv3 mode-4 server response.
-    expect_no_detected_application_protocol(
+    // Target: NTPv3 mode-4 server response.
+    expect_detected_ntp_protocol(
         "parsing/ntp/04_ntpv3_server_response_port123.pcap",
         server_to_client_one_packet());
 
-    // Future target: NTPv4 mode-4 stratum-0 KoD-style RATE response.
-    expect_no_detected_application_protocol(
+    // Target: NTPv4 mode-4 stratum-0 KoD-style RATE response.
+    expect_detected_ntp_protocol(
         "parsing/ntp/05_ntpv4_kod_rate_response.pcap",
         server_to_client_one_packet());
 }
@@ -128,7 +134,7 @@ void expect_permanent_negative_or_unsupported_baseline() {
 }  // namespace
 
 void run_ntp_pcap_fixture_tests() {
-    expect_future_target_positive_preimplementation_baseline();
+    expect_target_positive_detection();
     expect_permanent_negative_or_unsupported_baseline();
 }
 

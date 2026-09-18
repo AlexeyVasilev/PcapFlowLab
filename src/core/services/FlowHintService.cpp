@@ -29,6 +29,7 @@ constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
+constexpr std::uint16_t kNtpPort = 123;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
@@ -44,6 +45,7 @@ constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x0
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
 constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
 constexpr std::size_t kStunHeaderSize = 20U;
+constexpr std::size_t kNtpBasicHeaderSize = 48U;
 constexpr std::size_t kBootpFixedHeaderSize = 236U;
 constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
 constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
@@ -337,6 +339,34 @@ bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
     }
 
     return read_be32(payload, 4U) == kStunMagicCookie;
+}
+
+bool looks_like_ntp_message(std::span<const std::uint8_t> payload,
+                            const std::uint16_t src_port,
+                            const std::uint16_t dst_port) noexcept {
+    if (payload.size() != kNtpBasicHeaderSize) {
+        return false;
+    }
+
+    const auto version = static_cast<std::uint8_t>((payload[0] >> 3U) & 0x07U);
+    if (version != 3U && version != 4U) {
+        return false;
+    }
+
+    const auto mode = static_cast<std::uint8_t>(payload[0] & 0x07U);
+    if (mode == 3U) {
+        if (dst_port != kNtpPort) {
+            return false;
+        }
+    } else if (mode == 4U) {
+        if (src_port != kNtpPort) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    return payload[1] <= 16U;
 }
 
 bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
@@ -1049,6 +1079,19 @@ FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
         .protocol_hint = FlowProtocolHint::stun,
     };
 }
+
+FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> payload,
+                               const std::uint16_t src_port,
+                               const std::uint16_t dst_port) {
+    if (!looks_like_ntp_message(payload, src_port, dst_port)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::ntp,
+    };
+}
+
 FlowHintUpdate detect_dhcp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
@@ -1401,7 +1444,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_stun_hint(payload_view);
+        {
+            const auto stun_hint = detect_stun_hint(payload_view);
+            if (stun_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return stun_hint;
+            }
+        }
+
+        return detect_ntp_hint(payload_view, flow_key.src_port, flow_key.dst_port);
     default:
         return {};
     }
