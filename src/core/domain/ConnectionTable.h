@@ -11,6 +11,7 @@ namespace pfl {
 class ConnectionTableV4 {
 public:
     ConnectionV4& get_or_create(const ConnectionKeyV4& key);
+    [[nodiscard]] ConnectionV4* find(const ConnectionKeyV4& key) noexcept;
     [[nodiscard]] const ConnectionV4* find(const ConnectionKeyV4& key) const noexcept;
     [[nodiscard]] std::vector<const ConnectionV4*> list() const;
     [[nodiscard]] std::size_t size() const noexcept;
@@ -23,6 +24,7 @@ private:
 class ConnectionTableV6 {
 public:
     ConnectionV6& get_or_create(const ConnectionKeyV6& key);
+    [[nodiscard]] ConnectionV6* find(const ConnectionKeyV6& key) noexcept;
     [[nodiscard]] const ConnectionV6* find(const ConnectionKeyV6& key) const noexcept;
     [[nodiscard]] std::vector<const ConnectionV6*> list() const;
     [[nodiscard]] std::size_t size() const noexcept;

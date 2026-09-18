@@ -10,6 +10,14 @@ ConnectionV4& ConnectionTableV4::get_or_create(const ConnectionKeyV4& key) {
     return iterator->second;
 }
 
+ConnectionV4* ConnectionTableV4::find(const ConnectionKeyV4& key) noexcept {
+    const auto iterator = connections_.find(key);
+    if (iterator == connections_.end()) {
+        return nullptr;
+    }
+    return &iterator->second;
+}
+
 const ConnectionV4* ConnectionTableV4::find(const ConnectionKeyV4& key) const noexcept {
     const auto iterator = connections_.find(key);
     if (iterator == connections_.end()) {
@@ -44,6 +52,14 @@ ConnectionV6& ConnectionTableV6::get_or_create(const ConnectionKeyV6& key) {
         iterator->second.key = key;
     }
     return iterator->second;
+}
+
+ConnectionV6* ConnectionTableV6::find(const ConnectionKeyV6& key) noexcept {
+    const auto iterator = connections_.find(key);
+    if (iterator == connections_.end()) {
+        return nullptr;
+    }
+    return &iterator->second;
 }
 
 const ConnectionV6* ConnectionTableV6::find(const ConnectionKeyV6& key) const noexcept {

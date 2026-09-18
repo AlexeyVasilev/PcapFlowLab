@@ -26,6 +26,7 @@ public:
     explicit CaptureImportProcessor(AnalysisSettings settings = {});
 
     void process_packet(RawPcapPacket& packet, CaptureState& state) const;
+    void finalize_import(CaptureState& state) const;
     [[nodiscard]] ClassicImportPacketDisposition process_classic_import_packet(
         PcapReader& reader,
         RawPcapPacket& packet,

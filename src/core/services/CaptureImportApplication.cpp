@@ -87,6 +87,145 @@ namespace {
 }
 
 template <typename Connection, typename FlowKey>
+[[nodiscard]] std::optional<FlowKey> pending_tls_client_hello_flow_key(const Connection& connection) {
+    switch (pending_tls_client_hello_flow_slot(connection.hint_search_state)) {
+    case ConnectionFlowSlot::flow_a:
+        if (connection.has_flow_a) {
+            return connection.flow_a.key;
+        }
+        return std::nullopt;
+    case ConnectionFlowSlot::flow_b:
+        if (connection.has_flow_b) {
+            return connection.flow_b.key;
+        }
+        return std::nullopt;
+    case ConnectionFlowSlot::none:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+template <typename Connection, typename FlowKey>
+void discard_pending_tls_client_hello_state(
+    const FlowHintService& hint_service,
+    Connection& connection
+) {
+    if (const auto flow_key = pending_tls_client_hello_flow_key<Connection, FlowKey>(connection); flow_key.has_value()) {
+        hint_service.discard_pending_tls_client_hello(*flow_key);
+    }
+    clear_pending_tls_client_hello(connection.hint_search_state);
+}
+
+template <typename Connection, typename FlowKey>
+[[nodiscard]] bool apply_pending_tls_client_hello_continuation(
+    RawPcapPacket& packet,
+    Connection& connection,
+    const FlowKey& flow_key,
+    const PacketImportMetadata& import_metadata,
+    const FlowHintService& hint_service,
+    const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds,
+    const PacketBytesMaterializer materializer,
+    bool& recovered_service_hint
+) {
+    recovered_service_hint = false;
+    if (!has_pending_tls_client_hello(connection.hint_search_state)) {
+        return true;
+    }
+
+    if (!connection.service_hint.empty()) {
+        discard_pending_tls_client_hello_state<Connection, FlowKey>(hint_service, connection);
+        return true;
+    }
+
+    const auto current_slot = connection_flow_slot(connection, flow_key);
+    if (current_slot == ConnectionFlowSlot::none ||
+        current_slot != pending_tls_client_hello_flow_slot(connection.hint_search_state)) {
+        return true;
+    }
+
+    if (import_metadata.transport_payload_length.value_or(0U) == 0U) {
+        if (decrement_pending_tls_client_hello_budget(connection.hint_search_state)) {
+            hint_service.discard_pending_tls_client_hello(flow_key);
+            clear_pending_tls_client_hello(connection.hint_search_state);
+        }
+        return true;
+    }
+
+    if (!import_metadata.tcp_sequence_number.has_value() ||
+        !terminal_transport_payload_bounds.has_value()) {
+        hint_service.discard_pending_tls_client_hello(flow_key);
+        clear_pending_tls_client_hello(connection.hint_search_state);
+        return true;
+    }
+
+    if (packet.bytes.size() < packet.captured_length && !materializer.ensure_full_packet_bytes()) {
+        return false;
+    }
+
+    const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+    const auto hint = hint_service.attempt_tls_client_hello_continuation(
+        packet_bytes,
+        packet.data_link_type,
+        flow_key,
+        *terminal_transport_payload_bounds,
+        *import_metadata.tcp_sequence_number
+    );
+    clear_pending_tls_client_hello(connection.hint_search_state);
+    if (!hint.service_hint.empty()) {
+        connection.apply_hints(hint);
+        recovered_service_hint = true;
+    }
+    return true;
+}
+
+template <typename Connection, typename FlowKey>
+void discard_pending_tls_client_hello_if_service_settled(
+    const FlowHintService& hint_service,
+    Connection& connection
+) {
+    if (!connection.service_hint.empty() && has_pending_tls_client_hello(connection.hint_search_state)) {
+        discard_pending_tls_client_hello_state<Connection, FlowKey>(hint_service, connection);
+    }
+}
+
+template <typename Connection, typename FlowKey>
+void retain_pending_tls_client_hello_if_needed(
+    std::span<const std::uint8_t> packet_bytes,
+    const RawPcapPacket& packet,
+    Connection& connection,
+    const FlowKey& flow_key,
+    const PacketImportMetadata& import_metadata,
+    const FlowHintUpdate& packet_local_hint,
+    const FlowHintService& hint_service,
+    const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds
+) {
+    if (flow_key.protocol != ProtocolId::tcp ||
+        connection_flow_slot(connection, flow_key) == ConnectionFlowSlot::none ||
+        has_pending_tls_client_hello(connection.hint_search_state) ||
+        packet_local_hint.protocol_hint != FlowProtocolHint::tls ||
+        !connection.service_hint.empty() ||
+        !import_metadata.tcp_sequence_number.has_value() ||
+        !import_metadata.tcp_flags.has_value() ||
+        !terminal_transport_payload_bounds.has_value()) {
+        return;
+    }
+
+    if (hint_service.retain_tls_client_hello_prefix(
+            packet_bytes,
+            packet.data_link_type,
+            flow_key,
+            *terminal_transport_payload_bounds,
+            *import_metadata.tcp_sequence_number,
+            *import_metadata.tcp_flags
+        )) {
+        set_pending_tls_client_hello(
+            connection.hint_search_state,
+            connection_flow_slot(connection, flow_key)
+        );
+    }
+}
+
+template <typename Connection, typename FlowKey>
 [[nodiscard]] bool apply_decoded_flow_import(
     RawPcapPacket& packet,
     Connection& connection,
@@ -97,33 +236,66 @@ template <typename Connection, typename FlowKey>
     const PacketBytesMaterializer materializer
 ) {
     auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-    if (!import_metadata.is_ip_fragmented &&
-        connection.should_attempt_hint_detection(import_metadata, flow_key.protocol) &&
-        requires_full_packet_for_hint_detection(import_metadata, flow_key.protocol)) {
+
+    bool recovered_service_hint = false;
+    if (!apply_pending_tls_client_hello_continuation(
+            packet,
+            connection,
+            flow_key,
+            import_metadata,
+            hint_service,
+            terminal_transport_payload_bounds,
+            materializer,
+            recovered_service_hint
+        )) {
+        return false;
+    }
+    if (recovered_service_hint) {
+        return true;
+    }
+
+    if (import_metadata.is_ip_fragmented ||
+        !connection.should_attempt_hint_detection(import_metadata, flow_key.protocol)) {
+        return true;
+    }
+
+    if (requires_full_packet_for_hint_detection(import_metadata, flow_key.protocol)) {
         if (packet.bytes.size() < packet.captured_length && !materializer.ensure_full_packet_bytes()) {
             return false;
         }
 
         packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-        connection.apply_hints(hint_service.detect(
+        const auto hint = hint_service.detect(
             packet_bytes,
             packet.data_link_type,
             flow_key,
             terminal_transport_payload_bounds
-        ));
+        );
+        connection.apply_hints(hint);
         connection.note_hint_detection_attempt(import_metadata, flow_key.protocol);
+        discard_pending_tls_client_hello_if_service_settled<Connection, FlowKey>(hint_service, connection);
+        retain_pending_tls_client_hello_if_needed(
+            packet_bytes,
+            packet,
+            connection,
+            flow_key,
+            import_metadata,
+            hint,
+            hint_service,
+            terminal_transport_payload_bounds
+        );
         return true;
     }
 
-    apply_import_hints_if_needed(
-        packet,
+    const auto hint = hint_service.detect(
         packet_bytes,
-        import_metadata,
-        connection,
+        packet.data_link_type,
         flow_key,
-        hint_service,
         terminal_transport_payload_bounds
     );
+    connection.apply_hints(hint);
+    connection.note_hint_detection_attempt(import_metadata, flow_key.protocol);
+    discard_pending_tls_client_hello_if_service_settled<Connection, FlowKey>(hint_service, connection);
     return true;
 }
 

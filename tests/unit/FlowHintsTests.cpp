@@ -1,12 +1,15 @@
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "core/domain/Connection.h"
 #include "core/domain/FlowKey.h"
+#include "core/io/LinkType.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketPayloadService.h"
 #include "PcapTestUtils.h"
@@ -462,6 +465,167 @@ std::vector<std::uint8_t> make_unknown_tcp_payload() {
     };
 }
 
+FlowKeyV4 tls_flow_key_v4(
+    const std::uint32_t src_addr = ipv4(10, 80, 0, 1),
+    const std::uint32_t dst_addr = ipv4(10, 80, 0, 2),
+    const std::uint16_t src_port = 50123U,
+    const std::uint16_t dst_port = 443U
+) {
+    return FlowKeyV4 {
+        .src_addr = src_addr,
+        .dst_addr = dst_addr,
+        .src_port = src_port,
+        .dst_port = dst_port,
+        .protocol = ProtocolId::tcp,
+    };
+}
+
+FlowKeyV6 tls_flow_key_v6() {
+    return FlowKeyV6 {
+        .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x41}),
+        .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x42}),
+        .src_port = 50123U,
+        .dst_port = 443U,
+        .protocol = ProtocolId::tcp,
+    };
+}
+
+TerminalTransportPayloadBounds terminal_tcp_bounds(const std::size_t payload_offset, const std::size_t payload_size) {
+    return TerminalTransportPayloadBounds {
+        .payload_offset = payload_offset,
+        .declared_end_offset = payload_offset + payload_size,
+    };
+}
+
+std::vector<std::uint8_t> make_ipv6_tcp_segment(
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint8_t tcp_flags = 0x18U
+) {
+    std::vector<std::uint8_t> segment {};
+    append_be16(segment, src_port);
+    append_be16(segment, dst_port);
+    append_be32(segment, sequence_number);
+    append_be32(segment, 0U);
+    segment.push_back(0x50U);
+    segment.push_back(tcp_flags);
+    append_be16(segment, 0U);
+    append_be16(segment, 0U);
+    append_be16(segment, 0U);
+    segment.insert(segment.end(), payload.begin(), payload.end());
+    return segment;
+}
+
+std::vector<std::uint8_t> make_ipv6_tls_packet(
+    const FlowKeyV6& flow_key,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint8_t tcp_flags = 0x18U
+) {
+    return make_ethernet_ipv6_packet(
+        flow_key.src_addr,
+        flow_key.dst_addr,
+        6U,
+        make_ipv6_tcp_segment(flow_key.src_port, flow_key.dst_port, sequence_number, payload, tcp_flags)
+    );
+}
+
+std::uint32_t tcp_next_sequence(
+    const std::uint32_t sequence_number,
+    const std::size_t payload_size,
+    const std::uint8_t tcp_flags
+) {
+    PFL_REQUIRE(payload_size <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()));
+    return sequence_number + static_cast<std::uint32_t>(payload_size) + ((tcp_flags & 0x02U) != 0U ? 1U : 0U);
+}
+
+std::vector<std::uint8_t> make_client_hello_payload_for_sni(const std::string_view sni) {
+    std::vector<std::uint8_t> extensions {};
+    append_tls_extension(extensions, 0x000BU, {0x01U, 0x00U});
+    append_tls_extension(extensions, 0x0000U, make_tls_server_name_extension_body(sni));
+    return make_minimal_client_hello_payload_with_extensions(extensions);
+}
+
+std::size_t split_before_sni_name(const std::vector<std::uint8_t>& payload, const std::string_view sni) {
+    const auto sni_extension_size = static_cast<std::size_t>(4U + make_tls_server_name_extension_body(sni).size());
+    return payload.size() - (sni_extension_size - 2U);
+}
+
+std::vector<std::uint8_t> make_large_incomplete_client_hello_prefix(const std::size_t prefix_size) {
+    PFL_REQUIRE(prefix_size >= 9U);
+    const auto body_size = prefix_size + 512U;
+    std::vector<std::uint8_t> body(body_size, std::uint8_t {0x00U});
+    body[0] = 0x03U;
+    body[1] = 0x03U;
+    std::vector<std::uint8_t> record {};
+    record.push_back(0x16U);
+    append_be16(record, 0x0303U);
+    append_be16(record, static_cast<std::uint16_t>(body.size() + 4U));
+    record.push_back(0x01U);
+    append_be24(record, static_cast<std::uint32_t>(body.size()));
+    record.insert(record.end(), body.begin(), body.end());
+    return take_prefix(record, prefix_size);
+}
+
+std::vector<std::uint8_t> payload_suffix(const std::vector<std::uint8_t>& payload, const std::size_t offset) {
+    PFL_REQUIRE(offset <= payload.size());
+    return std::vector<std::uint8_t>(
+        payload.begin() + static_cast<std::vector<std::uint8_t>::difference_type>(offset),
+        payload.end()
+    );
+}
+
+std::vector<std::uint8_t> make_ipv4_tls_packet(
+    const FlowKeyV4& flow_key,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint8_t tcp_flags = 0x18U
+) {
+    return make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        flow_key.src_addr,
+        flow_key.dst_addr,
+        flow_key.src_port,
+        flow_key.dst_port,
+        payload,
+        sequence_number,
+        0U,
+        tcp_flags
+    );
+}
+
+std::vector<std::uint8_t> make_ipv4_reverse_tcp_packet(
+    const FlowKeyV4& flow_key,
+    const std::uint32_t sequence_number,
+    const std::uint32_t acknowledgement_number,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint8_t tcp_flags = 0x10U
+) {
+    return make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        flow_key.dst_addr,
+        flow_key.src_addr,
+        flow_key.dst_port,
+        flow_key.src_port,
+        payload,
+        sequence_number,
+        acknowledgement_number,
+        tcp_flags
+    );
+}
+
+std::pair<std::string, std::string> open_single_flow_protocol_and_service(
+    const std::string& file_name,
+    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets
+) {
+    const auto path = write_temp_pcap(file_name, make_classic_pcap(packets));
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(path));
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    return {rows[0].protocol_hint, rows[0].service_hint};
+}
+
 }  // namespace
 
 void run_flow_hints_tests() {
@@ -613,6 +777,663 @@ void run_flow_hints_tests() {
         const auto packet5_hint = detect_tcp_flow_hint(packet5_payload);
         PFL_EXPECT(packet5_hint.protocol_hint == FlowProtocolHint::unknown);
         PFL_EXPECT(packet5_hint.service_hint.empty());
+    }
+
+    {
+        const std::string sni {"edge.microsoft.com"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4();
+        constexpr std::uint32_t sequence_number = 0x1000U;
+
+        const auto first_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            0x18U
+        );
+        const auto second_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            second_payload,
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U),
+            0U,
+            0x18U
+        );
+
+        FlowHintService service {};
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        PFL_EXPECT(service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 1U);
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == first_payload.size());
+
+        const auto hint = service.attempt_tls_client_hello_continuation(
+            second_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U)
+        );
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(hint.service_hint == sni);
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        const std::string sni {"reverse-gap.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2));
+        constexpr std::uint32_t sequence_number = 0x2000U;
+        const auto next_sequence = tcp_next_sequence(sequence_number, first_payload.size(), 0x18U);
+
+        const auto [protocol, service] = open_single_flow_protocol_and_service(
+            "pfl_flow_hint_tls_reverse_between_segments.pcap",
+            {
+                {100U, make_ipv4_tls_packet(flow_key, sequence_number, first_payload)},
+                {110U, make_ipv4_reverse_tcp_packet(flow_key, 9000U, next_sequence, std::vector<std::uint8_t> {})},
+                {120U, make_ipv4_tls_packet(flow_key, next_sequence, second_payload)},
+            }
+        );
+        PFL_EXPECT(protocol == "tls");
+        PFL_EXPECT(service == sni);
+    }
+
+    {
+        const std::string sni {"zero-budget.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 90, 1, 1), ipv4(10, 90, 1, 2));
+        constexpr std::uint32_t sequence_number = 0x3000U;
+        const auto next_sequence = tcp_next_sequence(sequence_number, first_payload.size(), 0x18U);
+
+        const auto [protocol, service] = open_single_flow_protocol_and_service(
+            "pfl_flow_hint_tls_zero_payload_budget_survives.pcap",
+            {
+                {100U, make_ipv4_tls_packet(flow_key, sequence_number, first_payload)},
+                {110U, make_ipv4_tls_packet(flow_key, next_sequence, std::vector<std::uint8_t> {}, 0x10U)},
+                {120U, make_ipv4_tls_packet(flow_key, next_sequence, std::vector<std::uint8_t> {}, 0x10U)},
+                {130U, make_ipv4_tls_packet(flow_key, next_sequence, second_payload)},
+            }
+        );
+        PFL_EXPECT(protocol == "tls");
+        PFL_EXPECT(service == sni);
+    }
+
+    {
+        const std::string sni {"expired.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 90, 2, 1), ipv4(10, 90, 2, 2));
+        constexpr std::uint32_t sequence_number = 0x4000U;
+        const auto next_sequence = tcp_next_sequence(sequence_number, first_payload.size(), 0x18U);
+
+        const auto [protocol, service] = open_single_flow_protocol_and_service(
+            "pfl_flow_hint_tls_zero_payload_budget_expires.pcap",
+            {
+                {100U, make_ipv4_tls_packet(flow_key, sequence_number, first_payload)},
+                {110U, make_ipv4_tls_packet(flow_key, next_sequence, std::vector<std::uint8_t> {}, 0x10U)},
+                {120U, make_ipv4_tls_packet(flow_key, next_sequence, std::vector<std::uint8_t> {}, 0x10U)},
+                {130U, make_ipv4_tls_packet(flow_key, next_sequence, std::vector<std::uint8_t> {}, 0x10U)},
+                {140U, make_ipv4_tls_packet(flow_key, next_sequence, second_payload)},
+            }
+        );
+        PFL_EXPECT(protocol == "tls");
+        PFL_EXPECT(service.empty());
+    }
+
+    {
+        const std::string sni {"budget-exhausted.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 90, 3, 1), ipv4(10, 90, 3, 2));
+        constexpr std::uint32_t sequence_number = 0x5000U;
+        const auto unknown_payload = make_unknown_tcp_payload();
+        std::uint32_t cursor = sequence_number;
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+        for (std::uint32_t index = 0U; index < 9U; ++index) {
+            packets.push_back({100U + index, make_ipv4_tls_packet(flow_key, cursor, unknown_payload)});
+            cursor = tcp_next_sequence(cursor, unknown_payload.size(), 0x18U);
+        }
+        packets.push_back({120U, make_ipv4_tls_packet(flow_key, cursor, first_payload)});
+        cursor = tcp_next_sequence(cursor, first_payload.size(), 0x18U);
+        packets.push_back({130U, make_ipv4_tls_packet(flow_key, cursor, second_payload)});
+
+        const auto [protocol, service] = open_single_flow_protocol_and_service(
+            "pfl_flow_hint_tls_pending_after_generic_budget_exhaustion.pcap",
+            packets
+        );
+        PFL_EXPECT(protocol == "tls");
+        PFL_EXPECT(service == sni);
+    }
+
+    {
+        FlowHintService service {};
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 1, 1), ipv4(10, 80, 1, 2));
+        const auto full_payload = make_client_hello_payload_for_sni("complete.example.test");
+        const auto full_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            full_payload,
+            1U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            full_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, full_payload.size()),
+            1U,
+            0x18U
+        ));
+
+        const auto no_sni_payload = make_minimal_client_hello_payload_with_extensions(std::vector<std::uint8_t> {});
+        const auto no_sni_flow_key = tls_flow_key_v4(ipv4(10, 80, 2, 1), ipv4(10, 80, 2, 2));
+        const auto no_sni_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            no_sni_flow_key.src_addr,
+            no_sni_flow_key.dst_addr,
+            no_sni_flow_key.src_port,
+            no_sni_flow_key.dst_port,
+            no_sni_payload,
+            1U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            no_sni_packet,
+            kLinkTypeEthernet,
+            no_sni_flow_key,
+            terminal_tcp_bounds(54U, no_sni_payload.size()),
+            1U,
+            0x18U
+        ));
+
+        const std::vector<std::uint8_t> partial_header_payload {
+            0x16U, 0x03U, 0x03U, 0x00U, 0x20U, 0x01U
+        };
+        const auto partial_header_flow_key = tls_flow_key_v4(ipv4(10, 80, 3, 1), ipv4(10, 80, 3, 2));
+        const auto partial_header_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            partial_header_flow_key.src_addr,
+            partial_header_flow_key.dst_addr,
+            partial_header_flow_key.src_port,
+            partial_header_flow_key.dst_port,
+            partial_header_payload,
+            1U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            partial_header_packet,
+            kLinkTypeEthernet,
+            partial_header_flow_key,
+            terminal_tcp_bounds(54U, partial_header_payload.size()),
+            1U,
+            0x18U
+        ));
+
+        const auto server_hello_payload = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x02U, {0x00U, 0x01U, 0x02U, 0x03U})
+        );
+        const auto server_hello_flow_key = tls_flow_key_v4(ipv4(10, 80, 4, 1), ipv4(10, 80, 4, 2));
+        const auto server_hello_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            server_hello_flow_key.src_addr,
+            server_hello_flow_key.dst_addr,
+            server_hello_flow_key.src_port,
+            server_hello_flow_key.dst_port,
+            server_hello_payload,
+            1U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            server_hello_packet,
+            kLinkTypeEthernet,
+            server_hello_flow_key,
+            terminal_tcp_bounds(54U, server_hello_payload.size()),
+            1U,
+            0x18U
+        ));
+
+        const auto fin_payload = take_prefix(full_payload, split_before_sni_name(full_payload, "complete.example.test"));
+        const auto fin_flow_key = tls_flow_key_v4(ipv4(10, 80, 5, 1), ipv4(10, 80, 5, 2));
+        const auto fin_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            fin_flow_key.src_addr,
+            fin_flow_key.dst_addr,
+            fin_flow_key.src_port,
+            fin_flow_key.dst_port,
+            fin_payload,
+            1U,
+            0U,
+            0x19U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            fin_packet,
+            kLinkTypeEthernet,
+            fin_flow_key,
+            terminal_tcp_bounds(54U, fin_payload.size()),
+            1U,
+            0x19U
+        ));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+    }
+
+    {
+        const std::string sni {"wrap.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 6, 1), ipv4(10, 80, 6, 2));
+        constexpr std::uint32_t sequence_number = 0xFFFFFFF0U;
+        constexpr std::uint8_t tcp_flags = 0x02U;
+        const auto first_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            tcp_flags
+        );
+        const auto second_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            second_payload,
+            tcp_next_sequence(sequence_number, first_payload.size(), tcp_flags),
+            0U,
+            0x18U
+        );
+
+        FlowHintService service {};
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            tcp_flags
+        ));
+        const auto hint = service.attempt_tls_client_hello_continuation(
+            second_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), tcp_flags)
+        );
+        PFL_EXPECT(hint.service_hint == sni);
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        const std::string sni {"gap.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 7, 1), ipv4(10, 80, 7, 2));
+        constexpr std::uint32_t sequence_number = 2000U;
+        const auto first_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            0x18U
+        );
+        const auto second_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            second_payload,
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U) + 1U,
+            0U,
+            0x18U
+        );
+
+        FlowHintService service {};
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        const auto gap_hint = service.attempt_tls_client_hello_continuation(
+            second_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U) + 1U
+        );
+        PFL_EXPECT(gap_hint.service_hint.empty());
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        const auto overlap_hint = service.attempt_tls_client_hello_continuation(
+            second_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U) - 1U
+        );
+        PFL_EXPECT(overlap_hint.service_hint.empty());
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        const std::string sni {"truncated.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 8, 1), ipv4(10, 80, 8, 2));
+        constexpr std::uint32_t sequence_number = 3000U;
+        auto first_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            0x18U
+        );
+        first_packet.pop_back();
+
+        FlowHintService service {};
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+
+        const auto full_first_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            full_first_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        const auto short_second_payload = take_prefix(second_payload, second_payload.size() - 1U);
+        const auto short_second_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            short_second_payload,
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U),
+            0U,
+            0x18U
+        );
+        const auto short_second_hint = service.attempt_tls_client_hello_continuation(
+            short_second_packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, short_second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U)
+        );
+        PFL_EXPECT(short_second_hint.service_hint.empty());
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        const std::string sni {"ipv6.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v6();
+        constexpr std::uint32_t sequence_number = 4000U;
+
+        FlowHintService service {};
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            make_ipv6_tls_packet(flow_key, sequence_number, first_payload),
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(74U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        const auto hint = service.attempt_tls_client_hello_continuation(
+            make_ipv6_tls_packet(flow_key, tcp_next_sequence(sequence_number, first_payload.size(), 0x18U), second_payload),
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(74U, second_payload.size()),
+            tcp_next_sequence(sequence_number, first_payload.size(), 0x18U)
+        );
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(hint.service_hint == sni);
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+    }
+
+    {
+        const auto too_large_prefix = make_large_incomplete_client_hello_prefix(4097U);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 9, 1), ipv4(10, 80, 9, 2));
+        const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            too_large_prefix,
+            1U,
+            0U,
+            0x18U
+        );
+        FlowHintService service {};
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, too_large_prefix.size()),
+            1U,
+            0x18U
+        ));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+    }
+
+    {
+        const auto small_prefix = make_large_incomplete_client_hello_prefix(64U);
+        FlowHintService service {};
+        for (std::uint32_t index = 0U; index < 4096U; ++index) {
+            const auto flow_key = tls_flow_key_v4(
+                ipv4(10, 81, static_cast<std::uint8_t>((index >> 8U) & 0xFFU), static_cast<std::uint8_t>(index & 0xFFU)),
+                ipv4(10, 82, 0, 1)
+            );
+            const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                flow_key.src_addr,
+                flow_key.dst_addr,
+                flow_key.src_port,
+                flow_key.dst_port,
+                small_prefix,
+                index,
+                0U,
+                0x18U
+            );
+            PFL_EXPECT(service.retain_tls_client_hello_prefix(
+                packet,
+                kLinkTypeEthernet,
+                flow_key,
+                terminal_tcp_bounds(54U, small_prefix.size()),
+                index,
+                0x18U
+            ));
+        }
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 4096U);
+        const auto overflow_key = tls_flow_key_v4(ipv4(10, 83, 0, 1), ipv4(10, 84, 0, 1));
+        const auto overflow_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            overflow_key.src_addr,
+            overflow_key.dst_addr,
+            overflow_key.src_port,
+            overflow_key.dst_port,
+            small_prefix,
+            5000U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            overflow_packet,
+            kLinkTypeEthernet,
+            overflow_key,
+            terminal_tcp_bounds(54U, small_prefix.size()),
+            5000U,
+            0x18U
+        ));
+    }
+
+    {
+        const auto large_prefix = make_large_incomplete_client_hello_prefix(4096U);
+        FlowHintService service {};
+        for (std::uint32_t index = 0U; index < 2048U; ++index) {
+            const auto flow_key = tls_flow_key_v4(
+                ipv4(10, 85, static_cast<std::uint8_t>((index >> 8U) & 0xFFU), static_cast<std::uint8_t>(index & 0xFFU)),
+                ipv4(10, 86, 0, 1)
+            );
+            const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                flow_key.src_addr,
+                flow_key.dst_addr,
+                flow_key.src_port,
+                flow_key.dst_port,
+                large_prefix,
+                index,
+                0U,
+                0x18U
+            );
+            PFL_EXPECT(service.retain_tls_client_hello_prefix(
+                packet,
+                kLinkTypeEthernet,
+                flow_key,
+                terminal_tcp_bounds(54U, large_prefix.size()),
+                index,
+                0x18U
+            ));
+        }
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == (static_cast<std::size_t>(2048U) * 4096U));
+        const auto overflow_key = tls_flow_key_v4(ipv4(10, 87, 0, 1), ipv4(10, 88, 0, 1));
+        const auto small_prefix = make_large_incomplete_client_hello_prefix(64U);
+        const auto overflow_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            overflow_key.src_addr,
+            overflow_key.dst_addr,
+            overflow_key.src_port,
+            overflow_key.dst_port,
+            small_prefix,
+            6000U,
+            0U,
+            0x18U
+        );
+        PFL_EXPECT(!service.retain_tls_client_hello_prefix(
+            overflow_packet,
+            kLinkTypeEthernet,
+            overflow_key,
+            terminal_tcp_bounds(54U, small_prefix.size()),
+            6000U,
+            0x18U
+        ));
+    }
+
+    {
+        const std::string sni {"discard.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 80, 10, 1), ipv4(10, 80, 10, 2));
+        constexpr std::uint32_t sequence_number = 7000U;
+        const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+            flow_key.src_addr,
+            flow_key.dst_addr,
+            flow_key.src_port,
+            flow_key.dst_port,
+            first_payload,
+            sequence_number,
+            0U,
+            0x18U
+        );
+
+        FlowHintService service {};
+        PFL_EXPECT(service.retain_tls_client_hello_prefix(
+            packet,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size()),
+            sequence_number,
+            0x18U
+        ));
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == first_payload.size());
+        service.discard_pending_tls_client_hello(flow_key);
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            std::filesystem::path(__FILE__).parent_path().parent_path() /
+            "data" / "parsing/tls/tls_sni_in_second_segment_20.pcap"
+        ));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "tls");
+        PFL_EXPECT(rows[0].service_hint == "edge.microsoft.com");
     }
 
     {

@@ -1,16 +1,20 @@
 #include "core/services/FlowHintService.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
@@ -39,6 +43,9 @@ constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kTlsHandshakeHeaderSize = 4;
 constexpr std::uint16_t kTlsClientHelloFixedFieldsSize = 34;
 constexpr std::size_t kTlsMaxRecordPayloadSize = (1U << 14U) + 2048U;
+constexpr std::size_t kMaxPendingTlsClientHelloCandidates = 4096U;
+constexpr std::size_t kMaxPendingTlsClientHelloRetainedBytes = 8U * 1024U * 1024U;
+constexpr std::size_t kMaxPendingTlsClientHelloPrefixBytes = 4096U;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -64,6 +71,21 @@ struct MqttVariableByteInteger {
     std::uint32_t value {0U};
     std::size_t encoded_size {0U};
 };
+
+enum class TlsClientHelloPrefixState : std::uint8_t {
+    not_client_hello = 0,
+    incomplete_client_hello,
+    complete_client_hello_without_sni,
+    client_hello_with_sni,
+    malformed_or_out_of_scope,
+};
+
+struct TlsClientHelloPrefixClassification {
+    TlsClientHelloPrefixState state {TlsClientHelloPrefixState::not_client_hello};
+    std::size_t expected_client_hello_end {0U};
+};
+
+FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload);
 
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
@@ -860,6 +882,241 @@ std::optional<std::string> extract_tls_sni_from_client_hello_prefix(std::span<co
     return std::nullopt;
 }
 
+TlsClientHelloPrefixClassification classify_tls_client_hello_prefix(std::span<const std::uint8_t> payload) {
+    if (payload.size() < kTlsRecordHeaderSize) {
+        return {
+            .state = TlsClientHelloPrefixState::malformed_or_out_of_scope,
+        };
+    }
+
+    if (!looks_like_tls_record_prefix(payload) || payload[0] != 0x16U) {
+        return {
+            .state = TlsClientHelloPrefixState::not_client_hello,
+        };
+    }
+
+    const auto record_payload_length = static_cast<std::size_t>(read_be16(payload, 3U));
+    if (!has_available_range(payload, kTlsRecordHeaderSize, kTlsHandshakeHeaderSize)) {
+        return {
+            .state = TlsClientHelloPrefixState::malformed_or_out_of_scope,
+        };
+    }
+
+    if (payload[kTlsRecordHeaderSize] != 0x01U) {
+        return {
+            .state = TlsClientHelloPrefixState::not_client_hello,
+        };
+    }
+
+    const auto handshake_body_length = static_cast<std::size_t>(read_be24(payload, kTlsRecordHeaderSize + 1U));
+    if (handshake_body_length == 0U) {
+        return {
+            .state = TlsClientHelloPrefixState::malformed_or_out_of_scope,
+        };
+    }
+
+    if (record_payload_length < kTlsHandshakeHeaderSize ||
+        handshake_body_length > (record_payload_length - kTlsHandshakeHeaderSize)) {
+        return {
+            .state = TlsClientHelloPrefixState::malformed_or_out_of_scope,
+        };
+    }
+
+    const auto expected_client_hello_end = kTlsRecordHeaderSize + kTlsHandshakeHeaderSize + handshake_body_length;
+    if (expected_client_hello_end < kTlsRecordHeaderSize) {
+        return {
+            .state = TlsClientHelloPrefixState::malformed_or_out_of_scope,
+        };
+    }
+
+    if (payload.size() < expected_client_hello_end) {
+        return {
+            .state = TlsClientHelloPrefixState::incomplete_client_hello,
+            .expected_client_hello_end = expected_client_hello_end,
+        };
+    }
+
+    const auto sni = extract_tls_sni_from_client_hello_prefix(payload.first(expected_client_hello_end));
+    return {
+        .state = sni.has_value()
+            ? TlsClientHelloPrefixState::client_hello_with_sni
+            : TlsClientHelloPrefixState::complete_client_hello_without_sni,
+        .expected_client_hello_end = expected_client_hello_end,
+    };
+}
+
+[[nodiscard]] bool terminal_payload_fully_captured(
+    std::span<const std::uint8_t> packet_bytes,
+    const TerminalTransportPayloadBounds& bounds
+) noexcept {
+    return bounds.declared_end_offset >= bounds.payload_offset &&
+           bounds.declared_end_offset <= packet_bytes.size();
+}
+
+[[nodiscard]] std::uint32_t advance_tcp_sequence_number(
+    const std::uint32_t sequence_number,
+    const std::size_t payload_length,
+    const std::uint8_t tcp_flags
+) noexcept {
+    const auto payload_delta = static_cast<std::uint32_t>(
+        payload_length & static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())
+    );
+    const auto syn_delta = (tcp_flags & 0x02U) != 0U ? 1U : 0U;
+    return sequence_number + payload_delta + syn_delta;
+}
+
+template <typename LeftPendingMap, typename RightPendingMap>
+[[nodiscard]] std::size_t pending_tls_candidate_count(
+    const LeftPendingMap& left,
+    const RightPendingMap& right
+) noexcept {
+    return left.size() + right.size();
+}
+
+template <typename PendingMap, typename FlowKey>
+void erase_pending_tls_candidate(
+    PendingMap& pending,
+    const FlowKey& flow_key,
+    std::size_t& retained_bytes
+) noexcept {
+    const auto iterator = pending.find(flow_key);
+    if (iterator == pending.end()) {
+        return;
+    }
+
+    retained_bytes -= std::min(retained_bytes, iterator->second.retained_prefix.size());
+    pending.erase(iterator);
+}
+
+template <typename FlowKey, typename PendingMap>
+[[nodiscard]] bool retain_tls_client_hello_prefix_impl(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const FlowKey& flow_key,
+    const TerminalTransportPayloadBounds& terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number,
+    const std::uint8_t tcp_flags,
+    PendingMap& pending,
+    const std::size_t pending_candidate_count,
+    std::size_t& retained_bytes
+) {
+    if ((tcp_flags & 0x01U) != 0U ||
+        pending.find(flow_key) != pending.end() ||
+        pending_candidate_count >= kMaxPendingTlsClientHelloCandidates ||
+        !terminal_payload_fully_captured(packet_bytes, terminal_transport_payload_bounds)) {
+        return false;
+    }
+
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_terminal_transport_payload_view(
+        packet_bytes,
+        terminal_transport_payload_bounds
+    );
+    if (!payload.found || payload.payload.empty()) {
+        return false;
+    }
+
+    if (retained_bytes > kMaxPendingTlsClientHelloRetainedBytes ||
+        payload.payload.size() > kMaxPendingTlsClientHelloPrefixBytes ||
+        payload.payload.size() > (kMaxPendingTlsClientHelloRetainedBytes - retained_bytes)) {
+        return false;
+    }
+
+    const auto packet_local_hint = detect_tls_hint(payload.payload);
+    if (!packet_local_hint.service_hint.empty()) {
+        return false;
+    }
+
+    const auto classification = classify_tls_client_hello_prefix(payload.payload);
+    if (classification.state != TlsClientHelloPrefixState::incomplete_client_hello) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> retained_prefix {};
+    retained_prefix.assign(payload.payload.begin(), payload.payload.end());
+    const auto expected_next_sequence_number = advance_tcp_sequence_number(
+        tcp_sequence_number,
+        payload.payload.size(),
+        tcp_flags
+    );
+
+    const auto retained_size = retained_prefix.size();
+    pending.emplace(
+        flow_key,
+        PendingTlsClientHello {
+            .retained_prefix = std::move(retained_prefix),
+            .expected_next_sequence_number = expected_next_sequence_number,
+            .expected_client_hello_end = classification.expected_client_hello_end,
+        }
+    );
+    retained_bytes += retained_size;
+    static_cast<void>(data_link_type);
+    return true;
+}
+
+template <typename FlowKey, typename PendingMap>
+[[nodiscard]] FlowHintUpdate attempt_tls_client_hello_continuation_impl(
+    std::span<const std::uint8_t> packet_bytes,
+    const FlowKey& flow_key,
+    const TerminalTransportPayloadBounds& terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number,
+    PendingMap& pending,
+    std::size_t& retained_bytes
+) {
+    const auto iterator = pending.find(flow_key);
+    if (iterator == pending.end()) {
+        return {};
+    }
+
+    auto entry = std::move(iterator->second);
+    retained_bytes -= std::min(retained_bytes, entry.retained_prefix.size());
+    pending.erase(iterator);
+
+    if (tcp_sequence_number != entry.expected_next_sequence_number ||
+        entry.expected_client_hello_end <= entry.retained_prefix.size()) {
+        return {};
+    }
+
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_terminal_transport_payload_view(
+        packet_bytes,
+        terminal_transport_payload_bounds
+    );
+    if (!payload.found || payload.payload.empty()) {
+        return {};
+    }
+
+    const auto remaining_needed = entry.expected_client_hello_end - entry.retained_prefix.size();
+    if (payload.payload.size() < remaining_needed) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> combined {};
+    combined.reserve(entry.expected_client_hello_end);
+    combined.insert(combined.end(), entry.retained_prefix.begin(), entry.retained_prefix.end());
+    combined.insert(
+        combined.end(),
+        payload.payload.begin(),
+        payload.payload.begin() + static_cast<std::ptrdiff_t>(remaining_needed)
+    );
+
+    const auto classification = classify_tls_client_hello_prefix(combined);
+    if (classification.state != TlsClientHelloPrefixState::client_hello_with_sni &&
+        classification.state != TlsClientHelloPrefixState::complete_client_hello_without_sni) {
+        return {};
+    }
+
+    FlowHintUpdate hint {
+        .protocol_hint = FlowProtocolHint::tls,
+        .tls_version = classify_tls_version(read_be16(combined, 1U)),
+    };
+    const auto sni = extract_tls_sni_from_client_hello_prefix(combined);
+    if (sni.has_value()) {
+        hint.service_hint = *sni;
+    }
+    return hint;
+}
+
 std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message, std::size_t& offset) {
     std::string name {};
     bool first_label = true;
@@ -1570,6 +1827,135 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
         },
         quic_initial_ipv6_states_
     );
+}
+
+bool FlowHintService::retain_tls_client_hello_prefix(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const FlowKeyV4& flow_key,
+    const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number,
+    const std::uint8_t tcp_flags
+) const {
+    return retain_tls_client_hello_prefix_impl(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        tcp_sequence_number,
+        tcp_flags,
+        pending_tls_client_hello_ipv4_,
+        pending_tls_candidate_count(pending_tls_client_hello_ipv4_, pending_tls_client_hello_ipv6_),
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+bool FlowHintService::retain_tls_client_hello_prefix(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const FlowKeyV6& flow_key,
+    const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number,
+    const std::uint8_t tcp_flags
+) const {
+    return retain_tls_client_hello_prefix_impl(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        tcp_sequence_number,
+        tcp_flags,
+        pending_tls_client_hello_ipv6_,
+        pending_tls_candidate_count(pending_tls_client_hello_ipv4_, pending_tls_client_hello_ipv6_),
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+FlowHintUpdate FlowHintService::attempt_tls_client_hello_continuation(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const FlowKeyV4& flow_key,
+    const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number
+) const {
+    static_cast<void>(data_link_type);
+    return attempt_tls_client_hello_continuation_impl(
+        packet_bytes,
+        flow_key,
+        terminal_transport_payload_bounds,
+        tcp_sequence_number,
+        pending_tls_client_hello_ipv4_,
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+FlowHintUpdate FlowHintService::attempt_tls_client_hello_continuation(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const FlowKeyV6& flow_key,
+    const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
+    const std::uint32_t tcp_sequence_number
+) const {
+    static_cast<void>(data_link_type);
+    return attempt_tls_client_hello_continuation_impl(
+        packet_bytes,
+        flow_key,
+        terminal_transport_payload_bounds,
+        tcp_sequence_number,
+        pending_tls_client_hello_ipv6_,
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+void FlowHintService::discard_pending_tls_client_hello(const FlowKeyV4& flow_key) const {
+    erase_pending_tls_candidate(
+        pending_tls_client_hello_ipv4_,
+        flow_key,
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+void FlowHintService::discard_pending_tls_client_hello(const FlowKeyV6& flow_key) const {
+    erase_pending_tls_candidate(
+        pending_tls_client_hello_ipv6_,
+        flow_key,
+        pending_tls_client_hello_retained_bytes_
+    );
+}
+
+bool FlowHintService::has_pending_tls_client_hello(const FlowKeyV4& flow_key) const {
+    return pending_tls_client_hello_ipv4_.find(flow_key) != pending_tls_client_hello_ipv4_.end();
+}
+
+bool FlowHintService::has_pending_tls_client_hello(const FlowKeyV6& flow_key) const {
+    return pending_tls_client_hello_ipv6_.find(flow_key) != pending_tls_client_hello_ipv6_.end();
+}
+
+std::size_t FlowHintService::pending_tls_client_hello_candidate_count() const noexcept {
+    return pending_tls_client_hello_ipv4_.size() + pending_tls_client_hello_ipv6_.size();
+}
+
+std::size_t FlowHintService::pending_tls_client_hello_retained_bytes() const noexcept {
+    return pending_tls_client_hello_retained_bytes_;
+}
+
+void FlowHintService::clear_pending_tls_client_hello_candidates(CaptureState& state) const {
+    for (const auto& [flow_key, entry] : pending_tls_client_hello_ipv4_) {
+        static_cast<void>(entry);
+        if (auto* connection = state.ipv4_connections.find(make_connection_key(flow_key)); connection != nullptr) {
+            clear_pending_tls_client_hello(connection->hint_search_state);
+        }
+    }
+    for (const auto& [flow_key, entry] : pending_tls_client_hello_ipv6_) {
+        static_cast<void>(entry);
+        if (auto* connection = state.ipv6_connections.find(make_connection_key(flow_key)); connection != nullptr) {
+            clear_pending_tls_client_hello(connection->hint_search_state);
+        }
+    }
+
+    pending_tls_client_hello_ipv4_.clear();
+    pending_tls_client_hello_ipv6_.clear();
+    pending_tls_client_hello_retained_bytes_ = 0U;
 }
 
 }  // namespace pfl
