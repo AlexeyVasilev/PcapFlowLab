@@ -10,6 +10,7 @@ namespace pfl {
 struct PacketImportMetadata {
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint8_t> tcp_flags {};
+    std::optional<std::uint32_t> tcp_sequence_number {};
     bool is_ip_fragmented {false};
 };
 

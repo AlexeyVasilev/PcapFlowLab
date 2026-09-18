@@ -165,6 +165,31 @@ void run_connection_tests() {
     PFL_EXPECT(connection_v4.aggregate_stats.max_original_packet_length == 130U);
     PFL_EXPECT(connection_v4.aggregate_stats.max_captured_packet_length == 130U);
 
+    {
+        ConnectionV4 slot_connection {
+            .key = make_connection_key(flow_v4_ab),
+        };
+        const FlowKeyV4 unrelated_flow {
+            .src_addr = ipv4(198, 51, 100, 10),
+            .dst_addr = ipv4(198, 51, 100, 11),
+            .src_port = 1111,
+            .dst_port = 2222,
+            .protocol = ProtocolId::tcp,
+        };
+
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v4_ab) == ConnectionFlowSlot::none);
+        slot_connection.add_packet(flow_v4_ba, packet_ref(20, 100));
+        PFL_EXPECT(resolve_direction(slot_connection.key, flow_v4_ba) == Direction::b_to_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v4_ba) == ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v4_ab) == ConnectionFlowSlot::none);
+        PFL_EXPECT(connection_flow_slot(slot_connection, unrelated_flow) == ConnectionFlowSlot::none);
+
+        slot_connection.add_packet(flow_v4_ab, packet_ref(21, 101));
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v4_ba) == ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v4_ab) == ConnectionFlowSlot::flow_b);
+        PFL_EXPECT(connection_flow_slot(slot_connection, unrelated_flow) == ConnectionFlowSlot::none);
+    }
+
     const FlowKeyV6 flow_v6_ab {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
         .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
@@ -205,6 +230,30 @@ void run_connection_tests() {
     PFL_EXPECT(connection_v6.aggregate_stats.tcp_rst_count == 0U);
     PFL_EXPECT(connection_v6.aggregate_stats.max_original_packet_length == 82U);
     PFL_EXPECT(connection_v6.aggregate_stats.max_captured_packet_length == 82U);
+
+    {
+        ConnectionV6 slot_connection {
+            .key = make_connection_key(flow_v6_ab),
+        };
+        const FlowKeyV6 unrelated_flow {
+            .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
+            .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
+            .src_port = 6000,
+            .dst_port = 6001,
+            .protocol = ProtocolId::udp,
+        };
+
+        slot_connection.add_packet(flow_v6_ba, packet_ref(30, 100));
+        PFL_EXPECT(resolve_direction(slot_connection.key, flow_v6_ba) == Direction::b_to_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v6_ba) == ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v6_ab) == ConnectionFlowSlot::none);
+        PFL_EXPECT(connection_flow_slot(slot_connection, unrelated_flow) == ConnectionFlowSlot::none);
+
+        slot_connection.add_packet(flow_v6_ab, packet_ref(31, 101));
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v6_ba) == ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(connection_flow_slot(slot_connection, flow_v6_ab) == ConnectionFlowSlot::flow_b);
+        PFL_EXPECT(connection_flow_slot(slot_connection, unrelated_flow) == ConnectionFlowSlot::none);
+    }
 
     const FlowV4 empty_flow_v4 {};
     const FlowV6 empty_flow_v6 {};
@@ -283,6 +332,42 @@ void run_connection_tests() {
                    kMaxUnresolvedHintPayloadAttemptsPerConnection);
         PFL_EXPECT(http_connection.hint_search_state.unresolved_payload_attempt_budget_exhausted);
         PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_import_metadata(24U), ProtocolId::tcp));
+    }
+
+    {
+        ConnectionHintSearchState tls_state {};
+        PFL_EXPECT(!has_pending_tls_client_hello(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_flow_slot(tls_state) == ConnectionFlowSlot::none);
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) == 0U);
+        PFL_EXPECT(!decrement_pending_tls_client_hello_budget(tls_state));
+        PFL_EXPECT(!has_pending_tls_client_hello(tls_state));
+
+        set_pending_tls_client_hello(tls_state, ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(has_pending_tls_client_hello(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_flow_slot(tls_state) == ConnectionFlowSlot::flow_a);
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) ==
+                   kMaxPendingTlsClientHelloSameDirectionPacketBudget);
+        PFL_EXPECT(!decrement_pending_tls_client_hello_budget(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) == 2U);
+        PFL_EXPECT(!decrement_pending_tls_client_hello_budget(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) == 1U);
+        PFL_EXPECT(decrement_pending_tls_client_hello_budget(tls_state));
+        PFL_EXPECT(!has_pending_tls_client_hello(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_flow_slot(tls_state) == ConnectionFlowSlot::none);
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) == 0U);
+        PFL_EXPECT(!decrement_pending_tls_client_hello_budget(tls_state));
+
+        set_pending_tls_client_hello(tls_state, ConnectionFlowSlot::flow_b);
+        PFL_EXPECT(has_pending_tls_client_hello(tls_state));
+        PFL_EXPECT(pending_tls_client_hello_flow_slot(tls_state) == ConnectionFlowSlot::flow_b);
+        PFL_EXPECT(pending_tls_client_hello_remaining_budget(tls_state) ==
+                   kMaxPendingTlsClientHelloSameDirectionPacketBudget);
+
+        clear_pending_tls_client_hello(tls_state);
+        PFL_EXPECT(!has_pending_tls_client_hello(tls_state));
+
+        set_pending_tls_client_hello(tls_state, ConnectionFlowSlot::none);
+        PFL_EXPECT(!has_pending_tls_client_hello(tls_state));
     }
 
     {

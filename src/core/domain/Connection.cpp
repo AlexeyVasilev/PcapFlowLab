@@ -8,6 +8,26 @@ namespace {
     return protocol == ProtocolId::tcp || protocol == ProtocolId::udp;
 }
 
+[[nodiscard]] std::uint8_t encode_pending_tls_client_hello_state(
+    const ConnectionFlowSlot slot,
+    const std::uint8_t remaining_budget
+) noexcept {
+    if (remaining_budget == 0U || remaining_budget > kMaxPendingTlsClientHelloSameDirectionPacketBudget) {
+        return 0U;
+    }
+    switch (slot) {
+    case ConnectionFlowSlot::flow_a:
+        return remaining_budget;
+    case ConnectionFlowSlot::flow_b:
+        return static_cast<std::uint8_t>(
+            kMaxPendingTlsClientHelloSameDirectionPacketBudget + remaining_budget
+        );
+    case ConnectionFlowSlot::none:
+        return 0U;
+    }
+    return 0U;
+}
+
 [[nodiscard]] bool is_payload_bearing_transport_packet(
     const PacketImportMetadata& metadata,
     const ProtocolId protocol
@@ -250,6 +270,86 @@ template <typename Connection>
 }
 
 }  // namespace
+
+bool has_pending_tls_client_hello(const ConnectionHintSearchState& state) noexcept {
+    return pending_tls_client_hello_remaining_budget(state) > 0U;
+}
+
+ConnectionFlowSlot pending_tls_client_hello_flow_slot(const ConnectionHintSearchState& state) noexcept {
+    if (state.pending_tls_client_hello_state >= 1U &&
+        state.pending_tls_client_hello_state <= kMaxPendingTlsClientHelloSameDirectionPacketBudget) {
+        return ConnectionFlowSlot::flow_a;
+    }
+    if (state.pending_tls_client_hello_state > kMaxPendingTlsClientHelloSameDirectionPacketBudget &&
+        state.pending_tls_client_hello_state <=
+            static_cast<std::uint8_t>(kMaxPendingTlsClientHelloSameDirectionPacketBudget * 2U)) {
+        return ConnectionFlowSlot::flow_b;
+    }
+    return ConnectionFlowSlot::none;
+}
+
+std::uint8_t pending_tls_client_hello_remaining_budget(const ConnectionHintSearchState& state) noexcept {
+    if (state.pending_tls_client_hello_state >= 1U &&
+        state.pending_tls_client_hello_state <= kMaxPendingTlsClientHelloSameDirectionPacketBudget) {
+        return state.pending_tls_client_hello_state;
+    }
+    if (state.pending_tls_client_hello_state > kMaxPendingTlsClientHelloSameDirectionPacketBudget &&
+        state.pending_tls_client_hello_state <=
+            static_cast<std::uint8_t>(kMaxPendingTlsClientHelloSameDirectionPacketBudget * 2U)) {
+        return static_cast<std::uint8_t>(
+            state.pending_tls_client_hello_state - kMaxPendingTlsClientHelloSameDirectionPacketBudget
+        );
+    }
+    return 0U;
+}
+
+void set_pending_tls_client_hello(ConnectionHintSearchState& state, const ConnectionFlowSlot slot) noexcept {
+    state.pending_tls_client_hello_state = encode_pending_tls_client_hello_state(
+        slot,
+        kMaxPendingTlsClientHelloSameDirectionPacketBudget
+    );
+}
+
+bool decrement_pending_tls_client_hello_budget(ConnectionHintSearchState& state) noexcept {
+    const auto remaining_budget = pending_tls_client_hello_remaining_budget(state);
+    if (remaining_budget == 0U) {
+        return false;
+    }
+    if (remaining_budget == 1U) {
+        clear_pending_tls_client_hello(state);
+        return true;
+    }
+
+    state.pending_tls_client_hello_state = encode_pending_tls_client_hello_state(
+        pending_tls_client_hello_flow_slot(state),
+        static_cast<std::uint8_t>(remaining_budget - 1U)
+    );
+    return false;
+}
+
+void clear_pending_tls_client_hello(ConnectionHintSearchState& state) noexcept {
+    state.pending_tls_client_hello_state = 0U;
+}
+
+ConnectionFlowSlot connection_flow_slot(const ConnectionV4& connection, const FlowKeyV4& key) noexcept {
+    if (connection.has_flow_a && connection.flow_a.key == key) {
+        return ConnectionFlowSlot::flow_a;
+    }
+    if (connection.has_flow_b && connection.flow_b.key == key) {
+        return ConnectionFlowSlot::flow_b;
+    }
+    return ConnectionFlowSlot::none;
+}
+
+ConnectionFlowSlot connection_flow_slot(const ConnectionV6& connection, const FlowKeyV6& key) noexcept {
+    if (connection.has_flow_a && connection.flow_a.key == key) {
+        return ConnectionFlowSlot::flow_a;
+    }
+    if (connection.has_flow_b && connection.flow_b.key == key) {
+        return ConnectionFlowSlot::flow_b;
+    }
+    return ConnectionFlowSlot::none;
+}
 
 std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept {
     if (!connection.has_flow_a) {

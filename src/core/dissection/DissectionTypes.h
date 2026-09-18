@@ -503,6 +503,7 @@ struct IgmpFacts {
 struct TcpFacts {
     std::uint16_t src_port {0U};
     std::uint16_t dst_port {0U};
+    std::uint32_t sequence_number {0U};
     std::uint8_t flags {0U};
 
     [[nodiscard]] friend constexpr bool operator==(const TcpFacts&, const TcpFacts&) = default;

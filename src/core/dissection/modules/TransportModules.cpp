@@ -77,6 +77,7 @@ ParsedTcpSegment parse_tcp_segment(const PacketSlice& slice) noexcept {
         .status = ParseStatus::complete,
         .src_port = detail::read_be16(bytes, 0U),
         .dst_port = detail::read_be16(bytes, 2U),
+        .sequence_number = detail::read_be32(bytes, 4U),
         .header_length = header_length,
         .captured_payload_length = static_cast<std::uint32_t>(packet_end - header_length),
         .flags = bytes[13U],
@@ -172,6 +173,7 @@ DissectionStep dissect_tcp(const PacketSlice& slice) {
         .facts = TcpFacts {
             .src_port = parsed.src_port,
             .dst_port = parsed.dst_port,
+            .sequence_number = parsed.sequence_number,
             .flags = parsed.flags,
         },
         .terminal_disposition = TerminalDisposition::flow_candidate,

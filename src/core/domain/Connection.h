@@ -12,9 +12,17 @@
 namespace pfl {
 
 inline constexpr std::uint8_t kMaxUnresolvedHintPayloadAttemptsPerConnection = 10U;
+inline constexpr std::uint8_t kMaxPendingTlsClientHelloSameDirectionPacketBudget = 3U;
+
+enum class ConnectionFlowSlot : std::uint8_t {
+    none = 0,
+    flow_a,
+    flow_b,
+};
 
 struct ConnectionHintSearchState {
     std::uint8_t unresolved_payload_attempt_count {0};
+    std::uint8_t pending_tls_client_hello_state {0};
     bool unresolved_payload_attempt_budget_exhausted {false};
 };
 
@@ -91,12 +99,20 @@ struct ConnectionV6 {
 
 [[nodiscard]] std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept;
 [[nodiscard]] std::optional<FlowKeyV6> first_observed_flow_key(const ConnectionV6& connection) noexcept;
+[[nodiscard]] ConnectionFlowSlot connection_flow_slot(const ConnectionV4& connection, const FlowKeyV4& key) noexcept;
+[[nodiscard]] ConnectionFlowSlot connection_flow_slot(const ConnectionV6& connection, const FlowKeyV6& key) noexcept;
 [[nodiscard]] std::optional<EndpointKeyV4> first_observed_endpoint_a(const ConnectionV4& connection) noexcept;
 [[nodiscard]] std::optional<EndpointKeyV4> first_observed_endpoint_b(const ConnectionV4& connection) noexcept;
 [[nodiscard]] std::optional<EndpointKeyV6> first_observed_endpoint_a(const ConnectionV6& connection) noexcept;
 [[nodiscard]] std::optional<EndpointKeyV6> first_observed_endpoint_b(const ConnectionV6& connection) noexcept;
 [[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept;
 [[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexcept;
+[[nodiscard]] bool has_pending_tls_client_hello(const ConnectionHintSearchState& state) noexcept;
+[[nodiscard]] ConnectionFlowSlot pending_tls_client_hello_flow_slot(const ConnectionHintSearchState& state) noexcept;
+[[nodiscard]] std::uint8_t pending_tls_client_hello_remaining_budget(const ConnectionHintSearchState& state) noexcept;
+void set_pending_tls_client_hello(ConnectionHintSearchState& state, ConnectionFlowSlot slot) noexcept;
+[[nodiscard]] bool decrement_pending_tls_client_hello_budget(ConnectionHintSearchState& state) noexcept;
+void clear_pending_tls_client_hello(ConnectionHintSearchState& state) noexcept;
 
 }  // namespace pfl
 

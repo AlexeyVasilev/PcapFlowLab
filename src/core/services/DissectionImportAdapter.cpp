@@ -19,6 +19,9 @@ PacketImportMetadata make_import_semantic_packet_metadata(const dissection::Impo
     if (facts.has_tcp_flags && facts.terminal_protocol == ProtocolId::tcp) {
         metadata.tcp_flags = facts.tcp_flags;
     }
+    if (facts.has_tcp_sequence_number && facts.terminal_protocol == ProtocolId::tcp) {
+        metadata.tcp_sequence_number = facts.tcp_sequence_number;
+    }
     metadata.is_ip_fragmented =
         (facts.has_ipv4_fragmentation && facts.ipv4_fragmentation.is_fragmented) ||
         (facts.has_ipv6_fragmentation && facts.ipv6_fragmentation.has_fragment_header);
