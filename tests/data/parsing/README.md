@@ -248,6 +248,42 @@ are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 `amqp/10_amqp_truncated_header.pcap`
 - Purpose: seven-byte AMQP-looking prefix negative case.
 
+## NTP
+
+These fixtures define the first conservative NTP detection-only behavior.
+Fixtures 01-05 are future target positives and fixtures 06-10 are
+first-contract negatives or intentionally unsupported first-version forms.
+
+`ntp/01_ntpv4_client_request_port123.pcap`
+- Purpose: NTPv4 mode-3 client request positive baseline on destination UDP/123.
+
+`ntp/02_ntpv4_server_response_port123.pcap`
+- Purpose: NTPv4 mode-4 server response positive baseline on source UDP/123.
+
+`ntp/03_ntpv3_client_request_port123.pcap`
+- Purpose: explicit NTPv3 client request positive coverage.
+
+`ntp/04_ntpv3_server_response_port123.pcap`
+- Purpose: explicit NTPv3 server response positive coverage.
+
+`ntp/05_ntpv4_kod_rate_response.pcap`
+- Purpose: stratum-0 `RATE` Kiss-o'-Death-style response positive coverage.
+
+`ntp/06_ntp_garbage_port123.pcap`
+- Purpose: UDP/123 garbage negative case proving the port alone is insufficient.
+
+`ntp/07_ntpv4_client_wrong_ports.pcap`
+- Purpose: valid-looking NTPv4 client request on a non-standard destination port negative case.
+
+`ntp/08_ntpv2_client_port123.pcap`
+- Purpose: NTPv2 intentionally unsupported by the first detector.
+
+`ntp/09_ntpv4_broadcast_mode5.pcap`
+- Purpose: valid-family broadcast mode intentionally unsupported by the first detector.
+
+`ntp/10_ntpv4_truncated_47_byte_header.pcap`
+- Purpose: 47-byte truncated basic-header boundary negative case.
+
 ## ICMP
 
 `icmp/01_icmp_echo_request.pcap`
