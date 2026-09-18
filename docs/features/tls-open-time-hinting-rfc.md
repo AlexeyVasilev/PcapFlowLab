@@ -1,9 +1,10 @@
 # Bounded TLS Open-Time Hinting RFC
 
-Status: Proposed.
+Status: Current.
 
-This design is not implemented yet. It records a proposed bounded import-time
-optimization and does not redefine current product behavior.
+This document describes the current bounded import-time TLS ClientHello SNI
+continuation behavior. It is intentionally narrower than selected-flow TLS
+reconstruction and does not define general TCP reassembly.
 
 ## Purpose
 
@@ -16,10 +17,10 @@ A common missed case is:
   but the SNI bytes are not yet present.
 - TCP segment 2 is the contiguous continuation and contains the SNI extension.
 
-Today this capture can be detected as TLS during import while Service/SNI
-remains empty until stronger selected-flow reconstruction runs later.
+Current import can detect TLS from the first segment and recover the SNI during
+open when the second segment is the exact contiguous same-direction continuation.
 
-The goal is to recover SNI during raw-capture import for this common
+This behavior recovers SNI during raw-capture import for this common
 two-contiguous-segment case without adding general TCP reassembly to the open
 path.
 
@@ -325,7 +326,7 @@ This feature must preserve the current staged classic-PCAP import behavior.
 
 ## Existing Fixture Anchor
 
-Primary intended regression fixture:
+Primary regression fixture:
 
 ```text
 tests/data/parsing/tls/tls_sni_in_second_segment_20.pcap
@@ -339,13 +340,7 @@ Its current documented shape is:
   contains SNI
 - expected SNI is `edge.microsoft.com`
 
-Current product behavior before implementation:
-
-- import detects TLS
-- import-time Service remains empty
-- selected-flow reconstruction later recovers `edge.microsoft.com`
-
-Target behavior after implementation:
+Current product behavior:
 
 - import detects TLS
 - bounded two-segment continuation recovers `edge.microsoft.com` during open
@@ -360,7 +355,7 @@ packet-local SNI extraction.
 
 Open-time continuation is deliberately weaker.
 
-After implementation:
+Current behavior:
 
 - simple two-segment contiguous ClientHello: open-time SNI can succeed
 - more complex segmentation, retransmission, gaps, or longer reconstruction:
@@ -372,29 +367,6 @@ Do not merge the two architectures.
 
 ## Documentation Lifecycle
 
-This RFC remains `Status: Proposed` until production implementation and
-regression tests are complete.
-
-Do not yet change current behavior claims in:
-
-- `docs/current-state.md`
-- `docs/protocols/protocol_support.md`
-- `examples/showcase/README.md`
-- `examples/showcase/manifest.json`
-- `tests/data/parsing/tls/README.md`
-
-Those documents describe current behavior and should be updated together with
-the implementation.
-
-After implementation succeeds, the follow-up documentation pass should:
-
-- mark this RFC Current
-- add it to the appropriate `docs/README.md` navigation
-- update TLS capability wording in `protocol_support.md`
-- add the sparse import-time continuation pattern to
-  `large-capture-performance-guidelines.md`
-- add one short current-state statement explaining that this is bounded
-  continuation, not general TCP reassembly
-- update the `tls_sni_in_second_segment_20` fixture contract
-- update `APP-TLS-SEGMENTED-01` showcase wording
-
+This RFC is current technical behavior. Broader release documentation,
+showcase-derived CLI numeric examples, screenshots, and release artifacts are
+updated separately during release preparation.

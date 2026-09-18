@@ -699,7 +699,7 @@
     {
       "scenario_id": "APP-TLS-SEGMENTED-01",
       "name": "Segmented TLS ClientHello with continued SNI",
-      "purpose": "Compact TLS flow where the first ClientHello segment is sufficient for import-time TLS detection, but the SNI bytes arrive only in the second TCP segment and are recovered later by bounded selected-flow reconstruction.",
+      "purpose": "Compact TLS flow where the first ClientHello segment is sufficient for import-time TLS detection, the SNI bytes arrive only in the second TCP segment, and bounded open-time continuation recovers Service during import.",
       "expected_protocol": "TCP",
       "expected_detected_protocol": "TLS",
       "expected_service": "edge.microsoft.com",
@@ -726,8 +726,8 @@
       ],
       "notes": [
         "Exact TLS payload segmentation is reused from `tests/data/parsing/tls/tls_sni_in_second_segment_20.pcap`.",
-        "Initial import detects `TLS` but leaves Service empty because the SNI is not yet physically present in the first TCP segment.",
-        "Selecting/loading the flow allows bounded TCP/TLS reconstruction to recover `edge.microsoft.com`.",
+        "Initial import detects `TLS` and bounded open-time continuation recovers `edge.microsoft.com` from the exact contiguous second TCP segment.",
+        "Selecting/loading the flow still demonstrates independent bounded TCP/TLS reconstruction and structured inspection.",
         "Materialized packet count: 32",
         "Materialized duration: 0.483 s"
       ]
@@ -2321,7 +2321,7 @@
         "APP-TLS-SEGMENTED-01",
         "APP-TLS-NOSNI-01"
       ],
-      "note": "Confirmed TLS coverage now includes direct and nested SNI-bearing cases, one segmented ClientHello case whose SNI is recovered only after selected-flow reconstruction, and one compact valid TLS flow without observed SNI."
+      "note": "Confirmed TLS coverage now includes direct and nested SNI-bearing cases, one segmented ClientHello case whose SNI is recovered during bounded open-time continuation, and one compact valid TLS flow without observed SNI."
     },
     {
       "detected_protocol": "DNS",
@@ -2542,7 +2542,7 @@
     "Inspect AN-TLS-BULK-01 for TLS SNI, rate phases, packet-size histogram, inter-arrival histogram, and burst/idle regions.",
     "Inspect AN-GRE-TLS-01 for complex protocol path and nested TLS stream/bytes presentation.",
     "Inspect APP-HTTP-02, APP-HTTP-LARGEBODY-01, APP-DNS-02, APP-TLS-03, APP-TLS-SEGMENTED-01, APP-TLS-NOSNI-01, APP-SSH-01, APP-STUN-01, APP-BITTORRENT-01, APP-MQTT-01, APP-AMQP-01, APP-NTP-01, APP-SMTP-01, APP-POP3-01, APP-IMAP-01, and APP-DHCP-01 for confirmed detected-protocol hint coverage.",
-    "Inspect APP-TLS-SEGMENTED-01 and confirm that initial import detects TLS while Service starts empty, then selected-flow reconstruction recovers edge.microsoft.com because the SNI resides only in the second TCP segment.",
+    "Inspect APP-TLS-SEGMENTED-01 and confirm that initial import detects TLS and Service is edge.microsoft.com through bounded open-time continuation from the exact contiguous second TCP segment. Selecting the flow still demonstrates independent bounded TLS reconstruction.",
     "Inspect APP-MDNS6-01 for compact IPv6 UDP/mDNS/DNS-SD behavior with structured PTR, SRV, TXT, and AAAA presentation.",
     "Inspect APP-QUIC-01, APP-QUIC-MULTICRYPTO-01, APP-QUIC-MULTICRYPTO-02, and APP-QUIC-NEG-01 for compact positive, rich positive, and coarse negative QUIC Initial behavior.",
     "Inspect APP-QUIC-01 packet 1 for Initial/CRYPTO/ClientHello, packet 3 for Initial/0-RTT, one reverse packet for Initial ACK, and packet 13 for ServerHello.",

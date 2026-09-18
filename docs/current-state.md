@@ -61,6 +61,9 @@ The normal open path is intentionally packet-oriented and predictable.
 - Production import now uses the unified registry-driven dissection path.
 - The open path does not run global stream reconstruction or transport-complete
   reassembly.
+- Selected cheap protocol hints may use narrowly bounded transient continuation
+  state. TLS ClientHello SNI currently supports one exact contiguous second TCP
+  segment during import; this is not general TCP reassembly.
 - Whole-capture packet-size accounting is accumulated during import.
 - Malformed, truncated, and unsupported packets are handled conservatively.
 
