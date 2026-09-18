@@ -27,7 +27,10 @@ constexpr std::array<CaptureStatisticsIpFamilyCategory, 2> kIpFamilyCategories {
     CaptureStatisticsIpFamilyCategory::ipv6,
 }};
 
-constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 19> kDetectedProtocolCategories {{
+constexpr std::array<
+    CaptureStatisticsDetectedProtocolCategory,
+    kCaptureStatisticsDetectedProtocolCategoryCount
+> kDetectedProtocolCategories {{
     CaptureStatisticsDetectedProtocolCategory::http,
     CaptureStatisticsDetectedProtocolCategory::tls,
     CaptureStatisticsDetectedProtocolCategory::dns,

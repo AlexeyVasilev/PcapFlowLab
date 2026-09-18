@@ -1197,6 +1197,30 @@ void run_flow_hints_tests() {
     }
 
     {
+        auto declared_longer_payload = make_ntp_payload(4U, 3U, 0U);
+        declared_longer_payload.push_back(0U);
+        auto truncated_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 0, 1, 1),
+            ipv4(10, 0, 1, 2),
+            59000U,
+            123U,
+            declared_longer_payload
+        );
+        truncated_packet.pop_back();
+
+        FlowHintService service {};
+        const auto hint = service.detect(truncated_packet, FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 1, 1),
+            .dst_addr = ipv4(10, 0, 1, 2),
+            .src_port = 59000U,
+            .dst_port = 123U,
+            .protocol = ProtocolId::udp,
+        });
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
         const auto client_direction_mismatch_hint = detect_udp_flow_hint(make_ntp_payload(4U, 3U, 0U), 123U, 59000U);
         PFL_EXPECT(client_direction_mismatch_hint.protocol_hint == FlowProtocolHint::unknown);
         PFL_EXPECT(client_direction_mismatch_hint.service_hint.empty());

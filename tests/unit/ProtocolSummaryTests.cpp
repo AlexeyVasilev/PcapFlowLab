@@ -269,6 +269,7 @@ void run_protocol_summary_tests() {
         expect_protocol_stats(loaded_summary.hint_smtp, summary.hint_smtp);
         expect_protocol_stats(loaded_summary.hint_pop3, summary.hint_pop3);
         expect_protocol_stats(loaded_summary.hint_imap, summary.hint_imap);
+        expect_protocol_stats(loaded_summary.hint_amqp, summary.hint_amqp);
         expect_protocol_stats(loaded_summary.hint_ntp, summary.hint_ntp);
         expect_protocol_stats(loaded_summary.hint_mail_protocols, summary.hint_mail_protocols);
         expect_protocol_stats(loaded_summary.hint_possible_tls, summary.hint_possible_tls);

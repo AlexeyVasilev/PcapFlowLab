@@ -521,7 +521,7 @@ void expect_shared_statistics_formatting_helpers() {
 
 void expect_protocol_hint_statistics_rows_handle_zero_denominators() {
     const auto rows = session_detail::build_protocol_hint_statistics_rows(CaptureProtocolSummary {});
-    PFL_EXPECT(rows.size() == 13U);
+    PFL_EXPECT(rows.size() == 16U);
     for (const auto& row : rows) {
         PFL_EXPECT(row.flow_count == 0U);
         PFL_EXPECT(row.packet_count == 0U);

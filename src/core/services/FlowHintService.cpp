@@ -341,10 +341,40 @@ bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
     return read_be32(payload, 4U) == kStunMagicCookie;
 }
 
-bool looks_like_ntp_message(std::span<const std::uint8_t> payload,
+std::optional<std::size_t> declared_udp_payload_length_for_terminal_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t payload_offset
+) noexcept {
+    if (payload_offset < 8U || payload_offset > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto udp_offset = payload_offset - 8U;
+    if (udp_offset + 8U > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto udp_length = static_cast<std::size_t>(read_be16(packet_bytes, udp_offset + 4U));
+    if (udp_length < 8U) {
+        return std::nullopt;
+    }
+
+    return udp_length - 8U;
+}
+
+bool looks_like_ntp_message(std::span<const std::uint8_t> packet_bytes,
+                            std::span<const std::uint8_t> payload,
+                            const std::size_t payload_offset,
                             const std::uint16_t src_port,
                             const std::uint16_t dst_port) noexcept {
     if (payload.size() != kNtpBasicHeaderSize) {
+        return false;
+    }
+
+    const auto declared_udp_payload_length =
+        declared_udp_payload_length_for_terminal_payload(packet_bytes, payload_offset);
+    if (!declared_udp_payload_length.has_value() ||
+        *declared_udp_payload_length != kNtpBasicHeaderSize) {
         return false;
     }
 
@@ -1080,10 +1110,12 @@ FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
     };
 }
 
-FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> payload,
+FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> packet_bytes,
+                               std::span<const std::uint8_t> payload,
+                               const std::size_t payload_offset,
                                const std::uint16_t src_port,
                                const std::uint16_t dst_port) {
-    if (!looks_like_ntp_message(payload, src_port, dst_port)) {
+    if (!looks_like_ntp_message(packet_bytes, payload, payload_offset, src_port, dst_port)) {
         return {};
     }
 
@@ -1451,7 +1483,7 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_ntp_hint(payload_view, flow_key.src_port, flow_key.dst_port);
+        return detect_ntp_hint(packet_bytes, payload_view, payload.offset, flow_key.src_port, flow_key.dst_port);
     default:
         return {};
     }

@@ -626,7 +626,8 @@ void expect_runtime_builder_projects_current_statistics() {
     PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::unknown_without_possible) == 16U);
     PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::amqp) == 17U);
     PFL_EXPECT(static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::ntp) == 18U);
-    PFL_REQUIRE(snapshot.detected_protocols.size() == 19U);
+    PFL_EXPECT(kCaptureStatisticsDetectedProtocolCategoryCount == 19U);
+    PFL_REQUIRE(snapshot.detected_protocols.size() == kCaptureStatisticsDetectedProtocolCategoryCount);
     PFL_EXPECT(snapshot.detected_protocols[12].category == CaptureStatisticsDetectedProtocolCategory::mqtt);
     PFL_EXPECT(snapshot.detected_protocols[13].category == CaptureStatisticsDetectedProtocolCategory::amqp);
     PFL_EXPECT(snapshot.detected_protocols[14].category == CaptureStatisticsDetectedProtocolCategory::ntp);
