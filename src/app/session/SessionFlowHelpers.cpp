@@ -2516,14 +2516,6 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
             .counters = make_protocol_counters(general_statistics.protocol.hint_mqtt),
         },
         CaptureStatisticsDetectedProtocolRow {
-            .category = CaptureStatisticsDetectedProtocolCategory::amqp,
-            .counters = make_protocol_counters(general_statistics.protocol.hint_amqp),
-        },
-        CaptureStatisticsDetectedProtocolRow {
-            .category = CaptureStatisticsDetectedProtocolCategory::ntp,
-            .counters = make_protocol_counters(general_statistics.protocol.hint_ntp),
-        },
-        CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::mail_protocols,
             .counters = make_protocol_counters(general_statistics.protocol.hint_mail_protocols),
         },
@@ -2538,6 +2530,14 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
         CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
             .counters = make_protocol_counters(general_statistics.protocol.hint_unknown_without_possible),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::amqp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_amqp),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::ntp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_ntp),
         },
     };
 

@@ -629,9 +629,12 @@ void expect_runtime_builder_projects_current_statistics() {
     PFL_EXPECT(kCaptureStatisticsDetectedProtocolCategoryCount == 19U);
     PFL_REQUIRE(snapshot.detected_protocols.size() == kCaptureStatisticsDetectedProtocolCategoryCount);
     PFL_EXPECT(snapshot.detected_protocols[12].category == CaptureStatisticsDetectedProtocolCategory::mqtt);
-    PFL_EXPECT(snapshot.detected_protocols[13].category == CaptureStatisticsDetectedProtocolCategory::amqp);
-    PFL_EXPECT(snapshot.detected_protocols[14].category == CaptureStatisticsDetectedProtocolCategory::ntp);
-    PFL_EXPECT(snapshot.detected_protocols[15].category == CaptureStatisticsDetectedProtocolCategory::mail_protocols);
+    PFL_EXPECT(snapshot.detected_protocols[13].category == CaptureStatisticsDetectedProtocolCategory::mail_protocols);
+    PFL_EXPECT(snapshot.detected_protocols[14].category == CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate);
+    PFL_EXPECT(snapshot.detected_protocols[15].category == CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate);
+    PFL_EXPECT(snapshot.detected_protocols[16].category == CaptureStatisticsDetectedProtocolCategory::unknown_without_possible);
+    PFL_EXPECT(snapshot.detected_protocols[17].category == CaptureStatisticsDetectedProtocolCategory::amqp);
+    PFL_EXPECT(snapshot.detected_protocols[18].category == CaptureStatisticsDetectedProtocolCategory::ntp);
     PFL_REQUIRE(find_transport_protocol_row(snapshot, CaptureStatisticsTransportProtocolCategory::tcp) != nullptr);
     PFL_EXPECT(
         find_transport_protocol_row(snapshot, CaptureStatisticsTransportProtocolCategory::tcp)->counters.captured_bytes

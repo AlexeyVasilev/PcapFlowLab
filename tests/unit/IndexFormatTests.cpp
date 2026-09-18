@@ -1359,8 +1359,8 @@ void run_index_format_tests() {
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
         PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 17U);
-        PFL_EXPECT(kCaptureIndexVersion == 17U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 18U);
+        PFL_EXPECT(kCaptureIndexVersion == 18U);
 
         detail::CaptureIndexStableHeader decoded_header {};
         std::istringstream read_stream(
@@ -3503,31 +3503,31 @@ void run_index_format_tests() {
     );
 
     {
-        auto revision_16_bytes = read_file_bytes(index_path);
-        write_le32_at(revision_16_bytes, 16U, 16U);
-        const auto revision_16_path = write_temp_binary_file(
-            "pfl_index_revision_16_rebuild_required.idx",
-            revision_16_bytes
+        auto revision_17_bytes = read_file_bytes(index_path);
+        write_le32_at(revision_17_bytes, 16U, 17U);
+        const auto revision_17_path = write_temp_binary_file(
+            "pfl_index_revision_17_rebuild_required.idx",
+            revision_17_bytes
         );
-        const std::string revision_16_error =
-            "This index uses revision 16; current supported revision is 17. Rebuild the index from the source capture.";
+        const std::string revision_17_error =
+            "This index uses revision 17; current supported revision is 18. Rebuild the index from the source capture.";
 
-        detail::CaptureIndexV16CompleteReadResult revision_16_read {};
-        PFL_EXPECT(!index_reader.read_v16_complete(revision_16_path, revision_16_read));
-        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+        detail::CaptureIndexV16CompleteReadResult revision_17_read {};
+        PFL_EXPECT(!index_reader.read_v16_complete(revision_17_path, revision_17_read));
+        PFL_EXPECT(index_reader.last_error().reason == revision_17_error);
 
-        detail::CaptureIndexV16FastStatisticsTier revision_16_fast_tier {};
-        detail::CaptureIndexV16FastStatisticsTierReadResult revision_16_fast_read {};
+        detail::CaptureIndexV16FastStatisticsTier revision_17_fast_tier {};
+        detail::CaptureIndexV16FastStatisticsTierReadResult revision_17_fast_read {};
         PFL_EXPECT(!index_reader.read_v16_fast_statistics(
-            revision_16_path,
-            revision_16_fast_tier,
-            revision_16_fast_read
+            revision_17_path,
+            revision_17_fast_tier,
+            revision_17_fast_read
         ));
-        PFL_EXPECT(index_reader.last_error().reason == revision_16_error);
+        PFL_EXPECT(index_reader.last_error().reason == revision_17_error);
 
-        CaptureSession revision_16_session {};
-        PFL_EXPECT(!revision_16_session.load_index(revision_16_path));
-        PFL_EXPECT(revision_16_session.last_open_error_text().find(revision_16_error) != std::string::npos);
+        CaptureSession revision_17_session {};
+        PFL_EXPECT(!revision_17_session.load_index(revision_17_path));
+        PFL_EXPECT(revision_17_session.last_open_error_text().find(revision_17_error) != std::string::npos);
     }
 
     {

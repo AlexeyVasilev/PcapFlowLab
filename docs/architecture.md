@@ -63,10 +63,10 @@ transport-correct session analysis during open.
 
 Saved indexes reopen previously imported session state.
 
-Current stable index format is revision `17` and uses exact-version
-compatibility. Stable v16 and older production indexes remain recognizable at
-the header level, but full payload load requires rebuilding from the source
-capture.
+Current stable index format is revision `18` and uses exact-version
+compatibility. Stable revision 17 and older production indexes remain
+recognizable at the header level, but full payload load requires rebuilding
+from the source capture.
 
 The v16 physical architecture is tiered:
 

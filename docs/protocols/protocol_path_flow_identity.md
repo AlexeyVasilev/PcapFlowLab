@@ -173,11 +173,11 @@ correlation, GTP-C tracking, or PFCP-aware session joining.
 
 ## Index And Persistence Contract
 
-Current stable index revision is `17`.
+Current stable index revision is `18`.
 
 Current persistence facts verified from code:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 17`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 18`;
 - the stable index stores flow and connection `protocol_path_id` values;
 - the stable index stores one capture-level `ProtocolPathRegistry` table;
 - packet records do not store full protocol paths or per-packet
@@ -193,7 +193,9 @@ Current compatibility policy:
   rebuild-required diagnostic;
 - stable v16 indexes are recognized but rejected for full load with a
   rebuild-required diagnostic;
-- stable revision 17 indexes load when their required section schemas remain
+- stable revision 17 indexes are recognized but rejected for full load with a
+  rebuild-required diagnostic;
+- stable revision 18 indexes load when their required section schemas remain
   supported;
 - reopening an index preserves the grouping semantics already stored in that
   index;

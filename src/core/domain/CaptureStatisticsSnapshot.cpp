@@ -44,12 +44,12 @@ constexpr std::array<
     CaptureStatisticsDetectedProtocolCategory::pop3,
     CaptureStatisticsDetectedProtocolCategory::imap,
     CaptureStatisticsDetectedProtocolCategory::mqtt,
-    CaptureStatisticsDetectedProtocolCategory::amqp,
-    CaptureStatisticsDetectedProtocolCategory::ntp,
     CaptureStatisticsDetectedProtocolCategory::mail_protocols,
     CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate,
     CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate,
     CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
+    CaptureStatisticsDetectedProtocolCategory::amqp,
+    CaptureStatisticsDetectedProtocolCategory::ntp,
 }};
 
 constexpr std::uint64_t kMaximumRepresentableFlowOrdinalCount =
