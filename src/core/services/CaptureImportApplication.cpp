@@ -143,7 +143,14 @@ template <typename Connection, typename FlowKey>
         return true;
     }
 
-    if (import_metadata.transport_payload_length.value_or(0U) == 0U) {
+    if (!terminal_transport_payload_bounds.has_value() ||
+        terminal_transport_payload_bounds->declared_end_offset < terminal_transport_payload_bounds->payload_offset) {
+        hint_service.discard_pending_tls_client_hello(flow_key);
+        clear_pending_tls_client_hello(connection.hint_search_state);
+        return true;
+    }
+
+    if (terminal_transport_payload_bounds->declared_end_offset == terminal_transport_payload_bounds->payload_offset) {
         if (decrement_pending_tls_client_hello_budget(connection.hint_search_state)) {
             hint_service.discard_pending_tls_client_hello(flow_key);
             clear_pending_tls_client_hello(connection.hint_search_state);
@@ -151,8 +158,7 @@ template <typename Connection, typename FlowKey>
         return true;
     }
 
-    if (!import_metadata.tcp_sequence_number.has_value() ||
-        !terminal_transport_payload_bounds.has_value()) {
+    if (!import_metadata.tcp_sequence_number.has_value()) {
         hint_service.discard_pending_tls_client_hello(flow_key);
         clear_pending_tls_client_hello(connection.hint_search_state);
         return true;
@@ -203,6 +209,7 @@ void retain_pending_tls_client_hello_if_needed(
         connection_flow_slot(connection, flow_key) == ConnectionFlowSlot::none ||
         has_pending_tls_client_hello(connection.hint_search_state) ||
         packet_local_hint.protocol_hint != FlowProtocolHint::tls ||
+        !packet_local_hint.service_hint.empty() ||
         !connection.service_hint.empty() ||
         !import_metadata.tcp_sequence_number.has_value() ||
         !import_metadata.tcp_flags.has_value() ||
@@ -214,6 +221,7 @@ void retain_pending_tls_client_hello_if_needed(
             packet_bytes,
             packet.data_link_type,
             flow_key,
+            packet_local_hint,
             *terminal_transport_payload_bounds,
             *import_metadata.tcp_sequence_number,
             *import_metadata.tcp_flags

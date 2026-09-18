@@ -993,6 +993,7 @@ template <typename FlowKey, typename PendingMap>
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type,
     const FlowKey& flow_key,
+    const FlowHintUpdate& packet_local_hint,
     const TerminalTransportPayloadBounds& terminal_transport_payload_bounds,
     const std::uint32_t tcp_sequence_number,
     const std::uint8_t tcp_flags,
@@ -1003,6 +1004,8 @@ template <typename FlowKey, typename PendingMap>
     if ((tcp_flags & 0x01U) != 0U ||
         pending.find(flow_key) != pending.end() ||
         pending_candidate_count >= kMaxPendingTlsClientHelloCandidates ||
+        packet_local_hint.protocol_hint != FlowProtocolHint::tls ||
+        !packet_local_hint.service_hint.empty() ||
         !terminal_payload_fully_captured(packet_bytes, terminal_transport_payload_bounds)) {
         return false;
     }
@@ -1019,11 +1022,6 @@ template <typename FlowKey, typename PendingMap>
     if (retained_bytes > kMaxPendingTlsClientHelloRetainedBytes ||
         payload.payload.size() > kMaxPendingTlsClientHelloPrefixBytes ||
         payload.payload.size() > (kMaxPendingTlsClientHelloRetainedBytes - retained_bytes)) {
-        return false;
-    }
-
-    const auto packet_local_hint = detect_tls_hint(payload.payload);
-    if (!packet_local_hint.service_hint.empty()) {
         return false;
     }
 
@@ -1833,6 +1831,7 @@ bool FlowHintService::retain_tls_client_hello_prefix(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type,
     const FlowKeyV4& flow_key,
+    const FlowHintUpdate& packet_local_hint,
     const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
     const std::uint32_t tcp_sequence_number,
     const std::uint8_t tcp_flags
@@ -1841,6 +1840,7 @@ bool FlowHintService::retain_tls_client_hello_prefix(
         packet_bytes,
         data_link_type,
         flow_key,
+        packet_local_hint,
         terminal_transport_payload_bounds,
         tcp_sequence_number,
         tcp_flags,
@@ -1854,6 +1854,7 @@ bool FlowHintService::retain_tls_client_hello_prefix(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type,
     const FlowKeyV6& flow_key,
+    const FlowHintUpdate& packet_local_hint,
     const TerminalTransportPayloadBounds terminal_transport_payload_bounds,
     const std::uint32_t tcp_sequence_number,
     const std::uint8_t tcp_flags
@@ -1862,6 +1863,7 @@ bool FlowHintService::retain_tls_client_hello_prefix(
         packet_bytes,
         data_link_type,
         flow_key,
+        packet_local_hint,
         terminal_transport_payload_bounds,
         tcp_sequence_number,
         tcp_flags,

@@ -47,12 +47,14 @@ public:
     [[nodiscard]] bool retain_tls_client_hello_prefix(std::span<const std::uint8_t> packet_bytes,
                                                       std::uint32_t data_link_type,
                                                       const FlowKeyV4& flow_key,
+                                                      const FlowHintUpdate& packet_local_hint,
                                                       TerminalTransportPayloadBounds terminal_transport_payload_bounds,
                                                       std::uint32_t tcp_sequence_number,
                                                       std::uint8_t tcp_flags) const;
     [[nodiscard]] bool retain_tls_client_hello_prefix(std::span<const std::uint8_t> packet_bytes,
                                                       std::uint32_t data_link_type,
                                                       const FlowKeyV6& flow_key,
+                                                      const FlowHintUpdate& packet_local_hint,
                                                       TerminalTransportPayloadBounds terminal_transport_payload_bounds,
                                                       std::uint32_t tcp_sequence_number,
                                                       std::uint8_t tcp_flags) const;
