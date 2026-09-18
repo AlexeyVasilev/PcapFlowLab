@@ -1,18 +1,15 @@
 # NTP Parsing Fixtures
 
-This directory contains the planned permanent PCAP fixture set for the first
+This directory contains the permanent PCAP fixture set for the first
 conservative PcapFlowLab NTP recognition behavior.
 
-The recognizer does not exist yet. These PCAPs define the intended
-detection-only NTP contract for a later implementation.
+## Current First NTP Support
 
-## Target First NTP Support
-
-The intended first NTP support is detection-only. It should live in the
-application protocol hint path and recognize NTP only from a conservative
+The first NTP support is detection-only. It lives in the
+application protocol hint path and recognizes NTP only from a conservative
 UDP/123-gated subset of classic NTP packets.
 
-Target behavior:
+Current behavior:
 
 - UDP only.
 - NTP version `3` or `4` only.
@@ -31,11 +28,12 @@ Target behavior:
 - No deep timestamp, poll, precision, extension-field, MAC, NTS, or daemon
   state validation.
 
-Successful future NTP detection should produce Detected Protocol `NTP` /
+Successful NTP detection produces Detected Protocol `NTP` /
 protocol hint `ntp`, while service hint remains empty.
 
-Before implementation, PcapFlowLab currently leaves all ten fixtures as
-ordinary UDP flows with no NTP detected protocol.
+Fixtures 01-05 are recognized as NTP. Fixtures 06-10 remain ordinary UDP flows
+with no NTP detected protocol because they are malformed for this recognition
+contract or intentionally outside the first conservative automatic detector.
 
 ## Local Generation
 
@@ -107,10 +105,8 @@ deeply validate timestamp semantics.
 - Fields: LI `0`, VN `4`, Mode `3`, Stratum `0`
 - Purpose: primary NTPv4 client request positive baseline with
   destination-port-123 recognition and an ephemeral client source port
-- Target future PFL behavior: Detected Protocol `NTP`, protocol hint `ntp`,
+- Current PFL behavior: Detected Protocol `NTP`, protocol hint `ntp`,
   empty service hint
-- Current pre-implementation PFL baseline: ordinary UDP / no NTP detected
-  protocol
 
 ### `02_ntpv4_server_response_port123.pcap`
 
@@ -121,8 +117,7 @@ deeply validate timestamp semantics.
 - Fields: LI `0`, VN `4`, Mode `4`, Stratum `2`
 - Purpose: normal NTPv4 server response positive baseline with
   source-port-123 recognition
-- Target future PFL behavior: Detected Protocol `NTP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint
 
 ### `03_ntpv3_client_request_port123.pcap`
 
@@ -132,8 +127,7 @@ deeply validate timestamp semantics.
 - Payload: exactly `48` bytes
 - Fields: VN `3`, Mode `3`, Stratum `0`
 - Purpose: explicit NTPv3 client positive coverage
-- Target future PFL behavior: Detected Protocol `NTP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint
 
 ### `04_ntpv3_server_response_port123.pcap`
 
@@ -143,8 +137,7 @@ deeply validate timestamp semantics.
 - Payload: exactly `48` bytes
 - Fields: VN `3`, Mode `4`, Stratum `3`
 - Purpose: explicit NTPv3 server response positive coverage
-- Target future PFL behavior: Detected Protocol `NTP`, empty service hint
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint
 
 ### `05_ntpv4_kod_rate_response.pcap`
 
@@ -155,9 +148,8 @@ deeply validate timestamp semantics.
 - Fields: VN `4`, Mode `4`, Stratum `0`, Reference ID ASCII `RATE`
 - Purpose: positive Kiss-o'-Death-style response proving stratum `0` is not
   rejected wholesale
-- Target future PFL behavior: Detected Protocol `NTP`, empty service hint
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint
 - Boundary: no special KoD presentation or service hint is expected
-- Current pre-implementation PFL baseline: ordinary UDP
 
 ### `06_ntp_garbage_port123.pcap`
 
@@ -167,8 +159,7 @@ deeply validate timestamp semantics.
 - Payload: exactly `48` deterministic bytes
 - Malformed intent: byte `0` fails the supported VN/mode contract
 - Purpose: negative case proving UDP/123 alone must not imply NTP
-- Target future PFL behavior: NOT NTP
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: NOT NTP
 
 ### `07_ntpv4_client_wrong_ports.pcap`
 
@@ -178,8 +169,7 @@ deeply validate timestamp semantics.
 - Payload: otherwise valid 48-byte NTPv4 mode-3 client request
 - Purpose: negative case proving NTP recognition is deliberately port-gated
   and valid-looking content alone on arbitrary UDP ports is insufficient
-- Target future PFL behavior: NOT NTP
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: NOT NTP
 
 ### `08_ntpv2_client_port123.pcap`
 
@@ -190,10 +180,9 @@ deeply validate timestamp semantics.
 - Fields: VN `2`, Mode `3`, Stratum `0`
 - Purpose: negative first-detector scope case; first PFL support accepts only
   NTPv3 and NTPv4
-- Target future PFL behavior: NOT NTP
+- Current PFL behavior: NOT NTP
 - Boundary: NTPv2 is not described as intrinsically invalid protocol traffic;
   it is intentionally outside first PFL support
-- Current pre-implementation PFL baseline: ordinary UDP
 
 ### `09_ntpv4_broadcast_mode5.pcap`
 
@@ -204,11 +193,10 @@ deeply validate timestamp semantics.
 - Fields: VN `4`, Mode `5`, Stratum `2`
 - Purpose: negative first-detector scope case documenting intentionally narrow
   mode `3`/`4` support
-- Target future PFL behavior: NOT NTP in the first conservative detector
+- Current PFL behavior: NOT NTP in the first conservative detector
 - Boundary: this is valid-family NTP behavior that is intentionally
   unsupported by the first automatic detector and may become positive in a
   future expansion
-- Current pre-implementation PFL baseline: ordinary UDP
 
 ### `10_ntpv4_truncated_47_byte_header.pcap`
 
@@ -218,8 +206,7 @@ deeply validate timestamp semantics.
 - Payload: exactly the first `47` bytes of an otherwise valid NTPv4 mode-3
   request
 - Purpose: complete 48-byte basic-header boundary negative case
-- Target future PFL behavior: NOT NTP
-- Current pre-implementation PFL baseline: ordinary UDP
+- Current PFL behavior: NOT NTP
 
 ## Intentionally Unsupported First-Version Forms
 

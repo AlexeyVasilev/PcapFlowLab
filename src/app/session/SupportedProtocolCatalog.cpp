@@ -26,7 +26,7 @@ constexpr std::array<SupportedProtocolStatusDescriptor, 4> kStatusDescriptors {{
     {SupportedProtocolCapabilityStatus::not_applicable, "not_applicable", "N/A"},
 }};
 
-constexpr std::array<SupportedProtocolCatalogRow, 37> kRows {{
+constexpr std::array<SupportedProtocolCatalogRow, 38> kRows {{
     {"ethernet", "Ethernet II", SupportedProtocolCategory::link_and_encapsulation, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::not_applicable, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::not_applicable, "Ethernet II framing is decoded and shown in Packet Summary."},
     {"ieee_802_3_llc_snap", "IEEE 802.3 LLC/SNAP", SupportedProtocolCategory::link_and_encapsulation, SupportedProtocolCapabilityStatus::partial, SupportedProtocolCapabilityStatus::not_applicable, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::not_applicable, "SNAP continuation is limited to supported IPv4, IPv6, and ARP payloads."},
     {"linux_sll_sll2", "Linux cooked capture (SLL/SLL2)", SupportedProtocolCategory::link_and_encapsulation, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::not_applicable, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::not_applicable, "Linux cooked capture headers are shown in Summary and supported inner decode continues."},
@@ -63,6 +63,7 @@ constexpr std::array<SupportedProtocolCatalogRow, 37> kRows {{
     {"bittorrent", "BitTorrent", SupportedProtocolCategory::application, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, "Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented."},
     {"mqtt", "MQTT", SupportedProtocolCategory::application, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, "Recognized from a structurally validated CONNECT packet for MQTT 3.1, 3.1.1, and 5.0; deeper MQTT parsing is not implemented."},
     {"amqp", "AMQP", SupportedProtocolCategory::application, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, "Recognized from exact AMQP protocol headers for AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL negotiation; deeper AMQP frame parsing is not implemented."},
+    {"ntp", "NTP", SupportedProtocolCategory::application, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, "Conservatively recognized for classic 48-byte NTPv3/NTPv4 client/server packets using UDP/123 direction semantics. Broader NTP modes and extensions are not yet automatically recognized."},
     {"mail_protocols", "Mail protocols (SMTP / POP3 / IMAP)", SupportedProtocolCategory::application, SupportedProtocolCapabilityStatus::yes, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, SupportedProtocolCapabilityStatus::no, "Lightweight detection exists; structured mail-protocol parsing is not implemented."},
 }};
 

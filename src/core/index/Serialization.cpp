@@ -2021,7 +2021,7 @@ CaptureStatisticsSnapshotPayloadReadResult read_capture_statistics_snapshot_payl
     for (std::uint32_t index = 0U; index < row_count; ++index) {
         CaptureStatisticsDetectedProtocolRow row {};
         if (!read_validated_enum_u8(stream, row.category, [](const std::uint8_t value) {
-                return value <= static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::amqp);
+                return value <= static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::ntp);
             }) ||
             !read_capture_statistics_protocol_counters(stream, row.counters)) {
             return CaptureStatisticsSnapshotPayloadReadResult {

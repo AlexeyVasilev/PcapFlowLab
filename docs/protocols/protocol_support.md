@@ -112,6 +112,7 @@ limitations remain accurately described.
 | Application | BitTorrent | Yes | No | No | No | Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented. |
 | Application | MQTT | Yes | No | No | No | Recognized from a structurally validated CONNECT packet for MQTT 3.1, 3.1.1, and 5.0; deeper MQTT parsing is not implemented. |
 | Application | AMQP | Yes | No | No | No | Recognized from exact AMQP protocol headers for AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL negotiation; deeper AMQP frame parsing is not implemented. |
+| Application | NTP | Yes | No | No | No | Conservatively recognized for classic 48-byte NTPv3/NTPv4 client/server packets using UDP/123 direction semantics. Broader NTP modes and extensions are not yet automatically recognized. |
 | Application | Mail protocols (SMTP / POP3 / IMAP) | Yes | No | No | No | Lightweight detection exists; structured mail-protocol parsing is not implemented. |
 <!-- END USER PROTOCOL CAPABILITY CATALOG -->
 
@@ -201,6 +202,7 @@ The current high-level detected-protocol families used by flow rows and Statisti
 | BitTorrent | Confirmed | Canonical 68-byte BitTorrent handshake detection only. |
 | MQTT | Confirmed | Structurally validated MQTT CONNECT detection only. |
 | AMQP | Confirmed | Exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol-header detection only. |
+| NTP | Confirmed | Conservative 48-byte NTPv3/NTPv4 client/server detection on UDP/123 direction semantics only. |
 | SMTP / POP3 / IMAP | Confirmed internal hints | Each protocol is detected independently and then aggregated into the Statistics row `Mail protocols`. |
 | DHCP | Confirmed | BOOTP/DHCP magic-cookie detection on UDP/67-68 only. |
 | mDNS | Confirmed | Multicast DNS detection requires UDP/5353 plus multicast destination and valid DNS message shape. |
@@ -259,6 +261,7 @@ surface under `Stream Item Data` where applicable.
 | BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is canonical-handshake / hint recognition only. Generic transport-owned Stream Item `Data` may still exist, but no BitTorrent-specific Stream semantics are implemented. |
 | MQTT | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is structurally validated CONNECT hint recognition for MQTT 3.1, 3.1.1, and 5.0 over TCP only. Generic TCP-owned Stream Item `Data` may still exist, but no MQTT-specific selected-packet or Stream semantics are implemented. |
 | AMQP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol headers over TCP only. TCP/5671 and TCP/5672 alone do not imply AMQP, ordinary TLS traffic on TCP/5671 is not inferred as AMQP, split protocol headers may be missed, and captures starting after negotiation may remain TCP. Generic TCP-owned Stream Item `Data` may still exist, but no AMQP-specific selected-packet, service extraction, Stream, or byte-view semantics are implemented. |
+| NTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exactly 48-byte NTPv3/NTPv4 mode-3 client packets with destination UDP/123 and mode-4 server packets with source UDP/123 when stratum is `<= 16`. All Leap Indicator values, including `LI == 3`, are accepted. NTPv1/v2, symmetric modes 1/2, broadcast mode 5, control/private modes 6/7, extension fields, authenticated MACs, NTS, non-standard-port automatic detection, TCP, and longer packets are outside the first conservative automatic detector rather than classified as universally invalid NTP. Generic UDP-owned Stream Item `Data` may still exist, but no NTP-specific selected-packet, Stream, service extraction, timestamp decoding, or byte-view semantics are implemented. |
 | SSH | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is banner-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but no structured SSH message or Stream model is implemented. |
 | SMTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no SMTP-specific Stream model. |
 | POP3 | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no POP3-specific Stream model. |
@@ -292,6 +295,7 @@ The shared layered Summary model is intentionally conservative today.
   - BitTorrent;
   - MQTT;
   - AMQP;
+  - NTP;
   - SMTP / POP3 / IMAP / SSH.
 - For TLS, QUIC, DNS, HTTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
 - ICMPv4 is now slightly stronger: layered Summary uses the shared bounded `IcmpInspectionParser -> IcmpMessage` model for common-header and selected type-specific metadata while still keeping checksum validation, quoted-packet recursive decoding, request/reply correlation, and ICMPv6 parity out of scope.

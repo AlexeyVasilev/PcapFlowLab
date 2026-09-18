@@ -238,6 +238,7 @@ struct CaptureProtocolSummary {
     ProtocolStats hint_imap {};
     ProtocolStats hint_mqtt {};
     ProtocolStats hint_amqp {};
+    ProtocolStats hint_ntp {};
     ProtocolStats hint_mail_protocols {};
     ProtocolStats hint_possible_tls {};
     ProtocolStats hint_possible_quic {};
@@ -377,6 +378,7 @@ struct CaptureGeneralProtocolStatistics {
     ProtocolStats hint_imap {};
     ProtocolStats hint_mqtt {};
     ProtocolStats hint_amqp {};
+    ProtocolStats hint_ntp {};
     ProtocolStats hint_mail_protocols {};
     ProtocolStats hint_possible_tls_candidate {};
     ProtocolStats hint_possible_quic_candidate {};

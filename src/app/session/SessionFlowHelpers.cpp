@@ -172,6 +172,9 @@ void observe_protocol_hint(
     case FlowProtocolHint::amqp:
         add_protocol_stats(statistics.hint_amqp, connection);
         break;
+    case FlowProtocolHint::ntp:
+        add_protocol_stats(statistics.hint_ntp, connection);
+        break;
     case FlowProtocolHint::possible_tls:
         add_protocol_stats(statistics.hint_possible_tls_candidate, connection);
         break;
@@ -1323,7 +1326,7 @@ std::string format_statistics_size_value(const std::uint64_t value) {
 
 std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary) {
     std::vector<ProtocolHintStatisticsRow> rows {};
-    rows.reserve(14U);
+    rows.reserve(16U);
 
     auto append_row = [&](const char* group, const char* protocol_label, const ProtocolStats& stats) {
         rows.push_back(ProtocolHintStatisticsRow {
@@ -1347,6 +1350,7 @@ std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const
     append_row("Confirmed", "BitTorrent", summary.hint_bittorrent);
     append_row("Confirmed", "MQTT", summary.hint_mqtt);
     append_row("Confirmed", "AMQP", summary.hint_amqp);
+    append_row("Confirmed", "NTP", summary.hint_ntp);
     append_row("Confirmed", "Mail protocols", summary.hint_mail_protocols);
     append_row("Confirmed", "DHCP", summary.hint_dhcp);
     append_row("Confirmed", "mDNS", summary.hint_mdns);
@@ -1482,6 +1486,9 @@ void project_detected_protocol_row(
         break;
     case CaptureStatisticsDetectedProtocolCategory::amqp:
         protocol.hint_amqp = project_protocol_stats(row.counters);
+        break;
+    case CaptureStatisticsDetectedProtocolCategory::ntp:
+        protocol.hint_ntp = project_protocol_stats(row.counters);
         break;
     case CaptureStatisticsDetectedProtocolCategory::mail_protocols:
         protocol.hint_mail_protocols = project_protocol_stats(row.counters);
@@ -1964,6 +1971,7 @@ CaptureProtocolSummary project_protocol_summary(
         .hint_imap = statistics.protocol.hint_imap,
         .hint_mqtt = statistics.protocol.hint_mqtt,
         .hint_amqp = statistics.protocol.hint_amqp,
+        .hint_ntp = statistics.protocol.hint_ntp,
         .hint_mail_protocols = statistics.protocol.hint_mail_protocols,
         .hint_unknown = statistics.protocol.hint_unknown_without_possible,
     };
@@ -2510,6 +2518,10 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
         CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::amqp,
             .counters = make_protocol_counters(general_statistics.protocol.hint_amqp),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::ntp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_ntp),
         },
         CaptureStatisticsDetectedProtocolRow {
             .category = CaptureStatisticsDetectedProtocolCategory::mail_protocols,

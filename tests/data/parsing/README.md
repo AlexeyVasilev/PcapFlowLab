@@ -251,7 +251,7 @@ are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 ## NTP
 
 These fixtures define the first conservative NTP detection-only behavior.
-Fixtures 01-05 are future target positives and fixtures 06-10 are
+Fixtures 01-05 are current positive cases and fixtures 06-10 are
 first-contract negatives or intentionally unsupported first-version forms.
 
 `ntp/01_ntpv4_client_request_port123.pcap`

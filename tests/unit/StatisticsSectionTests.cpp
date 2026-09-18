@@ -1683,7 +1683,7 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(overview.statistics_partial_open_warning_text.empty());
 
     PFL_EXPECT(hint_statistics.has_capture);
-    PFL_EXPECT(hint_statistics.protocol_hints.size() == 15U);
+    PFL_EXPECT(hint_statistics.protocol_hints.size() == 16U);
     PFL_REQUIRE(!hint_statistics.protocol_hints.empty());
     PFL_EXPECT(
         std::any_of(
@@ -1700,6 +1700,15 @@ void expect_overview_excludes_optional_statistics_sections() {
             hint_statistics.protocol_hints.end(),
             [](const FrontendProtocolHintStatsDto& row) {
                 return row.protocol_label == "AMQP";
+            }
+        )
+    );
+    PFL_EXPECT(
+        std::any_of(
+            hint_statistics.protocol_hints.begin(),
+            hint_statistics.protocol_hints.end(),
+            [](const FrontendProtocolHintStatsDto& row) {
+                return row.protocol_label == "NTP";
             }
         )
     );
