@@ -1006,6 +1006,88 @@ void run_flow_hints_tests() {
     }
 
     {
+        const auto registry_result = dissection::make_common_direct_registry();
+        PFL_REQUIRE(registry_result.ok());
+        PFL_REQUIRE(registry_result.registry.has_value());
+
+        const std::string sni {"retransmission.example.test"};
+        const auto payload = make_client_hello_payload_for_sni(sni);
+        const auto split_offset = split_before_sni_name(payload, sni);
+        const auto first_payload = take_prefix(payload, split_offset);
+        const auto second_payload = payload_suffix(payload, split_offset);
+        const auto flow_key = tls_flow_key_v4(ipv4(10, 90, 5, 1), ipv4(10, 90, 5, 2));
+        constexpr std::uint32_t sequence_number = 0x7000U;
+        const auto second_sequence = tcp_next_sequence(sequence_number, first_payload.size(), 0x18U);
+
+        CaptureState state {};
+        FlowHintService service {};
+        auto first_packet = make_import_packet(
+            make_ipv4_tls_packet(flow_key, sequence_number, first_payload),
+            0U
+        );
+        PFL_REQUIRE(process_packet_with_unified_dissection(
+            first_packet,
+            state,
+            *registry_result.registry,
+            service
+        ));
+
+        auto* connection = state.ipv4_connections.find(make_connection_key(flow_key));
+        PFL_REQUIRE(connection != nullptr);
+        PFL_EXPECT(has_pending_tls_client_hello(connection->hint_search_state));
+        PFL_EXPECT(service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == first_payload.size());
+
+        auto retransmitted_first_packet = make_import_packet(
+            make_ipv4_tls_packet(flow_key, sequence_number, first_payload),
+            1U
+        );
+        const auto retransmitted_packet_hint = FlowHintService {}.detect(
+            retransmitted_first_packet.bytes,
+            kLinkTypeEthernet,
+            flow_key,
+            terminal_tcp_bounds(54U, first_payload.size())
+        );
+        PFL_EXPECT(retransmitted_packet_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(retransmitted_packet_hint.service_hint.empty());
+
+        PFL_REQUIRE(process_packet_with_unified_dissection(
+            retransmitted_first_packet,
+            state,
+            *registry_result.registry,
+            service
+        ));
+
+        connection = state.ipv4_connections.find(make_connection_key(flow_key));
+        PFL_REQUIRE(connection != nullptr);
+        PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
+        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+        PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(connection->service_hint.empty());
+
+        auto third_packet = make_import_packet(
+            make_ipv4_tls_packet(flow_key, second_sequence, second_payload),
+            2U
+        );
+        PFL_REQUIRE(process_packet_with_unified_dissection(
+            third_packet,
+            state,
+            *registry_result.registry,
+            service
+        ));
+
+        connection = state.ipv4_connections.find(make_connection_key(flow_key));
+        PFL_REQUIRE(connection != nullptr);
+        PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
+        PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(connection->service_hint.empty());
+        PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
+        PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
+    }
+
+    {
         const std::string sni {"expired.example.test"};
         const auto payload = make_client_hello_payload_for_sni(sni);
         const auto split_offset = split_before_sni_name(payload, sni);
