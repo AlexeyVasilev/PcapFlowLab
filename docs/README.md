@@ -98,6 +98,9 @@ different responsibilities.
 - [Statistics, Reporting, and Large-Index Architecture RFC](features/statistics-reporting-index-rfc.md)
   Current Statistics/reporting architecture direction and migration rationale
   that pairs with the v16 container RFC.
+- [Statistics Expansion and Index Provenance v19 RFC](features/statistics-expansion-index-v19-rfc.md)
+  Proposed future revision 19 Statistics/index contract; revision 18 remains
+  the current implemented stable index revision.
 
 ## Export
 
