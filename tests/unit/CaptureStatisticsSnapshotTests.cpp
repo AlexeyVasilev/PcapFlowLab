@@ -914,6 +914,92 @@ void expect_encoding_layout_is_stable() {
     PFL_EXPECT(read_le32_at(bytes, first_top_flow_service_offset) == 13U);
 }
 
+struct ExpectedHistogramBucket {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+template <typename Bucket>
+void expect_zeroed_future_flow_histogram_bucket(
+    const Bucket& bucket,
+    const ExpectedHistogramBucket& expected
+) {
+    PFL_EXPECT(bucket.stable_id == expected.stable_id);
+    PFL_EXPECT(bucket.lower_bound_inclusive == expected.lower_bound_inclusive);
+    PFL_EXPECT(bucket.upper_bound_inclusive == expected.upper_bound_inclusive);
+    PFL_EXPECT(bucket.flow_count == 0U);
+    PFL_EXPECT(bucket.captured_byte_count == 0U);
+    PFL_EXPECT(bucket.original_byte_count == 0U);
+}
+
+template <typename Histogram>
+void expect_zeroed_future_flow_histogram_totals(const Histogram& histogram) {
+    PFL_EXPECT(histogram.total_flow_count == 0U);
+    PFL_EXPECT(histogram.total_captured_byte_count == 0U);
+    PFL_EXPECT(histogram.total_original_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_flow_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_captured_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 0U);
+}
+
+void expect_flow_duration_histogram_layout_is_stable() {
+    const auto histogram = make_default_capture_statistics_flow_duration_histogram();
+    const std::vector<ExpectedHistogramBucket> expected {{
+        {"duration_zero", 0U, 0U},
+        {"duration_gt0_lt1ms", 1U, 999U},
+        {"duration_1_10ms", 1'000U, 9'999U},
+        {"duration_10_100ms", 10'000U, 99'999U},
+        {"duration_100ms_1s", 100'000U, 999'999U},
+        {"duration_1_10s", 1'000'000U, 9'999'999U},
+        {"duration_10_60s", 10'000'000U, 59'999'999U},
+        {"duration_1_10min", 60'000'000U, 599'999'999U},
+        {"duration_10min_plus", 600'000'000U, std::nullopt},
+    }};
+
+    expect_zeroed_future_flow_histogram_totals(histogram);
+    PFL_EXPECT(kCaptureStatisticsFlowDurationHistogramBucketCount == expected.size());
+    PFL_REQUIRE(histogram.buckets.size() == expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        expect_zeroed_future_flow_histogram_bucket(histogram.buckets[index], expected[index]);
+        if (index + 1U < expected.size()) {
+            PFL_REQUIRE(histogram.buckets[index].upper_bound_inclusive.has_value());
+            PFL_EXPECT(*histogram.buckets[index].upper_bound_inclusive + 1U ==
+                       histogram.buckets[index + 1U].lower_bound_inclusive);
+        }
+    }
+    PFL_EXPECT(!histogram.buckets.back().upper_bound_inclusive.has_value());
+}
+
+void expect_flow_original_byte_size_histogram_layout_is_stable() {
+    const auto histogram = make_default_capture_statistics_flow_original_byte_size_histogram();
+    const std::vector<ExpectedHistogramBucket> expected {{
+        {"original_bytes_0_255", 0U, 255U},
+        {"original_bytes_256_1023", 256U, 1'023U},
+        {"original_bytes_1_4kib", 1'024U, 4'095U},
+        {"original_bytes_4_16kib", 4'096U, 16'383U},
+        {"original_bytes_16_64kib", 16'384U, 65'535U},
+        {"original_bytes_64_256kib", 65'536U, 262'143U},
+        {"original_bytes_256kib_1mib", 262'144U, 1'048'575U},
+        {"original_bytes_1_10mib", 1'048'576U, 10'485'759U},
+        {"original_bytes_10_100mib", 10'485'760U, 104'857'599U},
+        {"original_bytes_100mib_plus", 104'857'600U, std::nullopt},
+    }};
+
+    expect_zeroed_future_flow_histogram_totals(histogram);
+    PFL_EXPECT(kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount == expected.size());
+    PFL_REQUIRE(histogram.buckets.size() == expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        expect_zeroed_future_flow_histogram_bucket(histogram.buckets[index], expected[index]);
+        if (index + 1U < expected.size()) {
+            PFL_REQUIRE(histogram.buckets[index].upper_bound_inclusive.has_value());
+            PFL_EXPECT(*histogram.buckets[index].upper_bound_inclusive + 1U ==
+                       histogram.buckets[index + 1U].lower_bound_inclusive);
+        }
+    }
+    PFL_EXPECT(!histogram.buckets.back().upper_bound_inclusive.has_value());
+}
+
 }  // namespace
 
 void run_capture_statistics_snapshot_tests() {
@@ -922,6 +1008,8 @@ void run_capture_statistics_snapshot_tests() {
     expect_roundtrip_preserves_rich_snapshot();
     expect_decoder_rejects_malformed_payloads();
     expect_encoding_layout_is_stable();
+    expect_flow_duration_histogram_layout_is_stable();
+    expect_flow_original_byte_size_histogram_layout_is_stable();
 }
 
 }  // namespace pfl::tests

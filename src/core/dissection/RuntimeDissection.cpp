@@ -35,7 +35,39 @@ std::optional<std::uint32_t> declared_payload_length_from_bounds(
     return static_cast<std::uint32_t>(payload_length);
 }
 
-std::optional<bool> effective_ip_fragmentation(const ImportDissectionFacts& facts) noexcept {
+IpFragmentationKind effective_ip_fragmentation_kind(const ImportDissectionFacts& facts) noexcept {
+    switch (facts.family) {
+    case DissectionAddressFamily::ipv4:
+        if (!facts.has_ipv4_fragmentation) {
+            return IpFragmentationKind::none;
+        }
+        if (facts.ipv4_fragmentation.fragment_offset_units > 0U) {
+            return IpFragmentationKind::ipv4_non_initial;
+        }
+        return facts.ipv4_fragmentation.more_fragments
+            ? IpFragmentationKind::ipv4_initial
+            : IpFragmentationKind::none;
+    case DissectionAddressFamily::ipv6:
+        if (!facts.has_ipv6_fragmentation) {
+            return IpFragmentationKind::none;
+        }
+        if (!facts.ipv6_fragmentation.has_fragment_header) {
+            return IpFragmentationKind::none;
+        }
+        if (facts.ipv6_fragmentation.fragment_offset_units > 0U) {
+            return IpFragmentationKind::ipv6_non_initial;
+        }
+        return facts.ipv6_fragmentation.more_fragments
+            ? IpFragmentationKind::ipv6_initial
+            : IpFragmentationKind::ipv6_atomic;
+    case DissectionAddressFamily::unknown:
+        break;
+    }
+
+    return IpFragmentationKind::none;
+}
+
+std::optional<bool> legacy_effective_ip_fragmentation(const ImportDissectionFacts& facts) noexcept {
     switch (facts.family) {
     case DissectionAddressFamily::ipv4:
         if (!facts.has_ipv4_fragmentation) {
@@ -97,7 +129,8 @@ RuntimeDissectionFacts derive_runtime_dissection_facts(
     if (collected.has_tcp_flags) {
         facts.tcp_flags = collected.tcp_flags;
     }
-    facts.is_ip_fragmented = effective_ip_fragmentation(collected);
+    facts.ip_fragmentation_kind = effective_ip_fragmentation_kind(collected);
+    facts.is_ip_fragmented = legacy_effective_ip_fragmentation(collected);
     facts.final_status = collected.final_status;
     facts.stop_reason = collected.stop_reason;
     facts.step_count = collected.step_count;

@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <string>
 
+#include "core/domain/IpFragmentation.h"
 #include "core/services/DissectionImportAdapter.h"
 
 namespace pfl::tests {
@@ -197,6 +198,109 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
     }
 }
 
+void expect_adapter_derives_precise_ip_fragmentation_classification() {
+    auto make_ipv4_facts = [](const bool more_fragments,
+                              const std::uint16_t fragment_offset_units) {
+        return ImportDissectionFacts {
+            .physical_path = make_path_builder({LayerKey::ethernet_ii(), LayerKey::ipv4()}),
+            .outcome = ImportDissectionOutcome::recognized_flow,
+            .family = DissectionAddressFamily::ipv4,
+            .terminal_protocol = ProtocolId::udp,
+            .has_flow_addresses = true,
+            .src_addr_v4 = 0xC0000201U,
+            .dst_addr_v4 = 0xC6336401U,
+            .has_ipv4_fragmentation = true,
+            .ipv4_fragmentation = ImportIpv4Fragmentation {
+                .is_fragmented = more_fragments || fragment_offset_units > 0U,
+                .more_fragments = more_fragments,
+                .fragment_offset_units = fragment_offset_units,
+            },
+            .final_status = ParseStatus::complete,
+            .stop_reason = more_fragments || fragment_offset_units > 0U
+                ? StopReason::needs_reassembly
+                : StopReason::terminal_protocol,
+        };
+    };
+
+    auto make_ipv6_facts = [](const bool has_fragment_header,
+                              const bool more_fragments,
+                              const std::uint16_t fragment_offset_units) {
+        ImportDissectionFacts facts {};
+        facts.physical_path = make_path_builder({LayerKey::ethernet_ii(), LayerKey::ipv6()});
+        facts.outcome = ImportDissectionOutcome::recognized_flow;
+        facts.family = DissectionAddressFamily::ipv6;
+        facts.terminal_protocol = ProtocolId::udp;
+        facts.has_flow_addresses = true;
+        facts.src_addr_v6[15] = 1U;
+        facts.dst_addr_v6[15] = 2U;
+        facts.has_ipv6_fragmentation = has_fragment_header;
+        facts.ipv6_fragmentation = ImportIpv6Fragmentation {
+            .has_fragment_header = has_fragment_header,
+            .more_fragments = more_fragments,
+            .fragment_offset_units = fragment_offset_units,
+            .is_atomic_fragment = has_fragment_header && fragment_offset_units == 0U && !more_fragments,
+        };
+        facts.final_status = ParseStatus::complete;
+        facts.stop_reason = has_fragment_header && (more_fragments || fragment_offset_units > 0U)
+            ? StopReason::needs_reassembly
+            : StopReason::terminal_protocol;
+        return facts;
+    };
+
+    auto expect_ipv4_kind = [&](const char* label,
+                                const bool more_fragments,
+                                const std::uint16_t fragment_offset_units,
+                                const IpFragmentationKind expected_kind,
+                                const bool expected_legacy_fragmented) {
+        const ScopedTestContext context {label};
+        const auto decision = adapt_dissection_import_facts(make_ipv4_facts(more_fragments, fragment_offset_units));
+        PFL_REQUIRE(decision.has_decoded_packet());
+        PFL_REQUIRE(decision.decoded_packet->ipv4.has_value());
+        const auto& metadata = decision.decoded_packet->ipv4->import_metadata;
+        PFL_EXPECT(metadata.ip_fragmentation_kind == expected_kind);
+        PFL_EXPECT(metadata.is_ip_fragmented == expected_legacy_fragmented);
+    };
+
+    auto expect_ipv6_kind = [&](const char* label,
+                                const bool has_fragment_header,
+                                const bool more_fragments,
+                                const std::uint16_t fragment_offset_units,
+                                const IpFragmentationKind expected_kind,
+                                const bool expected_legacy_fragmented) {
+        const ScopedTestContext context {label};
+        const auto decision = adapt_dissection_import_facts(make_ipv6_facts(
+            has_fragment_header,
+            more_fragments,
+            fragment_offset_units
+        ));
+        PFL_REQUIRE(decision.has_decoded_packet());
+        PFL_REQUIRE(decision.decoded_packet->ipv6.has_value());
+        const auto& metadata = decision.decoded_packet->ipv6->import_metadata;
+        PFL_EXPECT(metadata.ip_fragmentation_kind == expected_kind);
+        PFL_EXPECT(metadata.is_ip_fragmented == expected_legacy_fragmented);
+    };
+
+    expect_ipv4_kind("synthetic=ipv4_offset0_mf0", false, 0U, IpFragmentationKind::none, false);
+    expect_ipv4_kind("synthetic=ipv4_offset0_mf1", true, 0U, IpFragmentationKind::ipv4_initial, true);
+    expect_ipv4_kind("synthetic=ipv4_offset_gt0_mf1", true, 12U, IpFragmentationKind::ipv4_non_initial, true);
+    expect_ipv4_kind("synthetic=ipv4_offset_gt0_mf0", false, 12U, IpFragmentationKind::ipv4_non_initial, true);
+
+    expect_ipv6_kind("synthetic=ipv6_no_fragment_header", false, false, 0U, IpFragmentationKind::none, false);
+    expect_ipv6_kind("synthetic=ipv6_offset0_m1", true, true, 0U, IpFragmentationKind::ipv6_initial, true);
+    expect_ipv6_kind("synthetic=ipv6_offset_gt0_m1", true, true, 12U, IpFragmentationKind::ipv6_non_initial, true);
+    expect_ipv6_kind("synthetic=ipv6_offset_gt0_m0", true, false, 12U, IpFragmentationKind::ipv6_non_initial, true);
+    expect_ipv6_kind("synthetic=ipv6_atomic", true, false, 0U, IpFragmentationKind::ipv6_atomic, true);
+
+    PFL_EXPECT(!is_real_ip_fragment(IpFragmentationKind::none));
+    PFL_EXPECT(is_real_ip_fragment(IpFragmentationKind::ipv4_initial));
+    PFL_EXPECT(is_real_ip_fragment(IpFragmentationKind::ipv4_non_initial));
+    PFL_EXPECT(is_real_ip_fragment(IpFragmentationKind::ipv6_initial));
+    PFL_EXPECT(is_real_ip_fragment(IpFragmentationKind::ipv6_non_initial));
+    PFL_EXPECT(!is_real_ip_fragment(IpFragmentationKind::ipv6_atomic));
+    PFL_EXPECT(is_ipv6_atomic_fragment(IpFragmentationKind::ipv6_atomic));
+    PFL_EXPECT(!is_ipv6_atomic_fragment(IpFragmentationKind::ipv6_initial));
+}
+
 void expect_adapter_preserves_unrecognized_and_non_flow_classification() {
     {
         const ScopedTestContext context {"fixture=parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap | packet=2"};
@@ -265,6 +369,7 @@ void expect_adapter_preserves_unrecognized_and_non_flow_classification() {
 
 void run_dissection_import_adapter_tests() {
     expect_adapter_maps_synthetic_portless_and_payload_edge_cases();
+    expect_adapter_derives_precise_ip_fragmentation_classification();
     expect_adapter_preserves_unrecognized_and_non_flow_classification();
 }
 

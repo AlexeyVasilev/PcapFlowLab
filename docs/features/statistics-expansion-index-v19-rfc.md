@@ -70,6 +70,18 @@ Stable persisted bucket identities:
 | 7 | `1-10 min` | `60,000,000 .. 599,999,999 us` |
 | 8 | `10 min+` | `>= 600,000,000 us` |
 
+Stable domain IDs for these buckets are:
+
+- `duration_zero`
+- `duration_gt0_lt1ms`
+- `duration_1_10ms`
+- `duration_10_100ms`
+- `duration_100ms_1s`
+- `duration_1_10s`
+- `duration_10_60s`
+- `duration_1_10min`
+- `duration_10min_plus`
+
 The ranges have no gaps or overlaps. Single-packet Flows naturally land in
 bucket `0`. Multiple packets with identical timestamps also land in bucket
 `0`.
@@ -101,6 +113,19 @@ Stable persisted bucket identities:
 | 7 | `1-10 MiB` | `1,048,576 .. 10,485,759` |
 | 8 | `10-100 MiB` | `10,485,760 .. 104,857,599` |
 | 9 | `100 MiB+` | `>= 104,857,600` |
+
+Stable domain IDs for these buckets are:
+
+- `original_bytes_0_255`
+- `original_bytes_256_1023`
+- `original_bytes_1_4kib`
+- `original_bytes_4_16kib`
+- `original_bytes_16_64kib`
+- `original_bytes_64_256kib`
+- `original_bytes_256kib_1mib`
+- `original_bytes_1_10mib`
+- `original_bytes_10_100mib`
+- `original_bytes_100mib_plus`
 
 ## IP Fragmentation Statistics
 

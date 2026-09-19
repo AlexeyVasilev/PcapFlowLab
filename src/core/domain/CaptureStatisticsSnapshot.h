@@ -136,6 +136,64 @@ struct CaptureStatisticsFlowPacketCountHistogram {
     ) = default;
 };
 
+struct CaptureStatisticsFlowDurationBucket {
+    std::string stable_id {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_byte_count {0};
+    std::uint64_t original_byte_count {0};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureStatisticsFlowDurationBucket&,
+        const CaptureStatisticsFlowDurationBucket&
+    ) = default;
+};
+
+struct CaptureStatisticsFlowDurationHistogram {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::vector<CaptureStatisticsFlowDurationBucket> buckets {};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureStatisticsFlowDurationHistogram&,
+        const CaptureStatisticsFlowDurationHistogram&
+    ) = default;
+};
+
+struct CaptureStatisticsFlowOriginalByteSizeBucket {
+    std::string stable_id {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_byte_count {0};
+    std::uint64_t original_byte_count {0};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureStatisticsFlowOriginalByteSizeBucket&,
+        const CaptureStatisticsFlowOriginalByteSizeBucket&
+    ) = default;
+};
+
+struct CaptureStatisticsFlowOriginalByteSizeHistogram {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::vector<CaptureStatisticsFlowOriginalByteSizeBucket> buckets {};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureStatisticsFlowOriginalByteSizeHistogram&,
+        const CaptureStatisticsFlowOriginalByteSizeHistogram&
+    ) = default;
+};
+
 struct CaptureStatisticsDirectionDistribution {
     std::uint64_t mostly_a_to_b_flow_count {0};
     std::uint64_t balanced_flow_count {0};
@@ -225,6 +283,8 @@ inline constexpr std::size_t kCaptureStatisticsSnapshotTopEndpointCapacity = 20U
 inline constexpr std::size_t kCaptureStatisticsSnapshotTopPortCapacity = 20U;
 inline constexpr std::size_t kCaptureStatisticsSnapshotTopFlowCapacity = 10U;
 inline constexpr std::size_t kCaptureStatisticsFlowPacketCountHistogramBucketCount = 12U;
+inline constexpr std::size_t kCaptureStatisticsFlowDurationHistogramBucketCount = 9U;
+inline constexpr std::size_t kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount = 10U;
 
 [[nodiscard]] std::vector<CaptureStatisticsTransportProtocolRow>
 make_default_capture_statistics_transport_protocol_rows();
@@ -232,6 +292,9 @@ make_default_capture_statistics_transport_protocol_rows();
 [[nodiscard]] std::vector<CaptureStatisticsDetectedProtocolRow>
 make_default_capture_statistics_detected_protocol_rows();
 [[nodiscard]] CaptureStatisticsFlowPacketCountHistogram make_default_capture_statistics_flow_packet_count_histogram();
+[[nodiscard]] CaptureStatisticsFlowDurationHistogram make_default_capture_statistics_flow_duration_histogram();
+[[nodiscard]] CaptureStatisticsFlowOriginalByteSizeHistogram
+make_default_capture_statistics_flow_original_byte_size_histogram();
 
 struct CaptureStatisticsSnapshot {
     CaptureStatisticsScope scope {CaptureStatisticsScope::complete};

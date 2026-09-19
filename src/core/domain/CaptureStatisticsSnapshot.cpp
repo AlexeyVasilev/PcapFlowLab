@@ -15,6 +15,18 @@ struct FlowPacketCountBucketDefinition {
     std::optional<std::uint64_t> upper_bound_inclusive;
 };
 
+struct FlowDurationBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+struct FlowOriginalByteSizeBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
 constexpr std::array<CaptureStatisticsTransportProtocolCategory, 4> kTransportProtocolCategories {{
     CaptureStatisticsTransportProtocolCategory::tcp,
     CaptureStatisticsTransportProtocolCategory::udp,
@@ -69,6 +81,33 @@ constexpr std::array<FlowPacketCountBucketDefinition, kCaptureStatisticsFlowPack
     {"packets_501_1000", 501U, 1000U},
     {"packets_1001_5000", 1001U, 5000U},
     {"packets_5001_plus", 5001U, std::nullopt},
+}};
+
+constexpr std::array<FlowDurationBucketDefinition, kCaptureStatisticsFlowDurationHistogramBucketCount>
+    kFlowDurationBucketDefinitions {{
+    {"duration_zero", 0U, 0U},
+    {"duration_gt0_lt1ms", 1U, 999U},
+    {"duration_1_10ms", 1'000U, 9'999U},
+    {"duration_10_100ms", 10'000U, 99'999U},
+    {"duration_100ms_1s", 100'000U, 999'999U},
+    {"duration_1_10s", 1'000'000U, 9'999'999U},
+    {"duration_10_60s", 10'000'000U, 59'999'999U},
+    {"duration_1_10min", 60'000'000U, 599'999'999U},
+    {"duration_10min_plus", 600'000'000U, std::nullopt},
+}};
+
+constexpr std::array<FlowOriginalByteSizeBucketDefinition, kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount>
+    kFlowOriginalByteSizeBucketDefinitions {{
+    {"original_bytes_0_255", 0U, 255U},
+    {"original_bytes_256_1023", 256U, 1'023U},
+    {"original_bytes_1_4kib", 1'024U, 4'095U},
+    {"original_bytes_4_16kib", 4'096U, 16'383U},
+    {"original_bytes_16_64kib", 16'384U, 65'535U},
+    {"original_bytes_64_256kib", 65'536U, 262'143U},
+    {"original_bytes_256kib_1mib", 262'144U, 1'048'575U},
+    {"original_bytes_1_10mib", 1'048'576U, 10'485'759U},
+    {"original_bytes_10_100mib", 10'485'760U, 104'857'599U},
+    {"original_bytes_100mib_plus", 104'857'600U, std::nullopt},
 }};
 
 template <typename T>
@@ -334,6 +373,32 @@ CaptureStatisticsFlowPacketCountHistogram make_default_capture_statistics_flow_p
     histogram.buckets.reserve(kFlowPacketCountBucketDefinitions.size());
     for (const auto& definition : kFlowPacketCountBucketDefinitions) {
         histogram.buckets.push_back(CaptureStatisticsFlowPacketCountBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+        });
+    }
+    return histogram;
+}
+
+CaptureStatisticsFlowDurationHistogram make_default_capture_statistics_flow_duration_histogram() {
+    CaptureStatisticsFlowDurationHistogram histogram {};
+    histogram.buckets.reserve(kFlowDurationBucketDefinitions.size());
+    for (const auto& definition : kFlowDurationBucketDefinitions) {
+        histogram.buckets.push_back(CaptureStatisticsFlowDurationBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+        });
+    }
+    return histogram;
+}
+
+CaptureStatisticsFlowOriginalByteSizeHistogram make_default_capture_statistics_flow_original_byte_size_histogram() {
+    CaptureStatisticsFlowOriginalByteSizeHistogram histogram {};
+    histogram.buckets.reserve(kFlowOriginalByteSizeBucketDefinitions.size());
+    for (const auto& definition : kFlowOriginalByteSizeBucketDefinitions) {
+        histogram.buckets.push_back(CaptureStatisticsFlowOriginalByteSizeBucket {
             .stable_id = definition.stable_id,
             .lower_bound_inclusive = definition.lower_bound_inclusive,
             .upper_bound_inclusive = definition.upper_bound_inclusive,
