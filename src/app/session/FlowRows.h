@@ -339,6 +339,44 @@ struct FlowPacketCountHistogram {
     std::vector<FlowPacketCountHistogramBucket> buckets {};
 };
 
+struct FlowDurationHistogramBucket {
+    std::string stable_id {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_byte_count {0};
+    std::uint64_t original_byte_count {0};
+};
+
+struct FlowDurationHistogram {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::vector<FlowDurationHistogramBucket> buckets {};
+};
+
+struct FlowOriginalByteSizeHistogramBucket {
+    std::string stable_id {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_byte_count {0};
+    std::uint64_t original_byte_count {0};
+};
+
+struct FlowOriginalByteSizeHistogram {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::vector<FlowOriginalByteSizeHistogramBucket> buckets {};
+};
+
 struct CaptureFlowCharacteristicsStatistics {
     std::uint64_t total_flow_count {0};
     std::uint64_t only_a_to_b_flow_count {0};
@@ -388,6 +426,8 @@ struct CaptureGeneralProtocolStatistics {
 struct CaptureGeneralStatistics {
     CaptureGeneralProtocolStatistics protocol {};
     FlowPacketCountHistogram flow_packet_count_histogram {};
+    FlowDurationHistogram flow_duration_histogram {};
+    FlowOriginalByteSizeHistogram flow_original_byte_size_histogram {};
     CaptureQuicTlsSummary quic_tls_summary {};
     CaptureTopSummary top_summary {};
     CaptureFlowCharacteristicsStatistics flow_characteristics {};

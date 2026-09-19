@@ -38,6 +38,18 @@ struct FlowPacketCountHistogramBucketDefinition {
     std::optional<std::uint64_t> upper_bound_inclusive;
 };
 
+struct FlowDurationHistogramBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+struct FlowOriginalByteSizeHistogramBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
 const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountHistogramBucketDefinitions {{
     {"packets_1", 1U, 1U},
     {"packets_2", 2U, 2U},
@@ -51,6 +63,31 @@ const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountH
     {"packets_501_1000", 501U, 1000U},
     {"packets_1001_5000", 1001U, 5000U},
     {"packets_5001_plus", 5001U, std::nullopt},
+}};
+
+const std::array<FlowDurationHistogramBucketDefinition, 9> kFlowDurationHistogramBucketDefinitions {{
+    {"duration_zero", 0U, 0U},
+    {"duration_gt0_lt1ms", 1U, 999U},
+    {"duration_1_10ms", 1'000U, 9'999U},
+    {"duration_10_100ms", 10'000U, 99'999U},
+    {"duration_100ms_1s", 100'000U, 999'999U},
+    {"duration_1_10s", 1'000'000U, 9'999'999U},
+    {"duration_10_60s", 10'000'000U, 59'999'999U},
+    {"duration_1_10min", 60'000'000U, 599'999'999U},
+    {"duration_10min_plus", 600'000'000U, std::nullopt},
+}};
+
+const std::array<FlowOriginalByteSizeHistogramBucketDefinition, 10> kFlowOriginalByteSizeHistogramBucketDefinitions {{
+    {"original_bytes_0_255", 0U, 255U},
+    {"original_bytes_256_1023", 256U, 1'023U},
+    {"original_bytes_1_4kib", 1'024U, 4'095U},
+    {"original_bytes_4_16kib", 4'096U, 16'383U},
+    {"original_bytes_16_64kib", 16'384U, 65'535U},
+    {"original_bytes_64_256kib", 65'536U, 262'143U},
+    {"original_bytes_256kib_1mib", 262'144U, 1'048'575U},
+    {"original_bytes_1_10mib", 1'048'576U, 10'485'759U},
+    {"original_bytes_10_100mib", 10'485'760U, 104'857'599U},
+    {"original_bytes_100mib_plus", 104'857'600U, std::nullopt},
 }};
 
 FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
@@ -112,6 +149,34 @@ void append_flow_packet_histogram_bucket_definitions(FlowPacketCountHistogram& h
     histogram.buckets.reserve(kFlowPacketCountHistogramBucketDefinitions.size());
     for (const auto& definition : kFlowPacketCountHistogramBucketDefinitions) {
         histogram.buckets.push_back(FlowPacketCountHistogramBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+            .flow_count = 0U,
+            .captured_byte_count = 0U,
+            .original_byte_count = 0U,
+        });
+    }
+}
+
+void append_flow_duration_histogram_bucket_definitions(FlowDurationHistogram& histogram) {
+    histogram.buckets.reserve(kFlowDurationHistogramBucketDefinitions.size());
+    for (const auto& definition : kFlowDurationHistogramBucketDefinitions) {
+        histogram.buckets.push_back(FlowDurationHistogramBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+            .flow_count = 0U,
+            .captured_byte_count = 0U,
+            .original_byte_count = 0U,
+        });
+    }
+}
+
+void append_flow_original_byte_size_histogram_bucket_definitions(FlowOriginalByteSizeHistogram& histogram) {
+    histogram.buckets.reserve(kFlowOriginalByteSizeHistogramBucketDefinitions.size());
+    for (const auto& definition : kFlowOriginalByteSizeHistogramBucketDefinitions) {
+        histogram.buckets.push_back(FlowOriginalByteSizeHistogramBucket {
             .stable_id = definition.stable_id,
             .lower_bound_inclusive = definition.lower_bound_inclusive,
             .upper_bound_inclusive = definition.upper_bound_inclusive,
@@ -230,7 +295,71 @@ void observe_histogram(
     histogram.total_original_byte_count += original_bytes_for_flow;
 }
 
+void observe_histogram(
+    FlowDurationHistogram& histogram,
+    const ListedConnectionRef& connection
+) noexcept {
+    const auto& stats = aggregate_stats(connection);
+    const auto duration_us = stats.last_timestamp_us >= stats.first_timestamp_us
+        ? stats.last_timestamp_us - stats.first_timestamp_us
+        : 0U;
+    const auto captured_bytes_for_flow = captured_bytes(connection);
+    const auto original_bytes_for_flow = total_bytes(connection);
+
+    auto& bucket = histogram.buckets[flow_duration_histogram_bucket_index(duration_us)];
+    ++bucket.flow_count;
+    bucket.captured_byte_count += captured_bytes_for_flow;
+    bucket.original_byte_count += original_bytes_for_flow;
+    ++histogram.total_flow_count;
+    histogram.total_captured_byte_count += captured_bytes_for_flow;
+    histogram.total_original_byte_count += original_bytes_for_flow;
+}
+
+void observe_histogram(
+    FlowOriginalByteSizeHistogram& histogram,
+    const ListedConnectionRef& connection
+) noexcept {
+    const auto captured_bytes_for_flow = captured_bytes(connection);
+    const auto original_bytes_for_flow = total_bytes(connection);
+
+    auto& bucket = histogram.buckets[flow_original_byte_size_histogram_bucket_index(original_bytes_for_flow)];
+    ++bucket.flow_count;
+    bucket.captured_byte_count += captured_bytes_for_flow;
+    bucket.original_byte_count += original_bytes_for_flow;
+    ++histogram.total_flow_count;
+    histogram.total_captured_byte_count += captured_bytes_for_flow;
+    histogram.total_original_byte_count += original_bytes_for_flow;
+}
+
 void finalize_histogram(FlowPacketCountHistogram& histogram) noexcept {
+    for (const auto& bucket : histogram.buckets) {
+        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+        histogram.maximum_bucket_captured_byte_count = std::max(
+            histogram.maximum_bucket_captured_byte_count,
+            bucket.captured_byte_count
+        );
+        histogram.maximum_bucket_original_byte_count = std::max(
+            histogram.maximum_bucket_original_byte_count,
+            bucket.original_byte_count
+        );
+    }
+}
+
+void finalize_histogram(FlowDurationHistogram& histogram) noexcept {
+    for (const auto& bucket : histogram.buckets) {
+        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+        histogram.maximum_bucket_captured_byte_count = std::max(
+            histogram.maximum_bucket_captured_byte_count,
+            bucket.captured_byte_count
+        );
+        histogram.maximum_bucket_original_byte_count = std::max(
+            histogram.maximum_bucket_original_byte_count,
+            bucket.original_byte_count
+        );
+    }
+}
+
+void finalize_histogram(FlowOriginalByteSizeHistogram& histogram) noexcept {
     for (const auto& bucket : histogram.buckets) {
         histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
         histogram.maximum_bucket_captured_byte_count = std::max(
@@ -1235,6 +1364,34 @@ std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_
 }
 
 }  // namespace
+
+std::size_t flow_duration_histogram_bucket_index(const std::uint64_t duration_us) noexcept {
+    for (std::size_t index = 0U; index < kFlowDurationHistogramBucketDefinitions.size(); ++index) {
+        const auto& bucket = kFlowDurationHistogramBucketDefinitions[index];
+        if (duration_us < bucket.lower_bound_inclusive) {
+            continue;
+        }
+        if (!bucket.upper_bound_inclusive.has_value() || duration_us <= *bucket.upper_bound_inclusive) {
+            return index;
+        }
+    }
+
+    return kFlowDurationHistogramBucketDefinitions.size() - 1U;
+}
+
+std::size_t flow_original_byte_size_histogram_bucket_index(const std::uint64_t original_bytes) noexcept {
+    for (std::size_t index = 0U; index < kFlowOriginalByteSizeHistogramBucketDefinitions.size(); ++index) {
+        const auto& bucket = kFlowOriginalByteSizeHistogramBucketDefinitions[index];
+        if (original_bytes < bucket.lower_bound_inclusive) {
+            continue;
+        }
+        if (!bucket.upper_bound_inclusive.has_value() || original_bytes <= *bucket.upper_bound_inclusive) {
+            return index;
+        }
+    }
+
+    return kFlowOriginalByteSizeHistogramBucketDefinitions.size() - 1U;
+}
 
 std::string format_flow_protocol_text(const ProtocolId protocol) {
     switch (protocol) {
@@ -2608,6 +2765,8 @@ CaptureGeneralStatistics build_capture_general_statistics(
 ) {
     CaptureGeneralStatistics statistics {};
     append_flow_packet_histogram_bucket_definitions(statistics.flow_packet_count_histogram);
+    append_flow_duration_histogram_bucket_definitions(statistics.flow_duration_histogram);
+    append_flow_original_byte_size_histogram_bucket_definitions(statistics.flow_original_byte_size_histogram);
     std::unordered_map<EndpointKeyV4, EndpointAccumulator, EndpointKeyV4Hash> top_endpoint_rows_v4 {};
     std::unordered_map<EndpointKeyV6, EndpointAccumulator, EndpointKeyV6Hash> top_endpoint_rows_v6 {};
     std::vector<PortAccumulator> top_port_rows {};
@@ -2645,6 +2804,8 @@ CaptureGeneralStatistics build_capture_general_statistics(
 
         observe_protocol_hint(statistics.protocol, connection);
         observe_histogram(statistics.flow_packet_count_histogram, connection);
+        observe_histogram(statistics.flow_duration_histogram, connection);
+        observe_histogram(statistics.flow_original_byte_size_histogram, connection);
 
         ++statistics.flow_characteristics.total_flow_count;
         if (directional_packet_count(connection, Direction::a_to_b) > 0U &&
@@ -2815,6 +2976,8 @@ CaptureGeneralStatistics build_capture_general_statistics(
     }
 
     finalize_histogram(statistics.flow_packet_count_histogram);
+    finalize_histogram(statistics.flow_duration_histogram);
+    finalize_histogram(statistics.flow_original_byte_size_histogram);
     if (top_summary_capacity > 0U) {
         statistics.top_summary = build_top_summary_from_aggregates(
             top_endpoint_rows_v4,

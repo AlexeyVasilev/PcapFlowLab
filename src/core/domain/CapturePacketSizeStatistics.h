@@ -6,6 +6,7 @@
 #include <optional>
 #include <string_view>
 
+#include "core/domain/IpFragmentation.h"
 #include "core/domain/PacketRef.h"
 
 namespace pfl {
@@ -85,6 +86,21 @@ struct CapturePacketTimestampRange {
     ) = default;
 };
 
+struct CaptureIpFragmentationStatistics {
+    std::uint64_t effective_ipv4_packet_count {0};
+    std::uint64_t effective_ipv6_packet_count {0};
+    std::uint64_t ipv4_fragmented_packet_count {0};
+    std::uint64_t ipv6_fragmented_packet_count {0};
+    std::uint64_t initial_fragment_packet_count {0};
+    std::uint64_t non_initial_fragment_packet_count {0};
+    std::uint64_t ipv6_atomic_fragment_packet_count {0};
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const CaptureIpFragmentationStatistics&,
+        const CaptureIpFragmentationStatistics&
+    ) = default;
+};
+
 struct CapturePacketStatistics {
     std::uint64_t total_packet_count {0};
     std::uint64_t total_captured_bytes {0};
@@ -98,6 +114,7 @@ struct CapturePacketStatistics {
         .maximum_bucket_packet_count = 0U,
         .buckets = make_original_packet_size_statistics_buckets(),
     };
+    CaptureIpFragmentationStatistics ip_fragmentation {};
     std::uint64_t unrecognized_packet_count {0};
     std::uint64_t unrecognized_captured_bytes {0};
     std::uint64_t unrecognized_original_bytes {0};
@@ -235,6 +252,43 @@ inline void observe_capture_packet_statistics(
         ++statistics.unrecognized_packet_count;
         statistics.unrecognized_captured_bytes += packet.captured_length;
         statistics.unrecognized_original_bytes += packet.original_length;
+    }
+}
+
+inline void observe_effective_ip_fragmentation_statistics(
+    CaptureIpFragmentationStatistics& statistics,
+    const bool effective_ipv4,
+    const bool effective_ipv6,
+    const IpFragmentationKind kind
+) noexcept {
+    if (effective_ipv4) {
+        ++statistics.effective_ipv4_packet_count;
+    } else if (effective_ipv6) {
+        ++statistics.effective_ipv6_packet_count;
+    }
+
+    switch (kind) {
+    case IpFragmentationKind::ipv4_initial:
+        ++statistics.ipv4_fragmented_packet_count;
+        ++statistics.initial_fragment_packet_count;
+        break;
+    case IpFragmentationKind::ipv4_non_initial:
+        ++statistics.ipv4_fragmented_packet_count;
+        ++statistics.non_initial_fragment_packet_count;
+        break;
+    case IpFragmentationKind::ipv6_initial:
+        ++statistics.ipv6_fragmented_packet_count;
+        ++statistics.initial_fragment_packet_count;
+        break;
+    case IpFragmentationKind::ipv6_non_initial:
+        ++statistics.ipv6_fragmented_packet_count;
+        ++statistics.non_initial_fragment_packet_count;
+        break;
+    case IpFragmentationKind::ipv6_atomic:
+        ++statistics.ipv6_atomic_fragment_packet_count;
+        break;
+    case IpFragmentationKind::none:
+        break;
     }
 }
 
