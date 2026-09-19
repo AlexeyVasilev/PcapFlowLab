@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -849,6 +850,17 @@ std::vector<std::uint8_t> serialize_capture_import_settings_payload(
     return stream_bytes(stream);
 }
 
+bool decode_capture_import_settings_payload(
+    const std::vector<std::uint8_t>& payload,
+    CaptureImportSettingsSnapshot& decoded
+) {
+    std::istringstream stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    return detail::read_capture_import_settings_snapshot(stream, decoded);
+}
+
 detail::CaptureIndexStableHeader make_v16_stable_header() {
     auto header = make_stable_header();
     header.index_revision = kCaptureIndexStableIndexRevision;
@@ -1631,21 +1643,42 @@ void run_index_format_tests() {
     {
         auto settings = make_capture_import_settings_snapshot(AnalysisSettings {});
         settings.records.push_back(CaptureImportSettingRecord {
-            .stable_key = "future_import_setting",
-            .display_name = "Future import setting",
-            .value_text = "custom value",
+            .stable_key = "future_capture_mode",
+            .display_name = "Future capture mode",
+            .value_text = "aggressive",
         });
         PFL_REQUIRE(validate_capture_import_settings_snapshot(settings).ok);
 
         const auto payload = serialize_capture_import_settings_payload(settings);
-        std::istringstream payload_stream(
-            std::string(payload.begin(), payload.end()),
-            std::ios::binary | std::ios::in
-        );
         CaptureImportSettingsSnapshot decoded_settings {};
-        PFL_REQUIRE(detail::read_capture_import_settings_snapshot(payload_stream, decoded_settings));
+        PFL_REQUIRE(decode_capture_import_settings_payload(payload, decoded_settings));
         PFL_EXPECT(decoded_settings == settings);
-        PFL_EXPECT(payload_stream.peek() == std::char_traits<char>::eof());
+
+        auto nonzero_entry_flags_payload = payload;
+        PFL_REQUIRE(nonzero_entry_flags_payload.size() > 10U);
+        write_le16_at(nonzero_entry_flags_payload, 10U, 1U);
+        CaptureImportSettingsSnapshot nonzero_entry_flags_decoded {};
+        PFL_EXPECT(!decode_capture_import_settings_payload(
+            nonzero_entry_flags_payload,
+            nonzero_entry_flags_decoded
+        ));
+
+        auto entry_trailing_payload = payload;
+        PFL_REQUIRE(entry_trailing_payload.size() > 8U);
+        const auto first_entry_payload_size = read_le32_at(entry_trailing_payload, 4U);
+        PFL_REQUIRE(first_entry_payload_size > 0U);
+        write_le32_at(entry_trailing_payload, 4U, first_entry_payload_size + 1U);
+        entry_trailing_payload.insert(
+            entry_trailing_payload.begin() + static_cast<std::ptrdiff_t>(8U + first_entry_payload_size),
+            0xA5U
+        );
+        CaptureImportSettingsSnapshot entry_trailing_decoded {};
+        PFL_EXPECT(!decode_capture_import_settings_payload(entry_trailing_payload, entry_trailing_decoded));
+
+        auto section_trailing_payload = payload;
+        section_trailing_payload.push_back(0x5AU);
+        CaptureImportSettingsSnapshot section_trailing_decoded {};
+        PFL_EXPECT(!decode_capture_import_settings_payload(section_trailing_payload, section_trailing_decoded));
 
         std::ostringstream section_stream(std::ios::binary | std::ios::out);
         PFL_REQUIRE(detail::write_capture_index_stable_header(section_stream, make_v16_stable_header()));
@@ -3640,7 +3673,9 @@ void run_index_format_tests() {
             revision_17_bytes
         );
         const std::string revision_17_error =
-            "This index uses revision 17; current supported revision is 18. Rebuild the index from the source capture.";
+            "This index uses revision 17; current supported revision is " +
+            std::to_string(kCaptureIndexStableIndexRevision) +
+            ". Rebuild the index from the source capture.";
 
         detail::CaptureIndexV16CompleteReadResult revision_17_read {};
         PFL_EXPECT(!index_reader.read_v16_complete(revision_17_path, revision_17_read));

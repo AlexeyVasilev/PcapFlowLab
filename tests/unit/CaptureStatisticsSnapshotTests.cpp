@@ -556,6 +556,49 @@ void expect_default_and_scope_variants_are_valid() {
     PFL_EXPECT(validate_capture_statistics_snapshot(snapshot).ok);
 }
 
+void expect_partial_scope_roundtrip_preserves_revision19_fields() {
+    auto snapshot = make_valid_snapshot();
+    snapshot.scope = CaptureStatisticsScope::partial;
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count = snapshot.total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count = 610U;
+    snapshot.flow_duration_histogram.total_original_byte_count = 720U;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count = 3U;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count = 310U;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count = 360U;
+    snapshot.flow_duration_histogram.buckets[0].flow_count = 3U;
+    snapshot.flow_duration_histogram.buckets[0].captured_byte_count = 300U;
+    snapshot.flow_duration_histogram.buckets[0].original_byte_count = 360U;
+    snapshot.flow_duration_histogram.buckets[1].flow_count = 1U;
+    snapshot.flow_duration_histogram.buckets[1].captured_byte_count = 310U;
+    snapshot.flow_duration_histogram.buckets[1].original_byte_count = 360U;
+
+    snapshot.flow_original_byte_size_histogram = make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count = snapshot.total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count = 610U;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count = 720U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count = 3U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count = 310U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count = 360U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].flow_count = 3U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].captured_byte_count = 300U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].original_byte_count = 360U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].flow_count = 1U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].captured_byte_count = 310U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].original_byte_count = 360U;
+
+    PFL_REQUIRE(validate_capture_statistics_snapshot(snapshot).ok);
+    CaptureStatisticsSnapshot decoded {};
+    PFL_REQUIRE(deserialize_snapshot(serialize_snapshot(snapshot), decoded));
+    PFL_EXPECT(decoded == snapshot);
+    PFL_EXPECT(decoded.scope == CaptureStatisticsScope::partial);
+    PFL_EXPECT(decoded.flow_duration_histogram.buckets[1].flow_count == 1U);
+    PFL_EXPECT(decoded.flow_original_byte_size_histogram.buckets[1].flow_count == 1U);
+    PFL_EXPECT(decoded.ip_fragmentation.ipv4_fragmented_packet_count == 1U);
+    PFL_EXPECT(decoded.ip_fragmentation.ipv6_atomic_fragment_packet_count == 1U);
+    PFL_EXPECT(decoded.flows_containing_fragments_count == 1U);
+}
+
 void expect_runtime_builder_projects_current_statistics() {
     CapturePacketStatistics packet_statistics {};
     packet_statistics.total_packet_count = 6U;
@@ -1108,6 +1151,7 @@ void expect_flow_original_byte_size_histogram_layout_is_stable() {
 
 void run_capture_statistics_snapshot_tests() {
     expect_default_and_scope_variants_are_valid();
+    expect_partial_scope_roundtrip_preserves_revision19_fields();
     expect_runtime_builder_projects_current_statistics();
     expect_roundtrip_preserves_rich_snapshot();
     expect_decoder_rejects_malformed_payloads();

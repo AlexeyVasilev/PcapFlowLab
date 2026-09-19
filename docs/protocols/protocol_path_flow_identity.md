@@ -193,7 +193,7 @@ Current compatibility policy:
   rebuild-required diagnostic;
 - stable v16 indexes are recognized but rejected for full load with a
   rebuild-required diagnostic;
-- stable revision 17 indexes are recognized but rejected for full load with a
+- stable revision 17 and 18 indexes are recognized but rejected for full load with a
   rebuild-required diagnostic;
 - stable revision 19 indexes load when their required section schemas remain
   supported;

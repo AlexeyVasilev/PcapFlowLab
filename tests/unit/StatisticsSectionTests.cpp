@@ -20,6 +20,7 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CapturePacketSizeStatistics.h"
+#include "core/domain/CaptureImportSettings.h"
 #include "core/domain/Connection.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/index/CaptureIndex.h"
@@ -412,6 +413,26 @@ void expect_histogram_equal(const FlowPacketCountHistogram& left, const FlowPack
     PFL_EXPECT(left.excluded_zero_packet_flow_count == right.excluded_zero_packet_flow_count);
     PFL_EXPECT(left.excluded_zero_packet_captured_byte_count == right.excluded_zero_packet_captured_byte_count);
     PFL_EXPECT(left.excluded_zero_packet_original_byte_count == right.excluded_zero_packet_original_byte_count);
+    PFL_EXPECT(left.buckets.size() == right.buckets.size());
+
+    for (std::size_t index = 0U; index < left.buckets.size(); ++index) {
+        PFL_EXPECT(left.buckets[index].stable_id == right.buckets[index].stable_id);
+        PFL_EXPECT(left.buckets[index].lower_bound_inclusive == right.buckets[index].lower_bound_inclusive);
+        PFL_EXPECT(left.buckets[index].upper_bound_inclusive == right.buckets[index].upper_bound_inclusive);
+        PFL_EXPECT(left.buckets[index].flow_count == right.buckets[index].flow_count);
+        PFL_EXPECT(left.buckets[index].captured_byte_count == right.buckets[index].captured_byte_count);
+        PFL_EXPECT(left.buckets[index].original_byte_count == right.buckets[index].original_byte_count);
+    }
+}
+
+template <typename Histogram>
+void expect_triple_metric_histogram_equal(const Histogram& left, const Histogram& right) {
+    PFL_EXPECT(left.total_flow_count == right.total_flow_count);
+    PFL_EXPECT(left.total_captured_byte_count == right.total_captured_byte_count);
+    PFL_EXPECT(left.total_original_byte_count == right.total_original_byte_count);
+    PFL_EXPECT(left.maximum_bucket_flow_count == right.maximum_bucket_flow_count);
+    PFL_EXPECT(left.maximum_bucket_captured_byte_count == right.maximum_bucket_captured_byte_count);
+    PFL_EXPECT(left.maximum_bucket_original_byte_count == right.maximum_bucket_original_byte_count);
     PFL_EXPECT(left.buckets.size() == right.buckets.size());
 
     for (std::size_t index = 0U; index < left.buckets.size(); ++index) {
@@ -1397,7 +1418,7 @@ void expect_capture_ip_fragmentation_statistics_treat_ipv6_atomic_as_non_real_fr
     expect_capture_packet_statistics_invariants(state.packet_statistics);
 }
 
-void expect_legacy_connection_fragmentation_still_uses_broad_flag() {
+void expect_connection_fragmentation_counts_only_real_fragments() {
     ConnectionV6 connection {};
     const FlowKeyV6 key {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
@@ -1421,8 +1442,156 @@ void expect_legacy_connection_fragmentation_still_uses_broad_flag() {
         }
     );
 
+    PFL_EXPECT(!connection.has_fragmented_packets);
+    PFL_EXPECT(connection.fragmented_packet_count == 0U);
+
+    connection.add_packet(
+        key,
+        PacketRef {
+            .packet_index = 2U,
+            .captured_length = 72U,
+            .original_length = 72U,
+        },
+        PacketImportMetadata {
+            .ip_fragmentation_kind = IpFragmentationKind::ipv6_initial,
+            .is_ip_fragmented = true,
+        }
+    );
     PFL_EXPECT(connection.has_fragmented_packets);
     PFL_EXPECT(connection.fragmented_packet_count == 1U);
+
+    ConnectionV4 ipv4_connection {};
+    const FlowKeyV4 ipv4_key {
+        .src_addr = ipv4(10, 44, 0, 1),
+        .dst_addr = ipv4(10, 44, 0, 2),
+        .src_port = 5000U,
+        .dst_port = 5001U,
+        .protocol = ProtocolId::udp,
+    };
+    ipv4_connection.add_packet(
+        ipv4_key,
+        packet,
+        PacketImportMetadata {
+            .ip_fragmentation_kind = IpFragmentationKind::ipv4_non_initial,
+            .is_ip_fragmented = true,
+        }
+    );
+    PFL_EXPECT(ipv4_connection.has_fragmented_packets);
+    PFL_EXPECT(ipv4_connection.fragmented_packet_count == 1U);
+}
+
+void expect_revision_19_statistics_survive_session_index_roundtrip() {
+    const auto tcp_ab = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 1),
+        ipv4(10, 71, 0, 2),
+        41000,
+        443,
+        300,
+        0x18
+    );
+    const auto tcp_ba = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 2),
+        ipv4(10, 71, 0, 1),
+        443,
+        41000,
+        32,
+        0x18
+    );
+    const auto ipv4_fragment = make_ethernet_ipv4_fragment_packet(
+        ipv4(10, 71, 1, 1),
+        ipv4(10, 71, 1, 2),
+        17,
+        0x2000U,
+        make_ipv6_udp_segment(5000U, 5001U, 16U)
+    );
+    const auto capture_path = write_temp_pcap(
+        "pfl_revision19_statistics_parity.pcap",
+        make_classic_pcap({
+            {100U, tcp_ab},
+            {700U, tcp_ba},
+            {900U, ipv4_fragment},
+        })
+    );
+
+    const CaptureImportOptions options {
+        .settings = AnalysisSettings {
+            .http_use_path_as_service_hint = true,
+            .ignore_vlan_and_mpls_layers_when_grouping_flows = true,
+            .ignore_gtpu_teids_when_grouping_inner_flows = true,
+        },
+    };
+
+    CaptureSession raw_session {};
+    PFL_REQUIRE(raw_session.open_capture(capture_path, options));
+    raw_session.state().capture_import_settings.records.push_back(CaptureImportSettingRecord {
+        .stable_key = "future_capture_mode",
+        .display_name = "Future capture mode",
+        .value_text = "aggressive",
+    });
+    PFL_REQUIRE(validate_capture_import_settings_snapshot(raw_session.state().capture_import_settings).ok);
+    const auto raw_connections = session_detail::list_connections(raw_session.state());
+    const auto raw_general_statistics = session_detail::build_capture_general_statistics(
+        std::span<const session_detail::ListedConnectionRef>(raw_connections.data(), raw_connections.size()),
+        raw_session.state().unrecognized_packets.size()
+    );
+    const auto raw_packet_statistics = raw_session.packet_statistics();
+    PFL_REQUIRE(raw_general_statistics.flow_duration_histogram.total_flow_count >= 2U);
+    PFL_REQUIRE(raw_general_statistics.flow_duration_histogram.buckets.size() > 1U);
+    PFL_EXPECT(raw_general_statistics.flow_duration_histogram.buckets[1].flow_count > 0U);
+    PFL_REQUIRE(raw_general_statistics.flow_original_byte_size_histogram.buckets.size() > 1U);
+    PFL_EXPECT(raw_general_statistics.flow_original_byte_size_histogram.buckets[1].flow_count > 0U);
+    PFL_EXPECT(raw_packet_statistics.ip_fragmentation.effective_ipv4_packet_count == 3U);
+    PFL_EXPECT(raw_packet_statistics.ip_fragmentation.ipv4_fragmented_packet_count == 1U);
+    PFL_EXPECT(raw_packet_statistics.ip_fragmentation.initial_fragment_packet_count == 1U);
+    PFL_EXPECT(raw_general_statistics.flow_characteristics.flows_containing_fragments_count == 1U);
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_revision19_statistics_parity.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(raw_session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    PFL_EXPECT(loaded_session.opened_from_index());
+    const auto loaded_connections = session_detail::list_connections(loaded_session.state());
+    const auto loaded_general_statistics = session_detail::build_capture_general_statistics(
+        std::span<const session_detail::ListedConnectionRef>(loaded_connections.data(), loaded_connections.size()),
+        loaded_session.state().unrecognized_packets.size()
+    );
+    const auto loaded_packet_statistics = loaded_session.packet_statistics();
+    expect_triple_metric_histogram_equal(
+        raw_general_statistics.flow_duration_histogram,
+        loaded_general_statistics.flow_duration_histogram
+    );
+    expect_triple_metric_histogram_equal(
+        raw_general_statistics.flow_original_byte_size_histogram,
+        loaded_general_statistics.flow_original_byte_size_histogram
+    );
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.effective_ipv4_packet_count ==
+               raw_packet_statistics.ip_fragmentation.effective_ipv4_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.effective_ipv6_packet_count ==
+               raw_packet_statistics.ip_fragmentation.effective_ipv6_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.ipv4_fragmented_packet_count ==
+               raw_packet_statistics.ip_fragmentation.ipv4_fragmented_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.ipv6_fragmented_packet_count ==
+               raw_packet_statistics.ip_fragmentation.ipv6_fragmented_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.initial_fragment_packet_count ==
+               raw_packet_statistics.ip_fragmentation.initial_fragment_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.non_initial_fragment_packet_count ==
+               raw_packet_statistics.ip_fragmentation.non_initial_fragment_packet_count);
+    PFL_EXPECT(loaded_packet_statistics.ip_fragmentation.ipv6_atomic_fragment_packet_count ==
+               raw_packet_statistics.ip_fragmentation.ipv6_atomic_fragment_packet_count);
+    PFL_EXPECT(loaded_general_statistics.flow_characteristics.flows_containing_fragments_count ==
+               raw_general_statistics.flow_characteristics.flows_containing_fragments_count);
+    PFL_EXPECT(loaded_session.state().capture_import_settings == raw_session.state().capture_import_settings);
+    PFL_EXPECT(loaded_session.flow_grouping_ignores_vlan_and_mpls_layers() ==
+               raw_session.flow_grouping_ignores_vlan_and_mpls_layers());
+    PFL_EXPECT(loaded_session.flow_grouping_ignores_gtpu_teids() ==
+               raw_session.flow_grouping_ignores_gtpu_teids());
+
+    PFL_REQUIRE(loaded_session.save_index(index_path));
+    CaptureSession rewritten_session {};
+    PFL_REQUIRE(rewritten_session.load_index(index_path));
+    PFL_EXPECT(rewritten_session.state().capture_import_settings == raw_session.state().capture_import_settings);
 }
 
 void expect_capture_packet_statistics_track_single_recognized_packet() {
@@ -3484,7 +3653,8 @@ void run_statistics_section_tests() {
     expect_capture_ip_fragmentation_statistics_count_final_unrecognized_packet_once();
     expect_capture_ip_fragmentation_statistics_use_effective_nested_classification();
     expect_capture_ip_fragmentation_statistics_treat_ipv6_atomic_as_non_real_fragment();
-    expect_legacy_connection_fragmentation_still_uses_broad_flag();
+    expect_connection_fragmentation_counts_only_real_fragments();
+    expect_revision_19_statistics_survive_session_index_roundtrip();
     expect_capture_packet_statistics_track_single_recognized_packet();
     expect_capture_packet_statistics_track_single_truncated_packet();
     expect_capture_packet_size_statistics_counts_recognized_and_unrecognized_packets();
