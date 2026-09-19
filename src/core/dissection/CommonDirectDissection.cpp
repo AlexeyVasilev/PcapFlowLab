@@ -237,6 +237,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.dst_port = layer_facts.dst_port;
                 facts_.has_tcp_flags = true;
                 facts_.tcp_flags = layer_facts.flags;
+                facts_.has_tcp_sequence_number = true;
+                facts_.tcp_sequence_number = layer_facts.sequence_number;
                 facts_.has_transport_payload_length = step.bounds.payload.has_value();
                 facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
                 facts_.terminal_transport_payload_bounds = terminal_transport_payload_bounds_from_layer(step.bounds);

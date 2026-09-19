@@ -51,6 +51,8 @@ struct ImportDissectionFacts {
     std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
     bool has_tcp_flags {false};
     std::uint8_t tcp_flags {0U};
+    bool has_tcp_sequence_number {false};
+    std::uint32_t tcp_sequence_number {0U};
     bool has_ipv4_fragmentation {false};
     ImportIpv4Fragmentation ipv4_fragmentation {};
     bool has_ipv6_fragmentation {false};

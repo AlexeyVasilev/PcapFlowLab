@@ -240,6 +240,8 @@ void expect_shadow_recognizes_portless_terminal_flow(
     PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
     PFL_EXPECT(!shadow.has_tcp_flags);
     PFL_EXPECT(shadow.tcp_flags == 0U);
+    PFL_EXPECT(!shadow.has_tcp_sequence_number);
+    PFL_EXPECT(shadow.tcp_sequence_number == 0U);
 }
 
 void expect_shadow_recognizes_arp_flow(
@@ -266,6 +268,8 @@ void expect_shadow_recognizes_arp_flow(
     PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
     PFL_EXPECT(!shadow.has_tcp_flags);
     PFL_EXPECT(shadow.tcp_flags == 0U);
+    PFL_EXPECT(!shadow.has_tcp_sequence_number);
+    PFL_EXPECT(shadow.tcp_sequence_number == 0U);
 }
 
 void record_step_kind(void* context, const DissectionStep& step) {

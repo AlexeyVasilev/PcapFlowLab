@@ -90,6 +90,16 @@ Common current read-path rule:
 - Bounded QUIC discovery.
   QUIC Initial and CID discovery for selected-packet runtime presentation should scan only a small likely-client prefix, and a bounded miss must not be cached as an authoritative full-flow miss.
 
+- Sparse import-time continuation state.
+  Keep the common path in per-connection metadata with only a tiny marker.
+  Retained bytes belong in sparse, short-lived import-scoped storage outside
+  every `Connection`; when the marker is absent, there should be no sparse
+  lookup. Opposite-direction packets should avoid lookup, zero-payload budget
+  maintenance should stay metadata-only, and retained state should have local
+  lifetime plus global count/byte bounds. Prefer false negatives over
+  unbounded memory or general reassembly. The bounded two-segment TLS
+  ClientHello SNI continuation is the current example of this pattern.
+
 - Cheap protocol precheck or gating.
   Use service hints and bounded-prefix sniffing to avoid expensive TLS or HTTP branches when they are unlikely to succeed.
 

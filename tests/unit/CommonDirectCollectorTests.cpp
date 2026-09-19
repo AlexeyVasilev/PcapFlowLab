@@ -148,6 +148,7 @@ void expect_collector_arp_flow_finalization_preserves_committed_path() {
     PFL_EXPECT(!collector.facts().has_ports);
     PFL_EXPECT(!collector.facts().has_transport_payload_length);
     PFL_EXPECT(!collector.facts().has_tcp_flags);
+    PFL_EXPECT(!collector.facts().has_tcp_sequence_number);
 }
 
 void expect_collector_recognized_flow_finalization_populates_terminal_metadata() {
@@ -186,6 +187,7 @@ void expect_collector_recognized_flow_finalization_populates_terminal_metadata()
     PFL_EXPECT(collector.facts().dst_port == 443U);
     PFL_EXPECT(!collector.facts().has_transport_payload_length);
     PFL_EXPECT(!collector.facts().has_tcp_flags);
+    PFL_EXPECT(!collector.facts().has_tcp_sequence_number);
 }
 
 }  // namespace

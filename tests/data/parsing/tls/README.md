@@ -1751,18 +1751,20 @@ Fixtures `12`, `13`, `14`, and `18` now expose bounded structured ECDHE `ServerK
   - packet `5` is a pure continuation segment carrying `390` TCP payload bytes;
   - the SNI bytes are physically present only in packet `5`.
 - the preserved SNI is `edge.microsoft.com`.
-- initial import-time flow hint behavior is intentionally packet-local:
+- import-time flow hint behavior uses bounded two-segment TLS ClientHello continuation:
   - the first ClientHello segment is sufficient to classify the flow as `TLS`;
-  - import-time Service remains empty because the SNI is not yet available in that first segment.
-- after selecting/loading the flow, bounded selected-flow TCP/TLS reconstruction completes the ClientHello:
+  - the second segment is the exact contiguous same-direction continuation;
+  - open-time continuation recovers Service/SNI as `edge.microsoft.com`.
+- after selecting/loading the flow, bounded selected-flow TCP/TLS reconstruction independently completes the ClientHello:
   - the full handshake becomes available to selected-flow presentation;
-  - Service is recovered as `edge.microsoft.com`.
+  - Service/SNI is also recovered as `edge.microsoft.com` for selected-flow presentation.
 
 #### Unique purpose
 
-- Permanent real segmented-TLS fixture showing the difference between:
-  - packet-local import-time TLS detection;
-  - later bounded selected-flow SNI recovery from a continued ClientHello.
+- Primary permanent real segmented-TLS regression fixture for bounded
+  open-time two-segment ClientHello SNI continuation.
+- Preserves the distinction from `tls_1_3_split_client_hello_10.pcap`, where
+  SNI is already available in the first packet-local ClientHello prefix.
 
 ### tls_normal_1.pcap
 

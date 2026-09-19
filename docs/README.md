@@ -40,6 +40,9 @@ End-user documentation lives separately under `user_docs/`.
   Detailed current protocol capability reference.
 - [Protocol Path Flow Identity](protocols/protocol_path_flow_identity.md)
   Current path-aware normalized flow-identity contract.
+- [Bounded TLS Open-Time Hinting](features/tls-open-time-hinting-rfc.md)
+  Current bounded two-segment TLS ClientHello import-time SNI continuation
+  contract.
 
 ## Selected Packet, Flow, Stream, And Analysis
 

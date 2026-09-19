@@ -1,6 +1,8 @@
 #include "CommonDirectDissectionTestSupport.h"
 #include "core/dissection/modules/CommonDirectModules.h"
 
+#include <variant>
+
 namespace pfl::tests::common_direct_test {
 
 using namespace dissection;
@@ -10,8 +12,17 @@ void expect_tcp_udp_canonical_parsers() {
     const auto registry = make_common_direct_registry();
     PFL_REQUIRE(registry.ok());
 
-    const auto tcp_packet_bytes = make_ethernet_ipv4_tcp_packet_with_payload(
-        ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 12345U, 443U, 6U, 0x1BU);
+    const auto tcp_sequence_number = 0x10203040U;
+    const auto tcp_packet_bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 0, 0, 3),
+        ipv4(10, 0, 0, 4),
+        12345U,
+        443U,
+        {0x61, 0x62, 0x63, 0x64, 0x65, 0x66},
+        tcp_sequence_number,
+        0U,
+        0x1BU
+    );
     const auto tcp_packet = make_raw_packet(tcp_packet_bytes);
     const auto tcp_root = make_root_slice(tcp_packet);
     const auto tcp_ethernet = parse_ethernet_frame(tcp_root);
@@ -26,8 +37,37 @@ void expect_tcp_udp_canonical_parsers() {
     PFL_EXPECT(tcp_transport.status == ParseStatus::complete);
     PFL_EXPECT(tcp_transport.src_port == 12345U);
     PFL_EXPECT(tcp_transport.dst_port == 443U);
+    PFL_EXPECT(tcp_transport.sequence_number == tcp_sequence_number);
     PFL_EXPECT(tcp_transport.captured_payload_length == 6U);
     PFL_EXPECT(tcp_transport.flags == 0x1BU);
+
+    const auto tcp_step = dissect_tcp(require_child_slice(
+        require_child_slice(tcp_root, tcp_ethernet.header_length, tcp_ethernet.declared_payload_length),
+        tcp_ipv4.header_length,
+        tcp_ipv4.nominal_packet_end - tcp_ipv4.header_length
+    ));
+    PFL_EXPECT(tcp_step.status == ParseStatus::complete);
+    const auto* tcp_facts = std::get_if<TcpFacts>(&tcp_step.facts);
+    PFL_REQUIRE(tcp_facts != nullptr);
+    PFL_EXPECT(tcp_facts->sequence_number == tcp_sequence_number);
+    PFL_EXPECT(tcp_facts->flags == 0x1BU);
+
+    const auto tcp_shadow = run_shadow(tcp_packet, *registry.registry);
+    PFL_EXPECT(tcp_shadow.has_tcp_sequence_number);
+    PFL_EXPECT(tcp_shadow.tcp_sequence_number == tcp_sequence_number);
+    PFL_EXPECT(tcp_shadow.has_tcp_flags);
+    PFL_EXPECT(tcp_shadow.tcp_flags == 0x1BU);
+
+    auto truncated_tcp_bytes = tcp_packet_bytes;
+    truncated_tcp_bytes.resize(14U + 20U + 8U);
+    const auto truncated_tcp_shadow = run_shadow(
+        make_raw_packet(truncated_tcp_bytes, static_cast<std::uint32_t>(tcp_packet_bytes.size())),
+        *registry.registry
+    );
+    PFL_EXPECT(!truncated_tcp_shadow.has_tcp_sequence_number);
+    PFL_EXPECT(truncated_tcp_shadow.tcp_sequence_number == 0U);
+    PFL_EXPECT(!truncated_tcp_shadow.has_tcp_flags);
+    PFL_EXPECT(truncated_tcp_shadow.tcp_flags == 0U);
 
     auto ipv4_options_bytes = add_ipv4_options(
         make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 4444U, 5555U),

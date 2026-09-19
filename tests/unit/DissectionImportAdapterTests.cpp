@@ -68,6 +68,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.protocol == ProtocolId::icmp);
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_sequence_number.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
     }
 
@@ -91,6 +92,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv6->flow_key.protocol == ProtocolId::icmpv6);
         PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.transport_payload_length.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.tcp_sequence_number.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.is_ip_fragmented);
     }
 
@@ -109,6 +111,8 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
             .has_ports = true,
             .has_tcp_flags = true,
             .tcp_flags = 0x12U,
+            .has_tcp_sequence_number = true,
+            .tcp_sequence_number = 0x01020304U,
             .final_status = ParseStatus::complete,
             .stop_reason = StopReason::terminal_protocol,
         };
@@ -119,6 +123,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.dst_port == 51515U);
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
         PFL_EXPECT(decision.decoded_packet->ipv4->import_metadata.tcp_flags == 0x12U);
+        PFL_EXPECT(decision.decoded_packet->ipv4->import_metadata.tcp_sequence_number == 0x01020304U);
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
         PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);
@@ -153,6 +158,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv6->flow_key.protocol == ProtocolId::udp);
         PFL_EXPECT(decision.decoded_packet->ipv6->import_metadata.transport_payload_length == 9U);
         PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.tcp_sequence_number.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.is_ip_fragmented);
         PFL_EXPECT(decision.decoded_packet->terminal_transport_payload_bounds == facts.terminal_transport_payload_bounds);
         expect_packet_ref_context_unset(decision.decoded_packet->ipv6->packet_ref);
@@ -184,6 +190,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.dst_port == 0U);
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
         PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_sequence_number.has_value());
         PFL_EXPECT(decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
         PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);

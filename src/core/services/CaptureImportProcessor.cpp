@@ -239,6 +239,10 @@ void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState&
     append_capture_packet_locator_entry(state, packet.packet_index, packet.record_file_offset);
 }
 
+void CaptureImportProcessor::finalize_import(CaptureState& state) const {
+    hint_service_.clear_pending_tls_client_hello_candidates(state);
+}
+
 CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     if (!is_supported_capture_link_type(reader.data_link_type())) {
         if (ctx != nullptr) {
@@ -249,11 +253,15 @@ CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState&
         return CaptureImportResult::failure;
     }
 
-    return import_classic_packets(reader, state, processor, ctx);
+    const auto result = import_classic_packets(reader, state, processor, ctx);
+    processor.finalize_import(state);
+    return result;
 }
 
 CaptureImportResult import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
-    return import_full_packets(reader, state, processor, ctx);
+    const auto result = import_full_packets(reader, state, processor, ctx);
+    processor.finalize_import(state);
+    return result;
 }
 
 CaptureImportResult import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
