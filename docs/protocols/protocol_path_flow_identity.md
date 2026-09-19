@@ -195,7 +195,7 @@ Current compatibility policy:
   rebuild-required diagnostic;
 - stable revision 17 indexes are recognized but rejected for full load with a
   rebuild-required diagnostic;
-- stable revision 18 indexes load when their required section schemas remain
+- stable revision 19 indexes load when their required section schemas remain
   supported;
 - reopening an index preserves the grouping semantics already stored in that
   index;

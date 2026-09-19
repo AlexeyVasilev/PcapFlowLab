@@ -1130,6 +1130,7 @@ bool CaptureIndexWriter::write(
             general_statistics,
             CaptureStatisticsScope::complete
         ),
+        .capture_import_settings = state.capture_import_settings,
         .protocol_path_registry = state.protocol_path_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
@@ -1155,7 +1156,7 @@ bool CaptureIndexWriter::write_v16(
     ThrottledProgressReporter progress_reporter {options};
 
     const auto total_sections =
-        3U +
+        4U +
         4U +
         static_cast<std::uint64_t>(plan.unrecognized_directory_sections.size()) +
         static_cast<std::uint64_t>(plan.packetref_detail_sections.size()) +
@@ -1184,12 +1185,13 @@ bool CaptureIndexWriter::write_v16(
     }
 
     if (!validate_capture_statistics_snapshot(fast_tier.capture_statistics_snapshot).ok ||
+        !validate_capture_import_settings_snapshot(fast_tier.capture_import_settings).ok ||
         !validate_protocol_path_display_statistics(
             fast_tier.protocol_path_registry,
             fast_tier.protocol_path_display_statistics
         ).ok) {
         cleanup_temp();
-        set_error_text(out_error_text, "Failed to prepare v16 index Statistics tier.");
+        set_error_text(out_error_text, "Failed to prepare v16 index Statistics/provenance tier.");
         return false;
     }
 
@@ -1224,6 +1226,25 @@ bool CaptureIndexWriter::write_v16(
             1U,
             [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
                 return detail::write_capture_statistics_snapshot(payload, fast_tier.capture_statistics_snapshot);
+            },
+            out_error_text)) {
+        cleanup_temp();
+        return false;
+    }
+    ++completed_sections;
+
+    if (!write_marshaled_section(
+            stream,
+            detail::CaptureIndexSectionId::capture_import_settings,
+            detail::kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion,
+            options,
+            progress_reporter,
+            "capture import settings section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(fast_tier.capture_import_settings.records.size()),
+            [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
+                return detail::write_capture_import_settings_snapshot(payload, fast_tier.capture_import_settings);
             },
             out_error_text)) {
         cleanup_temp();

@@ -1739,6 +1739,56 @@ FlowPacketCountHistogram project_flow_packet_count_histogram(
     return histogram;
 }
 
+FlowDurationHistogram project_flow_duration_histogram(
+    const CaptureStatisticsFlowDurationHistogram& source
+) {
+    FlowDurationHistogram histogram {
+        .total_flow_count = source.total_flow_count,
+        .total_captured_byte_count = source.total_captured_byte_count,
+        .total_original_byte_count = source.total_original_byte_count,
+        .maximum_bucket_flow_count = source.maximum_bucket_flow_count,
+        .maximum_bucket_captured_byte_count = source.maximum_bucket_captured_byte_count,
+        .maximum_bucket_original_byte_count = source.maximum_bucket_original_byte_count,
+    };
+    histogram.buckets.reserve(source.buckets.size());
+    for (const auto& bucket : source.buckets) {
+        histogram.buckets.push_back(FlowDurationHistogramBucket {
+            .stable_id = bucket.stable_id,
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .flow_count = bucket.flow_count,
+            .captured_byte_count = bucket.captured_byte_count,
+            .original_byte_count = bucket.original_byte_count,
+        });
+    }
+    return histogram;
+}
+
+FlowOriginalByteSizeHistogram project_flow_original_byte_size_histogram(
+    const CaptureStatisticsFlowOriginalByteSizeHistogram& source
+) {
+    FlowOriginalByteSizeHistogram histogram {
+        .total_flow_count = source.total_flow_count,
+        .total_captured_byte_count = source.total_captured_byte_count,
+        .total_original_byte_count = source.total_original_byte_count,
+        .maximum_bucket_flow_count = source.maximum_bucket_flow_count,
+        .maximum_bucket_captured_byte_count = source.maximum_bucket_captured_byte_count,
+        .maximum_bucket_original_byte_count = source.maximum_bucket_original_byte_count,
+    };
+    histogram.buckets.reserve(source.buckets.size());
+    for (const auto& bucket : source.buckets) {
+        histogram.buckets.push_back(FlowOriginalByteSizeHistogramBucket {
+            .stable_id = bucket.stable_id,
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .flow_count = bucket.flow_count,
+            .captured_byte_count = bucket.captured_byte_count,
+            .original_byte_count = bucket.original_byte_count,
+        });
+    }
+    return histogram;
+}
+
 CaptureGeneralStatistics project_general_statistics_from_snapshot(
     const CaptureStatisticsSnapshot& snapshot
 ) {
@@ -1755,6 +1805,10 @@ CaptureGeneralStatistics project_general_statistics_from_snapshot(
 
     statistics.flow_packet_count_histogram =
         project_flow_packet_count_histogram(snapshot.flow_packet_count_histogram);
+    statistics.flow_duration_histogram =
+        project_flow_duration_histogram(snapshot.flow_duration_histogram);
+    statistics.flow_original_byte_size_histogram =
+        project_flow_original_byte_size_histogram(snapshot.flow_original_byte_size_histogram);
     statistics.quic_tls_summary = CaptureQuicTlsSummary {
         .quic = QuicRecognitionStats {
             .total_flows = snapshot.quic_recognition.flow_count,
@@ -1779,6 +1833,7 @@ CaptureGeneralStatistics project_general_statistics_from_snapshot(
         .total_flow_count = snapshot.total_flow_count,
         .only_a_to_b_flow_count = snapshot.only_a_to_b_flow_count,
         .service_recognized_flow_count = snapshot.service_recognized_flow_count,
+        .flows_containing_fragments_count = snapshot.flows_containing_fragments_count,
     };
     statistics.packet_direction_distribution = FlowDirectionDistributionStatistics {
         .mostly_a_to_b_flow_count = snapshot.packet_direction_distribution.mostly_a_to_b_flow_count,
@@ -1811,6 +1866,7 @@ CapturePacketStatistics project_packet_statistics_from_snapshot(
         .maximum_original_packet_length = snapshot.maximum_original_packet_length,
         .captured_size_distribution = snapshot.captured_packet_size_distribution,
         .original_size_distribution = snapshot.original_packet_size_distribution,
+        .ip_fragmentation = snapshot.ip_fragmentation,
         .unrecognized_packet_count = snapshot.unrecognized_packet_count,
         .unrecognized_captured_bytes = snapshot.unrecognized_captured_bytes,
         .unrecognized_original_bytes = snapshot.unrecognized_original_bytes,
@@ -2588,6 +2644,57 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
         snapshot.flow_packet_count_histogram.buckets[index].original_byte_count =
             general_statistics.flow_packet_count_histogram.buckets[index].original_byte_count;
     }
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count =
+        general_statistics.flow_duration_histogram.total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count =
+        general_statistics.flow_duration_histogram.total_captured_byte_count;
+    snapshot.flow_duration_histogram.total_original_byte_count =
+        general_statistics.flow_duration_histogram.total_original_byte_count;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count =
+        general_statistics.flow_duration_histogram.maximum_bucket_flow_count;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count =
+        general_statistics.flow_duration_histogram.maximum_bucket_captured_byte_count;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count =
+        general_statistics.flow_duration_histogram.maximum_bucket_original_byte_count;
+    for (std::size_t index = 0U;
+         index < general_statistics.flow_duration_histogram.buckets.size() &&
+         index < snapshot.flow_duration_histogram.buckets.size();
+         ++index) {
+        snapshot.flow_duration_histogram.buckets[index].flow_count =
+            general_statistics.flow_duration_histogram.buckets[index].flow_count;
+        snapshot.flow_duration_histogram.buckets[index].captured_byte_count =
+            general_statistics.flow_duration_histogram.buckets[index].captured_byte_count;
+        snapshot.flow_duration_histogram.buckets[index].original_byte_count =
+            general_statistics.flow_duration_histogram.buckets[index].original_byte_count;
+    }
+    snapshot.flow_original_byte_size_histogram = make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count =
+        general_statistics.flow_original_byte_size_histogram.total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count =
+        general_statistics.flow_original_byte_size_histogram.total_captured_byte_count;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count =
+        general_statistics.flow_original_byte_size_histogram.total_original_byte_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count =
+        general_statistics.flow_original_byte_size_histogram.maximum_bucket_flow_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count =
+        general_statistics.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count =
+        general_statistics.flow_original_byte_size_histogram.maximum_bucket_original_byte_count;
+    for (std::size_t index = 0U;
+         index < general_statistics.flow_original_byte_size_histogram.buckets.size() &&
+         index < snapshot.flow_original_byte_size_histogram.buckets.size();
+         ++index) {
+        snapshot.flow_original_byte_size_histogram.buckets[index].flow_count =
+            general_statistics.flow_original_byte_size_histogram.buckets[index].flow_count;
+        snapshot.flow_original_byte_size_histogram.buckets[index].captured_byte_count =
+            general_statistics.flow_original_byte_size_histogram.buckets[index].captured_byte_count;
+        snapshot.flow_original_byte_size_histogram.buckets[index].original_byte_count =
+            general_statistics.flow_original_byte_size_histogram.buckets[index].original_byte_count;
+    }
+    snapshot.ip_fragmentation = packet_statistics.ip_fragmentation;
+    snapshot.flows_containing_fragments_count =
+        general_statistics.flow_characteristics.flows_containing_fragments_count;
 
     snapshot.transport_protocols = {
         CaptureStatisticsTransportProtocolRow {
@@ -2814,6 +2921,11 @@ CaptureGeneralStatistics build_capture_general_statistics(
         }
         if (!service_hint(connection).empty()) {
             ++statistics.flow_characteristics.service_recognized_flow_count;
+        }
+        if (connection.family == FlowAddressFamily::ipv4
+                ? connection.ipv4->has_fragmented_packets
+                : connection.ipv6->has_fragmented_packets) {
+            ++statistics.flow_characteristics.flows_containing_fragments_count;
         }
 
         add_distribution_flow(

@@ -2,10 +2,10 @@
 
 Status: current stable production index architecture.
 
-Current production writes stable revision 18 indexes using the v16
-metadata/detail architecture described here. Stable revision 17 and older full
-payload load is rebuild-required after the current Statistics schema revision
-bump.
+Current production writes stable revision 19 indexes using the v16
+metadata/detail architecture described here. Stable revision 18 and older full
+payload load is rebuild-required after the current Statistics/provenance schema
+revision bump.
 
 Related RFCs:
 
@@ -36,21 +36,20 @@ The stable outer container remains:
 
 - magic: `PFLIDXV1`
 - `container_format_version = 1`
-- `index_revision = 18`
+- `index_revision = 19`
 
 ### Why the stable revision changes
 
-Although the container header and per-section schema pattern remain the same,
-v16 intentionally introduces a different physical architecture:
+Although the container header and v16 physical architecture remain the same,
+revision 19 intentionally extends the fast Statistics/provenance tier:
 
-- a new early Statistics tier
-- new metadata/detail separation
-- new section families and IDs
-- no stable requirement to preserve the old v15 full-payload layout
+- `capture_statistics_snapshot` advances to schema `2`
+- flow-duration and flow-original-byte histograms are now persisted
+- capture-wide IP fragmentation counters are now persisted
+- `capture_import_settings` records immutable import-setting provenance
 
-For that reason, Stage 4 uses a deliberate rebuild-required stable revision
-boundary rather than trying to make the v16 reader load v15 payloads through
-legacy section-family fallback.
+For that reason, revision 19 uses a deliberate rebuild-required stable
+revision boundary rather than treating older fast-tier payloads as current.
 
 ### Compatibility policy
 
@@ -99,6 +98,7 @@ The exact v16 physical order is:
 1. Stable header
 2. Fast Statistics tier
    - `capture_statistics_snapshot`
+   - `capture_import_settings`
    - `protocol_path_registry_early`
    - `protocol_path_terminal_aggregates`
 3. Fast read boundary
@@ -126,8 +126,8 @@ The v16 section-family table is:
 
 | ID | Symbolic name | Required | Tier | Schema | Repeatable / chunked | Ordering dependency |
 | --- | --- | --- | --- | --- | --- | --- |
-| 8 | `capture_statistics_snapshot` | yes | fast Statistics | 1 | no | none |
-| 9 | `protocol_path_registry_early` | yes | fast Statistics | 1 | no | after `capture_statistics_snapshot` |
+| 8 | `capture_statistics_snapshot` | yes | fast Statistics | 2 | no | none |
+| 9 | `protocol_path_registry_early` | yes | fast Statistics | 1 | no | after `capture_import_settings` |
 | 10 | `protocol_path_terminal_aggregates` | yes | fast Statistics | 1 | yes | after `protocol_path_registry_early` |
 | 11 | `ipv4_flow_metadata` | yes | flow metadata | 1 | yes | after fast Statistics tier |
 | 12 | `ipv6_flow_metadata` | yes | flow metadata | 1 | yes | after fast Statistics tier |
@@ -137,6 +137,7 @@ The v16 section-family table is:
 | 16 | `packetref_detail_blocks` | yes | detail | 1 | yes | after `packetref_directory` |
 | 17 | `unrecognized_reason_blobs` | yes | detail | 1 | yes | after `unrecognized_directory` |
 | 18 | `packet_locator_v16` | yes | detail | 1 | yes | after metadata and unrecognized detail sections |
+| 19 | `capture_import_settings` | yes | fast Statistics | 1 | no | after `capture_statistics_snapshot` |
 
 All v16 section families are required, even when their logical row count is
 zero.
@@ -703,9 +704,9 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC records the current stable revision 18 layout using the v16 physical
+This RFC records the current stable revision 19 layout using the v16 physical
 architecture and the migration boundary:
 
-- current production writes and loads stable revision 18
-- stable revision 17 and older full payload load is rebuild-required
+- current production writes and loads stable revision 19
+- stable revision 18 and older full payload load is rebuild-required
 - header inspection remains independent of full payload compatibility

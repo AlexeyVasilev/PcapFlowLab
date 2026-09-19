@@ -1680,6 +1680,60 @@ bool read_capture_statistics_protocol_counters(
            read_u64(stream, counters.original_bytes);
 }
 
+template <typename Histogram>
+bool write_capture_statistics_flow_triple_metric_histogram(
+    std::ostream& stream,
+    const Histogram& histogram
+) {
+    if (!write_u64(stream, histogram.total_flow_count) ||
+        !write_u64(stream, histogram.total_captured_byte_count) ||
+        !write_u64(stream, histogram.total_original_byte_count) ||
+        !write_u64(stream, histogram.maximum_bucket_flow_count) ||
+        !write_u64(stream, histogram.maximum_bucket_captured_byte_count) ||
+        !write_u64(stream, histogram.maximum_bucket_original_byte_count) ||
+        !write_u32(stream, static_cast<std::uint32_t>(histogram.buckets.size()))) {
+        return false;
+    }
+
+    for (const auto& bucket : histogram.buckets) {
+        if (!write_u64(stream, bucket.flow_count) ||
+            !write_u64(stream, bucket.captured_byte_count) ||
+            !write_u64(stream, bucket.original_byte_count)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+template <typename Histogram>
+bool read_capture_statistics_flow_triple_metric_histogram(
+    std::istream& stream,
+    Histogram& histogram
+) {
+    std::uint32_t bucket_count {0};
+    if (!read_u64(stream, histogram.total_flow_count) ||
+        !read_u64(stream, histogram.total_captured_byte_count) ||
+        !read_u64(stream, histogram.total_original_byte_count) ||
+        !read_u64(stream, histogram.maximum_bucket_flow_count) ||
+        !read_u64(stream, histogram.maximum_bucket_captured_byte_count) ||
+        !read_u64(stream, histogram.maximum_bucket_original_byte_count) ||
+        !read_u32(stream, bucket_count) ||
+        bucket_count != histogram.buckets.size()) {
+        return false;
+    }
+
+    for (auto& bucket : histogram.buckets) {
+        if (!read_u64(stream, bucket.flow_count) ||
+            !read_u64(stream, bucket.captured_byte_count) ||
+            !read_u64(stream, bucket.original_byte_count)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 CaptureStatisticsSnapshotPayloadReadResult finalize_capture_statistics_snapshot_decode(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot,
@@ -1774,6 +1828,19 @@ bool write_capture_statistics_snapshot(
             !write_u64(stream, bucket.original_byte_count)) {
             return false;
         }
+    }
+
+    if (!write_capture_statistics_flow_triple_metric_histogram(stream, snapshot.flow_duration_histogram) ||
+        !write_capture_statistics_flow_triple_metric_histogram(stream, snapshot.flow_original_byte_size_histogram) ||
+        !write_u64(stream, snapshot.ip_fragmentation.effective_ipv4_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.effective_ipv6_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.ipv4_fragmented_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.ipv6_fragmented_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.initial_fragment_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.non_initial_fragment_packet_count) ||
+        !write_u64(stream, snapshot.ip_fragmentation.ipv6_atomic_fragment_packet_count) ||
+        !write_u64(stream, snapshot.flows_containing_fragments_count)) {
+        return false;
     }
 
     if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.transport_protocols.size()))) {
@@ -1967,6 +2034,21 @@ CaptureStatisticsSnapshotPayloadReadResult read_capture_statistics_snapshot_payl
         }
     }
 
+    if (!read_capture_statistics_flow_triple_metric_histogram(stream, decoded.flow_duration_histogram) ||
+        !read_capture_statistics_flow_triple_metric_histogram(stream, decoded.flow_original_byte_size_histogram) ||
+        !read_u64(stream, decoded.ip_fragmentation.effective_ipv4_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.effective_ipv6_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.ipv4_fragmented_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.ipv6_fragmented_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.initial_fragment_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.non_initial_fragment_packet_count) ||
+        !read_u64(stream, decoded.ip_fragmentation.ipv6_atomic_fragment_packet_count) ||
+        !read_u64(stream, decoded.flows_containing_fragments_count)) {
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
+    }
+
     std::uint32_t row_count {0};
     if (!read_u32(stream, row_count) ||
         row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
@@ -2128,6 +2210,105 @@ bool read_capture_statistics_snapshot(
     return static_cast<bool>(read_capture_statistics_snapshot_payload(stream, snapshot));
 }
 
+bool write_capture_import_settings_snapshot(
+    std::ostream& stream,
+    const CaptureImportSettingsSnapshot& snapshot
+) {
+    if (!validate_capture_import_settings_snapshot(snapshot).ok ||
+        snapshot.records.size() > kCaptureImportSettingsMaxEntryCount ||
+        !write_u32(stream, static_cast<std::uint32_t>(snapshot.records.size()))) {
+        return false;
+    }
+
+    for (const auto& record : snapshot.records) {
+        std::ostringstream entry_stream(std::ios::binary | std::ios::out);
+        if (!write_u16(entry_stream, kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion) ||
+            !write_u16(entry_stream, 0U) ||
+            !write_bounded_string(entry_stream, record.stable_key, kCaptureImportSettingsMaxStableKeyBytes) ||
+            !write_bounded_string(entry_stream, record.display_name, kCaptureImportSettingsMaxDisplayNameBytes) ||
+            !write_bounded_string(entry_stream, record.value_text, kCaptureImportSettingsMaxValueTextBytes)) {
+            return false;
+        }
+
+        const auto entry_payload = entry_stream.str();
+        if (entry_payload.size() > (std::numeric_limits<std::uint32_t>::max)() ||
+            !write_u32(stream, static_cast<std::uint32_t>(entry_payload.size())) ||
+            !write_bytes(
+                stream,
+                std::span<const std::uint8_t>(
+                    reinterpret_cast<const std::uint8_t*>(entry_payload.data()),
+                    entry_payload.size()
+                )
+            )) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_capture_import_settings_snapshot(
+    std::istream& stream,
+    CaptureImportSettingsSnapshot& snapshot
+) {
+    snapshot = {};
+
+    std::uint32_t entry_count {0};
+    if (!read_u32(stream, entry_count) || entry_count > kCaptureImportSettingsMaxEntryCount) {
+        return false;
+    }
+
+    CaptureImportSettingsSnapshot decoded {};
+    decoded.records.reserve(entry_count);
+    for (std::uint32_t index = 0U; index < entry_count; ++index) {
+        std::uint32_t entry_payload_size {0};
+        if (!read_u32(stream, entry_payload_size)) {
+            return false;
+        }
+
+        std::vector<std::uint8_t> entry_payload {};
+        if (!read_bounded_section_payload(
+                stream,
+                entry_payload_size,
+                max_capture_import_settings_payload_size_bytes(),
+                entry_payload)) {
+            return false;
+        }
+
+        std::string entry_text {};
+        if (!entry_payload.empty()) {
+            entry_text.assign(
+                reinterpret_cast<const char*>(entry_payload.data()),
+                entry_payload.size()
+            );
+        }
+        std::istringstream entry_stream(entry_text, std::ios::binary | std::ios::in);
+        std::uint16_t entry_schema_version {0};
+        std::uint16_t entry_flags {0};
+        CaptureImportSettingRecord record {};
+        if (!read_u16(entry_stream, entry_schema_version) ||
+            !read_u16(entry_stream, entry_flags) ||
+            entry_schema_version != kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion ||
+            entry_flags != 0U ||
+            !read_bounded_string(entry_stream, record.stable_key, kCaptureImportSettingsMaxStableKeyBytes) ||
+            !read_bounded_string(entry_stream, record.display_name, kCaptureImportSettingsMaxDisplayNameBytes) ||
+            !read_bounded_string(entry_stream, record.value_text, kCaptureImportSettingsMaxValueTextBytes) ||
+            entry_stream.peek() != std::char_traits<char>::eof()) {
+            return false;
+        }
+
+        decoded.records.push_back(std::move(record));
+    }
+
+    if (stream.peek() != std::char_traits<char>::eof() ||
+        !validate_capture_import_settings_snapshot(decoded).ok) {
+        return false;
+    }
+
+    snapshot = std::move(decoded);
+    return true;
+}
+
 bool write_v16_capture_statistics_snapshot_section(
     std::ostream& stream,
     const CaptureStatisticsSnapshot& snapshot
@@ -2149,6 +2330,38 @@ bool write_v16_capture_statistics_snapshot_section(
     return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
         .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot),
         .section_schema_version = kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+bool write_v16_capture_import_settings_section(
+    std::ostream& stream,
+    const CaptureImportSettingsSnapshot& snapshot
+) {
+    if (!validate_capture_import_settings_snapshot(snapshot).ok) {
+        return false;
+    }
+
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_capture_import_settings_snapshot(payload_stream, snapshot)) {
+        return false;
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    if (payload_bytes.size() > max_capture_import_settings_payload_size_bytes()) {
+        return false;
+    }
+
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings),
+        .section_schema_version = kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion,
         .section_flags = kCaptureIndexStableSectionFlagRequired,
         .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
     }) && write_bytes(
@@ -2579,14 +2792,21 @@ CaptureIndexV16FastStatisticsTierReadResult map_registry_section_failure(
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
         break;
     case ProtocolPathRegistrySectionReadStatus::wrong_section_id:
-        result.status =
-            section_result.section_header.section_id ==
-                    static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)
-                ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section
-                : section_result.section_header.section_id ==
-                        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)
-                    ? CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order
-                    : CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
+        if (section_result.section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)) {
+            result.status = CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order;
+        } else {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
+        }
         break;
     case ProtocolPathRegistrySectionReadStatus::invalid_section_framing:
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
@@ -2618,14 +2838,22 @@ CaptureIndexV16FastStatisticsTierReadResult map_display_section_failure(
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
         break;
     case ProtocolPathDisplayStatisticsSectionReadStatus::wrong_section_id:
-        result.status =
-            section_result.section_header.section_id ==
-                    static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)
-                ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section
-                : section_result.section_header.section_id ==
-                        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)
-                    ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section
-                    : CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
+        if (section_result.section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section;
+        } else {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
+        }
         break;
     case ProtocolPathDisplayStatisticsSectionReadStatus::invalid_section_framing:
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
@@ -2751,6 +2979,7 @@ bool write_v16_fast_statistics_tier(
         header.container_format_version != kCaptureIndexStableContainerFormatVersion ||
         header.index_revision != kCaptureIndexStableIndexRevision ||
         !validate_capture_statistics_snapshot(tier.capture_statistics_snapshot).ok ||
+        !validate_capture_import_settings_snapshot(tier.capture_import_settings).ok ||
         !validate_protocol_path_display_statistics(
             tier.protocol_path_registry,
             tier.protocol_path_display_statistics
@@ -2765,6 +2994,7 @@ bool write_v16_fast_statistics_tier(
 
     return write_capture_index_stable_header(stream, header) &&
            write_v16_capture_statistics_snapshot_section(stream, tier.capture_statistics_snapshot) &&
+           write_v16_capture_import_settings_section(stream, tier.capture_import_settings) &&
            write_v16_protocol_path_registry_early_section(stream, tier.protocol_path_registry) &&
            write_v16_protocol_path_terminal_aggregates_section(
                stream,
@@ -2807,6 +3037,75 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
         tier = {};
         return result;
     }
+
+    if (stream.peek() == std::char_traits<char>::eof()) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_import_settings_section;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    CaptureIndexStableSectionHeader settings_section_header {};
+    if (!try_peek_capture_index_stable_section_header(stream, settings_section_header) ||
+        settings_section_header.section_id !=
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_import_settings_section;
+        result.failed_section_header = settings_section_header;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    if (!read_capture_index_stable_section_header(stream, settings_section_header)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    result.failed_section_header = settings_section_header;
+    if (settings_section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        settings_section_header.section_schema_version != kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion ||
+        settings_section_header.payload_size > max_capture_import_settings_payload_size_bytes()) {
+        result.status =
+            settings_section_header.section_schema_version != kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion
+                ? CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema
+                : CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    std::vector<std::uint8_t> settings_payload {};
+    if (!read_bounded_section_payload(
+            stream,
+            settings_section_header.payload_size,
+            max_capture_import_settings_payload_size_bytes(),
+            settings_payload)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    std::string settings_payload_text {};
+    if (!settings_payload.empty()) {
+        settings_payload_text.assign(
+            reinterpret_cast<const char*>(settings_payload.data()),
+            settings_payload.size()
+        );
+    }
+    std::istringstream settings_payload_stream(settings_payload_text, std::ios::binary | std::ios::in);
+    if (!read_capture_import_settings_snapshot(settings_payload_stream, tier.capture_import_settings)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_import_settings_payload;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    const auto settings_validation = validate_capture_import_settings_snapshot(tier.capture_import_settings);
+    if (!settings_validation.ok) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::capture_import_settings_semantic_inconsistency;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+    result.failed_section_header = {};
 
     if (stream.peek() == std::char_traits<char>::eof()) {
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
@@ -2879,6 +3178,16 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
             static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
             result.status =
                 CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section;
+            result.failed_section_header = next_section_header;
+            result.header = stable_header;
+            tier = {};
+            return result;
+        }
+
+        if (next_section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section;
             result.failed_section_header = next_section_header;
             result.header = stable_header;
             tier = {};

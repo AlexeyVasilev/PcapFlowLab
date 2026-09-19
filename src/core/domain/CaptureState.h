@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/domain/CapturePacketSizeStatistics.h"
+#include "core/domain/CaptureImportSettings.h"
 #include "core/domain/CaptureSummary.h"
 #include "core/domain/ConnectionTable.h"
 #include "core/domain/PacketRef.h"
@@ -28,6 +29,7 @@ struct CaptureState {
     std::vector<CapturePacketLocatorEntry> packet_locator {};
     ProtocolPathRegistry protocol_path_registry {};
     CapturePacketStatistics packet_statistics {};
+    CaptureImportSettingsSnapshot capture_import_settings {};
     CaptureSummary summary {};
 };
 

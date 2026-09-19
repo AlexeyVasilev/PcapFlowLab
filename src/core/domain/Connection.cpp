@@ -1,5 +1,7 @@
 #include "core/domain/Connection.h"
 
+#include "core/domain/IpFragmentation.h"
+
 namespace pfl {
 
 namespace {
@@ -223,7 +225,7 @@ void note_hint_detection_attempt_for_connection(Connection& connection,
 
 template <typename Connection>
 void update_fragmentation_stats(Connection& connection, const PacketImportMetadata& metadata) {
-    if (!metadata.is_ip_fragmented) {
+    if (!is_real_ip_fragment(metadata.ip_fragmentation_kind)) {
         return;
     }
 

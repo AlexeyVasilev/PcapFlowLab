@@ -36,6 +36,7 @@ enum class CaptureIndexSectionId : std::uint32_t {
     packetref_detail_blocks = 16,
     unrecognized_reason_blobs = 17,
     packet_locator_v16 = 18,
+    capture_import_settings = 19,
 };
 
 inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
@@ -45,7 +46,7 @@ inline constexpr std::uint16_t kCaptureIndexStableIpv4ConnectionsSectionSchemaVe
 inline constexpr std::uint16_t kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVersion = 1U;
-inline constexpr std::uint16_t kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion = 1U;
@@ -56,6 +57,7 @@ inline constexpr std::uint16_t kCaptureIndexStablePacketRefDetailBlocksSectionSc
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorV16SectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -70,6 +72,8 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
     constexpr std::uint64_t kPacketSizeDistributionBytes =
         8U + 4U + (static_cast<std::uint64_t>(kCapturePacketSizeStatisticsBucketCount) * 8U);
     constexpr std::uint64_t kFlowPacketHistogramBucketBytes = 3U * 8U;
+    constexpr std::uint64_t kFlowTripleMetricHistogramHeaderBytes = (6U * 8U) + 4U;
+    constexpr std::uint64_t kFlowTripleMetricHistogramBucketBytes = 3U * 8U;
     constexpr std::uint64_t kTopEndpointRowBytes = kWorstCaseEndpointIdentityBytes + (4U * 8U);
     constexpr std::uint64_t kTopPortRowBytes = 2U + (4U * 8U);
     constexpr std::uint64_t kTopFlowRowBytes =
@@ -86,6 +90,13 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
         (9U * 8U) + 4U +
         (static_cast<std::uint64_t>(kCaptureStatisticsFlowPacketCountHistogramBucketCount) *
          kFlowPacketHistogramBucketBytes) +
+        kFlowTripleMetricHistogramHeaderBytes +
+        (static_cast<std::uint64_t>(kCaptureStatisticsFlowDurationHistogramBucketCount) *
+         kFlowTripleMetricHistogramBucketBytes) +
+        kFlowTripleMetricHistogramHeaderBytes +
+        (static_cast<std::uint64_t>(kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount) *
+         kFlowTripleMetricHistogramBucketBytes) +
+        (8U * 8U) +
         4U + (4U * kProtocolCountersRowBytes) +
         4U + (2U * kProtocolCountersRowBytes) +
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsDetectedProtocolCategoryCount) *
@@ -94,6 +105,17 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopEndpointCapacity) * kTopEndpointRowBytes) +
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopPortCapacity) * kTopPortRowBytes) +
         4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopFlowCapacity) * kTopFlowRowBytes);
+}
+
+[[nodiscard]] constexpr std::uint64_t max_capture_import_settings_payload_size_bytes() noexcept {
+    constexpr std::uint64_t kEntryFixedBytes = 4U + 2U + 2U + (3U * 4U);
+    constexpr std::uint64_t kEntryStringBytes =
+        kCaptureImportSettingsMaxStableKeyBytes +
+        kCaptureImportSettingsMaxDisplayNameBytes +
+        kCaptureImportSettingsMaxValueTextBytes;
+    return 4U +
+           (static_cast<std::uint64_t>(kCaptureImportSettingsMaxEntryCount) *
+            (kEntryFixedBytes + kEntryStringBytes));
 }
 
 // v15+ stable-container wire contract:
@@ -230,6 +252,7 @@ struct ProtocolPathDisplayStatisticsSectionReadResult {
 
 struct CaptureIndexV16FastStatisticsTier {
     CaptureStatisticsSnapshot capture_statistics_snapshot {};
+    CaptureImportSettingsSnapshot capture_import_settings {};
     ProtocolPathRegistry protocol_path_registry {};
     ProtocolPathDisplayStatistics protocol_path_display_statistics {};
 
@@ -245,6 +268,8 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     unsupported_revision,
     missing_capture_statistics_snapshot_section,
     duplicate_capture_statistics_snapshot_section,
+    missing_capture_import_settings_section,
+    duplicate_capture_import_settings_section,
     missing_protocol_path_registry_early_section,
     duplicate_protocol_path_registry_early_section,
     missing_protocol_path_terminal_aggregates_section,
@@ -254,6 +279,8 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     truncated_fast_section_payload,
     malformed_capture_statistics_snapshot_payload,
     capture_statistics_snapshot_semantic_inconsistency,
+    malformed_capture_import_settings_payload,
+    capture_import_settings_semantic_inconsistency,
     malformed_protocol_path_registry_payload,
     malformed_protocol_path_terminal_aggregates_payload,
     protocol_path_terminal_aggregates_semantic_inconsistency,
@@ -546,6 +573,14 @@ bool read_capture_statistics_snapshot(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot
 );
+bool write_capture_import_settings_snapshot(
+    std::ostream& stream,
+    const CaptureImportSettingsSnapshot& snapshot
+);
+bool read_capture_import_settings_snapshot(
+    std::istream& stream,
+    CaptureImportSettingsSnapshot& snapshot
+);
 bool write_v16_capture_statistics_snapshot_section(
     std::ostream& stream,
     const CaptureStatisticsSnapshot& snapshot
@@ -553,6 +588,10 @@ bool write_v16_capture_statistics_snapshot_section(
 CaptureStatisticsSnapshotSectionReadResult read_v16_capture_statistics_snapshot_section(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot
+);
+bool write_v16_capture_import_settings_section(
+    std::ostream& stream,
+    const CaptureImportSettingsSnapshot& snapshot
 );
 bool write_v16_protocol_path_registry_early_section(
     std::ostream& stream,

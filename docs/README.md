@@ -93,14 +93,13 @@ different responsibilities.
   Previous stable v15 container/header and rebuild-required compatibility
   boundary.
 - [Index v16 Container RFC](features/index-v16-container-rfc.md)
-  Current stable revision 18 Statistics/metadata/detail index layout using the
+  Current stable revision 19 Statistics/metadata/detail index layout using the
   v16 physical architecture and compatibility contract.
 - [Statistics, Reporting, and Large-Index Architecture RFC](features/statistics-reporting-index-rfc.md)
   Current Statistics/reporting architecture direction and migration rationale
   that pairs with the v16 container RFC.
 - [Statistics Expansion and Index Provenance v19 RFC](features/statistics-expansion-index-v19-rfc.md)
-  Proposed future revision 19 Statistics/index contract; revision 18 remains
-  the current implemented stable index revision.
+  Implemented revision 19 Statistics expansion and import-provenance contract.
 
 ## Export
 

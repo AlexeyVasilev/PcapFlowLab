@@ -66,7 +66,7 @@ flags, including:
 - `--protocol-path-mode` is valid only together with `--protocol-path-tree` or
   `--out-protocol-path-tree`.
 
-For current stable revision 18 indexes using the v16 physical architecture,
+For current stable revision 19 indexes using the v16 physical architecture,
 compatible summary invocations use the Statistics fast tier directly. The fast path is used for the basic summary,
 `--extended`, Protocol Path Tree preview, Protocol Path Tree export, and full
 Statistics report side outputs because those outputs are backed by the stable

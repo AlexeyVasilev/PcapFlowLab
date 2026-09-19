@@ -21,6 +21,7 @@
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/index/Serialization.h"
+#include "core/services/AnalysisSettings.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
@@ -399,6 +400,8 @@ std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
         return detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion;
     case detail::CaptureIndexSectionId::capture_statistics_snapshot:
         return detail::kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::capture_import_settings:
+        return detail::kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion;
     case detail::CaptureIndexSectionId::protocol_path_registry_early:
         return detail::kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion;
     case detail::CaptureIndexSectionId::protocol_path_terminal_aggregates:
@@ -838,6 +841,14 @@ std::vector<std::uint8_t> serialize_capture_statistics_snapshot_payload(
     return stream_bytes(stream);
 }
 
+std::vector<std::uint8_t> serialize_capture_import_settings_payload(
+    const CaptureImportSettingsSnapshot& snapshot
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_capture_import_settings_snapshot(stream, snapshot));
+    return stream_bytes(stream);
+}
+
 detail::CaptureIndexStableHeader make_v16_stable_header() {
     auto header = make_stable_header();
     header.index_revision = kCaptureIndexStableIndexRevision;
@@ -939,6 +950,7 @@ detail::CaptureIndexV16FastStatisticsTier make_valid_v16_fast_statistics_tier() 
 
     return detail::CaptureIndexV16FastStatisticsTier {
         .capture_statistics_snapshot = std::move(snapshot),
+        .capture_import_settings = make_capture_import_settings_snapshot(AnalysisSettings {}),
         .protocol_path_registry = registry,
         .protocol_path_display_statistics = statistics,
     };
@@ -958,6 +970,7 @@ std::vector<std::uint8_t> make_v16_fast_statistics_tier_container_bytes(
 
 CaptureState make_v16_metadata_capture_state_fixture() {
     CaptureState state {};
+    state.capture_import_settings = make_capture_import_settings_snapshot(AnalysisSettings {});
     const auto ipv4_path_id = state.protocol_path_registry.intern(ProtocolPath {
         LayerKey::ethernet_ii(),
         LayerKey::ipv4(),
@@ -1146,12 +1159,17 @@ detail::CaptureIndexV16FastStatisticsTier build_v16_metadata_fast_statistics_tie
     const auto general_statistics = session_detail::build_capture_general_statistics(connections);
     const auto protocol_path_display_statistics =
         session_detail::build_protocol_path_display_statistics(state, connections);
+    const auto capture_import_settings =
+        validate_capture_import_settings_snapshot(state.capture_import_settings).ok
+            ? state.capture_import_settings
+            : make_capture_import_settings_snapshot(AnalysisSettings {});
     return detail::CaptureIndexV16FastStatisticsTier {
         .capture_statistics_snapshot = session_detail::make_capture_statistics_snapshot(
             state.packet_statistics,
             general_statistics,
             CaptureStatisticsScope::complete
         ),
+        .capture_import_settings = capture_import_settings,
         .protocol_path_registry = state.protocol_path_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
@@ -1359,8 +1377,8 @@ void run_index_format_tests() {
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
         PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 18U);
-        PFL_EXPECT(kCaptureIndexVersion == 18U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 19U);
+        PFL_EXPECT(kCaptureIndexVersion == 19U);
         PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::amqp) == 20U);
         PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::ntp) == 21U);
 
@@ -1611,6 +1629,43 @@ void run_index_format_tests() {
     }
 
     {
+        auto settings = make_capture_import_settings_snapshot(AnalysisSettings {});
+        settings.records.push_back(CaptureImportSettingRecord {
+            .stable_key = "future_import_setting",
+            .display_name = "Future import setting",
+            .value_text = "custom value",
+        });
+        PFL_REQUIRE(validate_capture_import_settings_snapshot(settings).ok);
+
+        const auto payload = serialize_capture_import_settings_payload(settings);
+        std::istringstream payload_stream(
+            std::string(payload.begin(), payload.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureImportSettingsSnapshot decoded_settings {};
+        PFL_REQUIRE(detail::read_capture_import_settings_snapshot(payload_stream, decoded_settings));
+        PFL_EXPECT(decoded_settings == settings);
+        PFL_EXPECT(payload_stream.peek() == std::char_traits<char>::eof());
+
+        std::ostringstream section_stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(section_stream, make_v16_stable_header()));
+        PFL_REQUIRE(detail::write_v16_capture_import_settings_section(section_stream, settings));
+        const auto section_bytes = stream_bytes(section_stream);
+        const auto sections = parse_sections(section_bytes);
+        PFL_REQUIRE(sections.size() == 1U);
+        PFL_EXPECT(sections.front().id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings));
+        PFL_EXPECT(sections.front().schema_version == detail::kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion);
+        PFL_EXPECT(sections.front().flags == detail::kCaptureIndexStableSectionFlagRequired);
+        PFL_EXPECT(sections.front().total_size ==
+            static_cast<std::size_t>(detail::kCaptureIndexStableSectionHeaderEncodedSize + payload.size()));
+
+        settings.records.erase(settings.records.begin());
+        PFL_EXPECT(!validate_capture_import_settings_snapshot(settings).ok);
+        std::ostringstream invalid_stream(std::ios::binary | std::ios::out);
+        PFL_EXPECT(!detail::write_v16_capture_import_settings_section(invalid_stream, settings));
+    }
+
+    {
         const auto registry = make_v16_protocol_path_registry_fixture();
 
         std::ostringstream payload_stream(std::ios::binary | std::ios::out);
@@ -1768,10 +1823,11 @@ void run_index_format_tests() {
         const auto tier = make_valid_v16_fast_statistics_tier();
         const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
         const auto sections = parse_sections(base_bytes);
-        PFL_REQUIRE(sections.size() == 3U);
+        PFL_REQUIRE(sections.size() == 4U);
         PFL_EXPECT(sections[0].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot));
-        PFL_EXPECT(sections[1].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early));
-        PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_EXPECT(sections[1].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings));
+        PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early));
+        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
 
         std::istringstream read_stream(
             std::string(base_bytes.begin(), base_bytes.end()),
@@ -1782,6 +1838,7 @@ void run_index_format_tests() {
         PFL_REQUIRE(static_cast<bool>(read_result));
         PFL_EXPECT(read_result.header.index_revision == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(decoded_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
+        PFL_EXPECT(decoded_tier.capture_import_settings == tier.capture_import_settings);
         expect_matching_protocol_path_registries(decoded_tier.protocol_path_registry, tier.protocol_path_registry);
         expect_matching_protocol_path_display_statistics(
             decoded_tier.protocol_path_display_statistics,
@@ -1810,6 +1867,10 @@ void run_index_format_tests() {
             stream,
             tier.capture_statistics_snapshot
         ));
+        PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+            stream,
+            tier.capture_import_settings
+        ));
         PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
             stream,
             tier.protocol_path_registry
@@ -1818,9 +1879,9 @@ void run_index_format_tests() {
         PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, second_chunk));
         const auto chunked_bytes = stream_bytes(stream);
         const auto sections = parse_sections(chunked_bytes);
-        PFL_REQUIRE(sections.size() == 4U);
-        PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_REQUIRE(sections.size() == 5U);
         PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_EXPECT(sections[4].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
 
         std::istringstream read_stream(
             std::string(chunked_bytes.begin(), chunked_bytes.end()),
@@ -1916,10 +1977,11 @@ void run_index_format_tests() {
         const auto tier = make_valid_v16_fast_statistics_tier();
         const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
         const auto sections = parse_sections(base_bytes);
-        PFL_REQUIRE(sections.size() == 3U);
+        PFL_REQUIRE(sections.size() == 4U);
         const auto snapshot_payload_offset = sections[0].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
-        const auto registry_payload_offset = sections[1].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
-        const auto display_payload_offset = sections[2].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto settings_payload_offset = sections[1].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto registry_payload_offset = sections[2].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto display_payload_offset = sections[3].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
 
         auto expect_fast_tier_status =
             [&](std::vector<std::uint8_t> bytes,
@@ -1933,6 +1995,7 @@ void run_index_format_tests() {
                 const auto read_result = detail::read_v16_fast_statistics_tier(stream, decoded_tier);
                 PFL_EXPECT(read_result.status == status);
                 PFL_EXPECT(decoded_tier.capture_statistics_snapshot == CaptureStatisticsSnapshot {});
+                PFL_EXPECT(decoded_tier.capture_import_settings == CaptureImportSettingsSnapshot {});
                 PFL_EXPECT(decoded_tier.protocol_path_registry.size() == 0U);
                 PFL_EXPECT(decoded_tier.protocol_path_display_statistics.terminal_path_aggregates.empty());
                 if (protocol_path_error.has_value()) {
@@ -1947,6 +2010,26 @@ void run_index_format_tests() {
             expect_fast_tier_status(
                 std::move(malformed_snapshot_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_statistics_snapshot_payload
+            );
+        }
+
+        {
+            auto missing_settings_bytes = remove_section(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings)
+            );
+            expect_fast_tier_status(
+                std::move(missing_settings_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_import_settings_section
+            );
+        }
+
+        {
+            auto malformed_settings_bytes = base_bytes;
+            malformed_settings_bytes[settings_payload_offset] = 99U;
+            expect_fast_tier_status(
+                std::move(malformed_settings_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_import_settings_payload
             );
         }
 
@@ -1983,6 +2066,10 @@ void run_index_format_tests() {
                 wrong_order_stream,
                 tier.capture_statistics_snapshot
             ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                wrong_order_stream,
+                tier.capture_import_settings
+            ));
             PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
                 wrong_order_stream,
                 tier.protocol_path_display_statistics
@@ -2004,6 +2091,10 @@ void run_index_format_tests() {
                 duplicate_snapshot_stream,
                 tier.capture_statistics_snapshot
             ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                duplicate_snapshot_stream,
+                tier.capture_import_settings
+            ));
             PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
                 duplicate_snapshot_stream,
                 tier.capture_statistics_snapshot
@@ -2023,11 +2114,44 @@ void run_index_format_tests() {
         }
 
         {
+            std::ostringstream duplicate_settings_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(duplicate_settings_stream, make_v16_stable_header()));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                duplicate_settings_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                duplicate_settings_stream,
+                tier.capture_import_settings
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                duplicate_settings_stream,
+                tier.capture_import_settings
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                duplicate_settings_stream,
+                tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                duplicate_settings_stream,
+                tier.protocol_path_display_statistics
+            ));
+            expect_fast_tier_status(
+                stream_bytes(duplicate_settings_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section
+            );
+        }
+
+        {
             std::ostringstream duplicate_registry_stream(std::ios::binary | std::ios::out);
             PFL_REQUIRE(detail::write_capture_index_stable_header(duplicate_registry_stream, make_v16_stable_header()));
             PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
                 duplicate_registry_stream,
                 tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                duplicate_registry_stream,
+                tier.capture_import_settings
             ));
             PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
                 duplicate_registry_stream,
@@ -2060,7 +2184,7 @@ void run_index_format_tests() {
             auto oversized_registry_bytes = base_bytes;
             write_le64_at(
                 oversized_registry_bytes,
-                sections[1].offset + 8U,
+                sections[2].offset + 8U,
                 (std::numeric_limits<std::uint64_t>::max)()
             );
             expect_fast_tier_status(
@@ -2115,6 +2239,10 @@ void run_index_format_tests() {
             PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
                 inconsistent_stream,
                 inconsistent_tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                inconsistent_stream,
+                inconsistent_tier.capture_import_settings
             ));
             PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
                 inconsistent_stream,
@@ -3816,6 +3944,13 @@ void run_index_format_tests() {
     detail::CaptureIndexV16CompleteReadResult missing_protocol_paths_read {};
     PFL_EXPECT(!index_reader.read_v16_complete(missing_protocol_paths_index_path, missing_protocol_paths_read));
 
+    const auto missing_import_settings_index_path = write_temp_binary_file(
+        "pfl_index_missing_capture_import_settings.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings))
+    );
+    detail::CaptureIndexV16CompleteReadResult missing_import_settings_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(missing_import_settings_index_path, missing_import_settings_read));
+
     const auto missing_unrecognized_packets_index_path = write_temp_binary_file(
         "pfl_index_missing_packet_locator_v16.idx",
         remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16))
@@ -3840,6 +3975,15 @@ void run_index_format_tests() {
     PFL_EXPECT(!index_reader.read_v16_complete(
         duplicate_protocol_paths_index_path,
         duplicate_protocol_paths_read));
+
+    const auto duplicate_import_settings_index_path = write_temp_binary_file(
+        "pfl_index_duplicate_capture_import_settings.idx",
+        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings))
+    );
+    detail::CaptureIndexV16CompleteReadResult duplicate_import_settings_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(
+        duplicate_import_settings_index_path,
+        duplicate_import_settings_read));
 
     const auto trailing_index_path = write_temp_binary_file(
         "pfl_index_trailing_garbage.idx",

@@ -284,7 +284,7 @@ void run_analysis_settings_tests() {
 
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
-        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
         PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
     }
 
@@ -317,7 +317,7 @@ void run_analysis_settings_tests() {
 
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
-        PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(loaded_session.flow_grouping_ignores_gtpu_teids());
     }
 }
 

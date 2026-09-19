@@ -2835,6 +2835,7 @@ bool CaptureSession::save_index(
             general_statistics,
             scope
         ),
+        .capture_import_settings = state_.capture_import_settings,
         .protocol_path_registry = state_.protocol_path_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
@@ -2992,8 +2993,19 @@ bool CaptureSession::load_v16_index_result(
     state_.packet_statistics = session_detail::project_packet_statistics_from_snapshot(
         result.fast_statistics_tier.capture_statistics_snapshot
     );
+    state_.capture_import_settings = result.fast_statistics_tier.capture_import_settings;
     state_.protocol_path_registry = result.fast_statistics_tier.protocol_path_registry;
     opened_from_index_ = true;
+    flow_grouping_ignores_vlan_and_mpls_layers_ =
+        capture_import_settings_bool_value(
+            state_.capture_import_settings,
+            kCaptureImportSettingIgnoreVlanAndMplsLayersWhenGroupingFlows
+        ).value_or(false);
+    flow_grouping_ignores_gtpu_teids_ =
+        capture_import_settings_bool_value(
+            state_.capture_import_settings,
+            kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows
+        ).value_or(false);
     has_loaded_state_ = true;
     partial_open_ = result.fast_statistics_tier.capture_statistics_snapshot.scope == CaptureStatisticsScope::partial;
     partial_open_failure_ = partial_open_

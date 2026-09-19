@@ -381,6 +381,7 @@ struct CaptureFlowCharacteristicsStatistics {
     std::uint64_t total_flow_count {0};
     std::uint64_t only_a_to_b_flow_count {0};
     std::uint64_t service_recognized_flow_count {0};
+    std::uint64_t flows_containing_fragments_count {0};
 };
 
 struct FlowDirectionDistributionStatistics {

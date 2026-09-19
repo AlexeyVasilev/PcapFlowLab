@@ -115,6 +115,36 @@ CaptureStatisticsFlowPacketCountHistogram make_flow_histogram() {
     return histogram;
 }
 
+void populate_flow_triple_metric_histograms(
+    CaptureStatisticsSnapshot& snapshot,
+    const std::uint64_t total_flow_count,
+    const std::uint64_t total_captured_bytes,
+    const std::uint64_t total_original_bytes
+) {
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.buckets[0].original_byte_count = total_original_bytes;
+
+    snapshot.flow_original_byte_size_histogram =
+        make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].original_byte_count = total_original_bytes;
+}
+
 CaptureStatisticsSnapshot make_valid_snapshot() {
     CaptureStatisticsSnapshot snapshot {};
     snapshot.scope = CaptureStatisticsScope::complete;
@@ -153,6 +183,17 @@ CaptureStatisticsSnapshot make_valid_snapshot() {
         .rst_packet_count = 1U,
     };
     snapshot.flow_packet_count_histogram = make_flow_histogram();
+    populate_flow_triple_metric_histograms(snapshot, 4U, 610U, 720U);
+    snapshot.ip_fragmentation = CaptureIpFragmentationStatistics {
+        .effective_ipv4_packet_count = 2U,
+        .effective_ipv6_packet_count = 1U,
+        .ipv4_fragmented_packet_count = 1U,
+        .ipv6_fragmented_packet_count = 0U,
+        .initial_fragment_packet_count = 1U,
+        .non_initial_fragment_packet_count = 0U,
+        .ipv6_atomic_fragment_packet_count = 1U,
+    };
+    snapshot.flows_containing_fragments_count = 1U;
     snapshot.transport_protocols = make_default_capture_statistics_transport_protocol_rows();
     snapshot.transport_protocols[0].counters = counters(2U, 6U, 900U, 1'100U);
     snapshot.transport_protocols[1].counters = counters(1U, 3U, 250U, 300U);
@@ -287,6 +328,11 @@ CaptureStatisticsSnapshot make_rich_snapshot_with_maximum_top_capacities() {
     snapshot.flow_packet_count_histogram.total_flow_count = top_flow_capacity;
     snapshot.flow_packet_count_histogram.maximum_bucket_flow_count = top_flow_capacity;
     snapshot.flow_packet_count_histogram.buckets[0].flow_count = top_flow_capacity;
+    populate_flow_triple_metric_histograms(snapshot, top_flow_capacity, 0U, 0U);
+    snapshot.flows_containing_fragments_count = std::min<std::uint64_t>(
+        snapshot.flows_containing_fragments_count,
+        top_flow_capacity
+    );
     snapshot.top_endpoints.clear();
     snapshot.top_ports.clear();
     snapshot.top_flows.clear();
@@ -433,6 +479,15 @@ std::size_t service_length_offset_for_first_top_flow(const std::vector<std::uint
 
     const auto flow_bucket_count = read_le32_at(bytes, offset);
     offset += 4U + static_cast<std::size_t>(flow_bucket_count) * (8U * 3U);
+
+    const auto skip_flow_triple_metric_histogram = [&](std::size_t& histogram_offset) {
+        histogram_offset += 8U * 6U;
+        const auto bucket_count = read_le32_at(bytes, histogram_offset);
+        histogram_offset += 4U + static_cast<std::size_t>(bucket_count) * (8U * 3U);
+    };
+    skip_flow_triple_metric_histogram(offset);
+    skip_flow_triple_metric_histogram(offset);
+    offset += 8U * 8U;
 
     const auto transport_count = read_le32_at(bytes, offset);
     offset += 4U + static_cast<std::size_t>(transport_count) * (1U + 8U * 4U);
@@ -841,6 +896,55 @@ void expect_decoder_rejects_malformed_payloads() {
     {
         auto snapshot = make_valid_snapshot();
         snapshot.packet_direction_distribution.balanced_flow_count = 0U;
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        ++snapshot.flow_duration_histogram.buckets[0].flow_count;
+        ++snapshot.flow_duration_histogram.maximum_bucket_flow_count;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flow_duration_histogram_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        ++snapshot.flow_original_byte_size_histogram.total_original_byte_count;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flow_original_byte_size_histogram_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.ip_fragmentation.non_initial_fragment_packet_count = 1U;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::fragment_kind_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.flows_containing_fragments_count = snapshot.total_flow_count + 1U;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flows_containing_fragments_count_exceeds_total);
         expect_decode_fails(snapshot);
     }
 

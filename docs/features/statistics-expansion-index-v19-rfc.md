@@ -1,11 +1,10 @@
 # Statistics Expansion and Index Provenance v19 RFC
 
-Status: Proposed.
+Status: implemented current contract.
 
-Revision 18 remains the current implemented stable index revision. This RFC
-freezes the intended revision 19 Statistics and provenance contract before
-production implementation. It does not describe current runtime behavior unless
-explicitly marked as current context.
+Revision 19 is the current implemented stable index revision. This RFC records
+the Statistics and provenance contract added at the revision 18 -> 19
+rebuild-required boundary.
 
 Related current references:
 
@@ -16,7 +15,7 @@ Related current references:
 
 ## Purpose
 
-Revision 19 is intended to add one coherent Statistics/index feature set:
+Revision 19 adds one coherent Statistics/index feature set:
 
 - Flows by Duration.
 - Flows by Data Size, bucketed by total original bytes.
@@ -413,7 +412,7 @@ does not change the global compatibility policy.
 
 ## Statistics Snapshot v19
 
-Revision 19 will extend the authoritative persisted Statistics snapshot with:
+Revision 19 extends the authoritative persisted Statistics snapshot with:
 
 - Flow Duration histogram.
 - Flow Original-Byte Size histogram.
@@ -429,8 +428,7 @@ Revision 19 will extend the authoritative persisted Statistics snapshot with:
 The snapshot wire encoding remains explicit stable-container encoding. This
 RFC does not specify raw host-ABI structs.
 
-After revision 19 becomes current, revision 18 remains rebuild-required for
-full payload load.
+Revision 18 remains rebuild-required for full payload load.
 
 ## Report Contract
 
@@ -494,67 +492,12 @@ The design intends one coherent revision transition:
 revision 18 -> revision 19
 ```
 
-This documentation pass must not change the production revision constant.
+The revision changed only with the coherent wire contract: reader, writer,
+schema validation, import-settings provenance, and tests.
 
-Do not publish or declare revision 19 stable in an intermediate commit and
-then mutate its wire layout later. Implementation passes should develop the
-complete v19 wire contract together, then switch the current stable revision
-only when the full reader, writer, schema, validation, and tests are coherent.
+## Implementation Notes
 
-Every committed intermediate implementation state must remain buildable and
-testable according to normal project workflow.
-
-## Implementation Plan
-
-Pass 1:
-
-- Add shared domain/statistics types.
-- Add fragmentation classification foundation.
-- Do not switch persisted revision.
-
-Pass 2:
-
-- Add capture-wide fragmentation collection.
-- Add flow-duration and flow-original-byte histogram builders.
-
-Pass 3:
-
-- Implement complete v19 Statistics snapshot serialization,
-  deserialization, validation, and tests.
-- Add the generic `capture_import_settings` section.
-- Switch revision `18 -> 19` only as one coherent wire-contract pass.
-
-Pass 4:
-
-- Add `CaptureSession` provenance lifecycle.
-- Preserve raw/index report parity.
-
-Pass 5:
-
-- Add shared report/DTO projection.
-
-Pass 6:
-
-- Add Qt Statistics presentation.
-
-Pass 7:
-
-- Add Tauri Statistics parity.
-
-Pass 8:
-
-- Update current-state, user documentation, and release-facing wording.
-
-## Consistency Notes
-
-This RFC intentionally differs from current implementation in these areas:
-
-- Current stable revision is `18`, not `19`.
-- Current `capture_statistics_snapshot` schema does not contain the new flow
-  duration, flow data-size, or capture-wide fragmentation fields.
-- Current index layout does not contain `capture_import_settings`.
-- Current flow-level fragmentation may treat IPv6 atomic fragments as
-  fragmented through the existing `is_ip_fragmented` path.
-
-These are planned implementation gaps, not contradictions in current product
-documentation.
+The current implementation writes stable revision `19`, serializes
+`capture_statistics_snapshot` schema `2`, and requires the generic
+`capture_import_settings` section. Stable revision `18` and older indexes are
+rebuild-required for full payload load.

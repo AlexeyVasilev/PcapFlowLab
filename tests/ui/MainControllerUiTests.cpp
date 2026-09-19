@@ -3624,16 +3624,18 @@ int main(int argc, char* argv[]) {
     });
 
     run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
+        const auto gtpu_teid_grouping_info_text =
+            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.");
         MainController gtpu_grouping_index_controller {};
         UI_EXPECT(!gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
         gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
