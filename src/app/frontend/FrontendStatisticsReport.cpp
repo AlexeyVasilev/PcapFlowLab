@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/SessionFlowHelpers.h"
 
 namespace pfl {
@@ -314,11 +315,13 @@ FrontendStatisticsReportSection make_flow_histogram_section(
     std::string title,
     std::string first_column_header,
     std::string table_title,
-    const FrontendFlowHistogramDto& histogram
+    const FrontendFlowHistogramDto& histogram,
+    const std::string_view help_text = {}
 ) {
     FrontendStatisticsReportSection section {
         .title = std::move(title),
     };
+    add_note(section, std::string {help_text});
 
     std::vector<std::vector<std::string>> rows {};
     rows.reserve(histogram.buckets.size());
@@ -753,7 +756,8 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
         "Flows by Duration",
         "Duration",
         "Flow Duration Buckets",
-        input.flow_duration_histogram
+        input.flow_duration_histogram,
+        frontend_flow_duration_histogram_help_text()
     ));
     report.sections.push_back(make_flow_histogram_section(
         "Flows by Data Size",

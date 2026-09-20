@@ -28,6 +28,9 @@ constexpr std::string_view kOriginalByteDirectionHelpText {
 constexpr std::string_view kTcpFlagHelpText {
     "Counts TCP packets with the corresponding flag set. A packet may contribute to more than one row. SYN includes SYN+ACK."
 };
+constexpr std::string_view kFlowDurationHistogramHelpText {
+    "Flow duration is the time between the first and last packet. One-packet Flows have duration 0."
+};
 constexpr std::uint64_t kMicrosPerSecond = 1'000'000ULL;
 constexpr std::uint64_t kMicrosPerMinute = 60ULL * kMicrosPerSecond;
 constexpr std::uint64_t kMicrosPerHour = 60ULL * kMicrosPerMinute;
@@ -512,6 +515,10 @@ std::string format_frontend_duration_milliseconds_or_unavailable(
     const std::optional<std::uint64_t>& duration_us
 ) {
     return duration_text_or_unavailable_impl(duration_us);
+}
+
+std::string_view frontend_flow_duration_histogram_help_text() noexcept {
+    return kFlowDurationHistogramHelpText;
 }
 
 FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(

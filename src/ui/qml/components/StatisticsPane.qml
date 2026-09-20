@@ -79,6 +79,7 @@ Item {
     property int flowDurationHistogramState: 0
     property string flowDurationHistogramStatusText: ""
     property string flowDurationHistogramSummaryText: ""
+    property string flowDurationHistogramHelpText: ""
     property var flowDurationHistogramRows: []
     property int flowOriginalByteSizeHistogramState: 0
     property string flowOriginalByteSizeHistogramStatusText: ""
@@ -1182,6 +1183,15 @@ Item {
                     }
 
                     Label {
+                        objectName: "flowDurationHistogramHelpText"
+                        Layout.fillWidth: true
+                        visible: root.hasCapture
+                        text: root.flowDurationHistogramHelpText
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Label {
                         visible: root.flowDurationHistogramState === root.requestStateLoading ||
                             root.flowDurationHistogramState === root.requestStateUnavailable ||
                             root.flowDurationHistogramState === root.requestStateError
@@ -1454,7 +1464,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
                             visible: root.ipFragmentationStatisticsState === root.requestStateReady
-                            spacing: 2
+                            spacing: 6
 
                             Repeater {
                                 model: root.ipFragmentationStatisticsRows
@@ -1463,6 +1473,7 @@ Item {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 24
                                     spacing: 10
 
                                     Label {
@@ -1471,6 +1482,7 @@ Item {
                                         text: modelData.label
                                         color: "#0f172a"
                                         elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
                                     }
 
                                     Label {
@@ -1481,6 +1493,7 @@ Item {
                                         text: modelData.countWithPercentText
                                         color: "#334155"
                                         elide: Text.ElideLeft
+                                        verticalAlignment: Text.AlignVCenter
                                     }
 
                                     Item {

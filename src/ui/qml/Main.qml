@@ -1486,6 +1486,7 @@ ApplicationWindow {
                 flowDurationHistogramState: mainController.flowDurationHistogramState
                 flowDurationHistogramStatusText: mainController.flowDurationHistogramStatusText
                 flowDurationHistogramSummaryText: mainController.flowDurationHistogramSummaryText
+                flowDurationHistogramHelpText: mainController.flowDurationHistogramHelpText
                 flowDurationHistogramRows: mainController.flowDurationHistogramRows
                 flowOriginalByteSizeHistogramState: mainController.flowOriginalByteSizeHistogramState
                 flowOriginalByteSizeHistogramStatusText: mainController.flowOriginalByteSizeHistogramStatusText

@@ -4120,6 +4120,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!protocol_path_export_button->property("enabled").toBool());
 
         statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty(
+            "flowDurationHistogramHelpText",
+            QStringLiteral("Flow duration is the time between the first and last packet. One-packet Flows have duration 0.")
+        );
         statistics_pane.object->setProperty("flowCount", 58);
         statistics_pane.object->setProperty("statisticsPartialOpenWarningText",
             QStringLiteral("Statistics cover successfully imported packets only; the capture was opened partially."));
@@ -4493,6 +4497,13 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeFlowsButton") != nullptr);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeCapturedBytesButton") != nullptr);
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeOriginalBytesButton") != nullptr);
+        auto* flow_duration_histogram_help_text = named_object(
+            statistics_pane.object.get(),
+            "flowDurationHistogramHelpText"
+        );
+        UI_REQUIRE(flow_duration_histogram_help_text != nullptr);
+        UI_EXPECT(flow_duration_histogram_help_text->property("text").toString() ==
+                  QStringLiteral("Flow duration is the time between the first and last packet. One-packet Flows have duration 0."));
         auto* flow_duration_histogram_value_label = find_quick_item_by_object_name(
             qobject_cast<QQuickItem*>(statistics_pane.object.get()),
             QStringLiteral("flowDurationHistogramValueLabel")

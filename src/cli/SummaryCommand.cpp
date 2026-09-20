@@ -1003,8 +1003,12 @@ std::string render_extended_summary_text(
 
     const auto render_flow_histogram = [&](const std::string_view title,
                                            const std::string_view first_column_header,
-                                           const FrontendFlowHistogramDto& flow_histogram) {
+                                           const FrontendFlowHistogramDto& flow_histogram,
+                                           const std::string_view help_text = {}) {
         out << "\n" << title << "\n\n";
+        if (!help_text.empty()) {
+            out << help_text << "\n\n";
+        }
         std::vector<std::vector<std::string>> rows {};
         rows.reserve(flow_histogram.buckets.size());
         for (const auto& bucket : flow_histogram.buckets) {
@@ -1028,7 +1032,8 @@ std::string render_extended_summary_text(
     render_flow_histogram(
         "Flows by Duration",
         "Duration",
-        statistics.flow_duration_histogram
+        statistics.flow_duration_histogram,
+        frontend_flow_duration_histogram_help_text()
     );
     render_flow_histogram(
         "Flows by Data Size",

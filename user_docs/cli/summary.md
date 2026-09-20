@@ -300,7 +300,9 @@ These sections help you notice different kinds of structure:
 - `Flows by Packet Count` shows that many flows are one-packet flows, while a
   small number of larger flows contribute most of the bytes.
 - `Flows by Duration` and `Flows by Data Size` show where flow count and byte
-  volume concentrate across time-span and original-size buckets.
+  volume concentrate across time-span and original-size buckets. Flow duration
+  is the time between the first and last packet. One-packet Flows have duration
+  0.
 - `IP Fragmentation` shows capture-wide fragmentation counts. Fragmented packet
   percentages use effective IP/family totals; initial and non-initial
   percentages use all fragmented IP packets; flow percentage uses all Flows.

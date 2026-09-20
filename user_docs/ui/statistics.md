@@ -402,6 +402,9 @@ normal positive packet-count buckets.
 `Flows by Duration` groups recognized canonical flows by the interval between
 their first and last observed packet timestamps.
 
+Flow duration is the time between the first and last packet. One-packet Flows
+have duration 0.
+
 The mode buttons are the same as `Flows by Packet Count`:
 
 - `Flows`

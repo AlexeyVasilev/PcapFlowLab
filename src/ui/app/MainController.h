@@ -259,6 +259,7 @@ private:
     Q_PROPERTY(int flowDurationHistogramState READ flowDurationHistogramState NOTIFY stateChanged)
     Q_PROPERTY(QString flowDurationHistogramStatusText READ flowDurationHistogramStatusText NOTIFY stateChanged)
     Q_PROPERTY(QString flowDurationHistogramSummaryText READ flowDurationHistogramSummaryText NOTIFY stateChanged)
+    Q_PROPERTY(QString flowDurationHistogramHelpText READ flowDurationHistogramHelpText CONSTANT)
     Q_PROPERTY(QVariantList flowDurationHistogramRows READ flowDurationHistogramRows NOTIFY stateChanged)
     Q_PROPERTY(int flowOriginalByteSizeHistogramState READ flowOriginalByteSizeHistogramState NOTIFY stateChanged)
     Q_PROPERTY(QString flowOriginalByteSizeHistogramStatusText READ flowOriginalByteSizeHistogramStatusText NOTIFY stateChanged)
@@ -566,6 +567,7 @@ public:
     [[nodiscard]] int flowDurationHistogramState() const noexcept;
     [[nodiscard]] QString flowDurationHistogramStatusText() const;
     [[nodiscard]] QString flowDurationHistogramSummaryText() const;
+    [[nodiscard]] QString flowDurationHistogramHelpText() const;
     [[nodiscard]] QVariantList flowDurationHistogramRows() const;
     [[nodiscard]] int flowOriginalByteSizeHistogramState() const noexcept;
     [[nodiscard]] QString flowOriginalByteSizeHistogramStatusText() const;

@@ -1017,6 +1017,10 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Bytes"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Capture Import Settings"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Duration"));
+    PFL_EXPECT(contains_text(
+        execution_result.stdout_text,
+        "Flow duration is the time between the first and last packet. One-packet Flows have duration 0."
+    ));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Duration"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Data Size"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Flow Size"));
@@ -1584,6 +1588,10 @@ void expect_statistics_report_revision19_sections_render_in_markdown_and_html() 
     PFL_EXPECT(contains_text(markdown, "| Ignore VLAN and MPLS layers when grouping flows | Yes |"));
     PFL_EXPECT(contains_text(markdown, "| Future capture mode | aggressive <fast> |"));
     PFL_EXPECT(contains_text(markdown, "## Flows by Duration"));
+    PFL_EXPECT(contains_text(
+        markdown,
+        "Flow duration is the time between the first and last packet. One-packet Flows have duration 0."
+    ));
     PFL_EXPECT(contains_text(markdown, "| >0 - <1 ms | 1 (33%) | 240 B (33%) | 1 MB (1%) |"));
     PFL_EXPECT(contains_text(markdown, "## Flows by Data Size"));
     PFL_EXPECT(contains_text(markdown, "| 100 MiB+ | 1 (33%) | 360 B (50%) | 100 MB (99%) |"));
@@ -1595,6 +1603,10 @@ void expect_statistics_report_revision19_sections_render_in_markdown_and_html() 
     PFL_EXPECT(contains_text(html, "Ignore VLAN and MPLS layers when grouping flows"));
     PFL_EXPECT(contains_text(html, "aggressive &lt;fast&gt;"));
     PFL_EXPECT(contains_text(html, "<h2>Flows by Duration</h2>"));
+    PFL_EXPECT(contains_text(
+        html,
+        "Flow duration is the time between the first and last packet. One-packet Flows have duration 0."
+    ));
     PFL_EXPECT(contains_text(html, "&gt;0 - &lt;1 ms"));
     PFL_EXPECT(contains_text(html, "<h2>Flows by Data Size</h2>"));
     PFL_EXPECT(contains_text(html, "100 MiB+"));

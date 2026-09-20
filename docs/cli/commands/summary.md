@@ -197,7 +197,8 @@ Important details:
   - `Captured Bytes`;
   - `Original Bytes`.
 - `Flows by Duration` uses the same combined table shape with duration bucket
-  labels.
+  labels and explains that Flow duration is the time between the first and last
+  packet. One-packet Flows have duration 0.
 - `Flows by Data Size` uses the same combined table shape with original
   flow-size bucket labels.
 - `IP Fragmentation` uses a compact `Metric` / `Count` table. Fragmented packet

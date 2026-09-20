@@ -454,9 +454,10 @@ per expansion and supports frontend-local `Flows`, `Captured bytes`, and
 `Original bytes` modes over identical packet-count bucket membership.
 
 `Flows by Duration` and `Flows by Data Size` use the same frontend-local
-histogram mode behavior. `Flows by Data Size` bucket membership is based on
-original flow size even when the visible metric is `Flows` or
-`Captured bytes`.
+histogram mode behavior. `Flows by Duration` must explain: Flow duration is
+the time between the first and last packet. One-packet Flows have duration 0.
+`Flows by Data Size` bucket membership is based on original flow size even when
+the visible metric is `Flows` or `Captured bytes`.
 
 `IP Fragmentation` is a compact metric table. Its help text must explain that
 fragmented packet percentages use effective IP/family totals, initial and
@@ -470,7 +471,9 @@ frontend-neutral presentation DTOs for revision-19 sections:
   mutable runtime settings. Known boolean values render as `Yes` / `No`;
   unknown future records render their stored display name and value text.
 - `Flows by Duration` uses persisted flow-duration buckets and local histogram
-  totals for flow/captured-byte/original-byte percentages.
+  totals for flow/captured-byte/original-byte percentages. It explains that
+  Flow duration is the time between the first and last packet. One-packet Flows
+  have duration 0.
 - `Flows by Data Size` uses persisted original-flow-size buckets and the same
   local histogram percentage rules.
 - `IP Fragmentation` uses capture-wide packet fragmentation counters and the

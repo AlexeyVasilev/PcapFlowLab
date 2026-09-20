@@ -4,6 +4,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/frontend/FrontendDtos.h"
@@ -58,6 +59,7 @@ namespace pfl {
 [[nodiscard]] FrontendFlowHistogramDto build_frontend_flow_duration_histogram(
     const FlowDurationHistogram& histogram
 );
+[[nodiscard]] std::string_view frontend_flow_duration_histogram_help_text() noexcept;
 [[nodiscard]] FrontendFlowHistogramDto build_frontend_flow_original_byte_size_histogram(
     const FlowOriginalByteSizeHistogram& histogram
 );

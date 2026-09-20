@@ -3807,6 +3807,11 @@ QString MainController::flowDurationHistogramSummaryText() const {
         : QString {};
 }
 
+QString MainController::flowDurationHistogramHelpText() const {
+    const auto text = frontend_flow_duration_histogram_help_text();
+    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+}
+
 QVariantList MainController::flowDurationHistogramRows() const {
     return flow_duration_histogram_rows_;
 }

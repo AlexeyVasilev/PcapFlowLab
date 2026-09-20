@@ -3386,7 +3386,10 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
         mutable_settings.http_use_path_as_service_hint = true;
         mutable_settings.ignore_vlan_and_mpls_layers_when_grouping_flows = true;
         mutable_settings.ignore_gtpu_teids_when_grouping_inner_flows = true;
-        raw_adapter.update_settings(mutable_settings);
+        const auto applied_settings = raw_adapter.update_settings(mutable_settings);
+        PFL_EXPECT(applied_settings.http_use_path_as_service_hint);
+        PFL_EXPECT(applied_settings.ignore_vlan_and_mpls_layers_when_grouping_flows);
+        PFL_EXPECT(applied_settings.ignore_gtpu_teids_when_grouping_inner_flows);
         const auto raw_export_result = raw_adapter.export_statistics_report(
             FrontendStatisticsReportFormat::markdown,
             raw_report_path
@@ -3398,6 +3401,10 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     const auto raw_report = read_text_file(raw_report_path);
     PFL_EXPECT(contains_text(raw_report, "## Capture Import Settings"));
     PFL_EXPECT(contains_text(raw_report, "## Flows by Duration"));
+    PFL_EXPECT(contains_text(
+        raw_report,
+        "Flow duration is the time between the first and last packet. One-packet Flows have duration 0."
+    ));
     PFL_EXPECT(contains_text(raw_report, "## Flows by Data Size"));
     PFL_EXPECT(contains_text(raw_report, "## IP Fragmentation"));
     PFL_EXPECT(contains_text(
