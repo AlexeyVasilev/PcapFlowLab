@@ -66,7 +66,7 @@ flags, including:
 - `--protocol-path-mode` is valid only together with `--protocol-path-tree` or
   `--out-protocol-path-tree`.
 
-For current stable revision 18 indexes using the v16 physical architecture,
+For current stable revision 19 indexes using the v16 physical architecture,
 compatible summary invocations use the Statistics fast tier directly. The fast path is used for the basic summary,
 `--extended`, Protocol Path Tree preview, Protocol Path Tree export, and full
 Statistics report side outputs because those outputs are backed by the stable
@@ -144,12 +144,16 @@ Statistics cover successfully imported packets only; the capture was opened part
 
 `--extended` appends exactly these sections:
 
+- `Capture Import Settings`
 - `Capture Metrics`
 - `Flow Characteristics`
 - `Direction Distribution`
 - `TCP Flags`
 - `Packet Size Distribution`
 - `Flows by Packet Count`
+- `Flows by Duration`
+- `Flows by Data Size`
+- `IP Fragmentation`
 - `Detected Protocol Hints`
 - `QUIC and TLS`
 - `Top Flows by Original Bytes`
@@ -157,6 +161,8 @@ Statistics cover successfully imported packets only; the capture was opened part
 
 Important details:
 
+- `Capture Import Settings` renders stored import provenance from the active
+  capture/index, not mutable runtime settings.
 - `Capture Metrics` renders:
   - average captured packet size;
   - average original packet size;
@@ -190,6 +196,14 @@ Important details:
   - `Flows`;
   - `Captured Bytes`;
   - `Original Bytes`.
+- `Flows by Duration` uses the same combined table shape with duration bucket
+  labels and explains that Flow duration is the time between the first and last
+  packet. One-packet Flows have duration 0.
+- `Flows by Data Size` uses the same combined table shape with original
+  flow-size bucket labels.
+- `IP Fragmentation` uses a compact `Metric` / `Count` table. Fragmented packet
+  percentages use effective IP/family totals; initial and non-initial
+  percentages use all fragmented IP packets; flow percentage uses all Flows.
 - `Detected Protocol Hints` omits zero rows and prints `None` when empty.
 - `Detected Protocol Hints` follows the shared runtime protocol-hint
   projection. The CLI does not apply a separate hint-suppression policy for

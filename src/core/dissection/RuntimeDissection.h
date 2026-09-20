@@ -6,6 +6,7 @@
 #include <span>
 
 #include "core/dissection/DissectionTypes.h"
+#include "core/domain/IpFragmentation.h"
 #include "core/domain/ProtocolId.h"
 #include "core/domain/TerminalTransportPayloadBounds.h"
 
@@ -17,6 +18,7 @@ struct RuntimeDissectionFacts {
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
     std::optional<std::uint8_t> tcp_flags {};
+    IpFragmentationKind ip_fragmentation_kind {IpFragmentationKind::none};
     std::optional<bool> is_ip_fragmented {};
     ParseStatus final_status {ParseStatus::opaque};
     StopReason stop_reason {StopReason::none};

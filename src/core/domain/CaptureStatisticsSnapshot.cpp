@@ -15,6 +15,18 @@ struct FlowPacketCountBucketDefinition {
     std::optional<std::uint64_t> upper_bound_inclusive;
 };
 
+struct FlowDurationBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+struct FlowOriginalByteSizeBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
 constexpr std::array<CaptureStatisticsTransportProtocolCategory, 4> kTransportProtocolCategories {{
     CaptureStatisticsTransportProtocolCategory::tcp,
     CaptureStatisticsTransportProtocolCategory::udp,
@@ -69,6 +81,33 @@ constexpr std::array<FlowPacketCountBucketDefinition, kCaptureStatisticsFlowPack
     {"packets_501_1000", 501U, 1000U},
     {"packets_1001_5000", 1001U, 5000U},
     {"packets_5001_plus", 5001U, std::nullopt},
+}};
+
+constexpr std::array<FlowDurationBucketDefinition, kCaptureStatisticsFlowDurationHistogramBucketCount>
+    kFlowDurationBucketDefinitions {{
+    {"duration_zero", 0U, 0U},
+    {"duration_gt0_lt1ms", 1U, 999U},
+    {"duration_1_10ms", 1'000U, 9'999U},
+    {"duration_10_100ms", 10'000U, 99'999U},
+    {"duration_100ms_1s", 100'000U, 999'999U},
+    {"duration_1_10s", 1'000'000U, 9'999'999U},
+    {"duration_10_60s", 10'000'000U, 59'999'999U},
+    {"duration_1_10min", 60'000'000U, 599'999'999U},
+    {"duration_10min_plus", 600'000'000U, std::nullopt},
+}};
+
+constexpr std::array<FlowOriginalByteSizeBucketDefinition, kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount>
+    kFlowOriginalByteSizeBucketDefinitions {{
+    {"original_bytes_0_255", 0U, 255U},
+    {"original_bytes_256_1023", 256U, 1'023U},
+    {"original_bytes_1_4kib", 1'024U, 4'095U},
+    {"original_bytes_4_16kib", 4'096U, 16'383U},
+    {"original_bytes_16_64kib", 16'384U, 65'535U},
+    {"original_bytes_64_256kib", 65'536U, 262'143U},
+    {"original_bytes_256kib_1mib", 262'144U, 1'048'575U},
+    {"original_bytes_1_10mib", 1'048'576U, 10'485'759U},
+    {"original_bytes_10_100mib", 10'485'760U, 104'857'599U},
+    {"original_bytes_100mib_plus", 104'857'600U, std::nullopt},
 }};
 
 template <typename T>
@@ -241,6 +280,77 @@ CaptureStatisticsSnapshotValidationResult validate_flow_packet_count_histogram(
     return {};
 }
 
+template <typename Histogram, typename BucketDefinitions>
+CaptureStatisticsSnapshotValidationResult validate_flow_triple_metric_histogram(
+    const Histogram& histogram,
+    const BucketDefinitions& definitions,
+    const std::uint64_t expected_total_flow_count,
+    const CaptureStatisticsSnapshotValidationErrorCode layout_error,
+    const CaptureStatisticsSnapshotValidationErrorCode sum_error,
+    const std::string_view field_prefix
+) noexcept {
+    if (histogram.buckets.size() != definitions.size()) {
+        return make_validation_error(
+            layout_error,
+            field_prefix,
+            std::nullopt,
+            definitions.size(),
+            histogram.buckets.size()
+        );
+    }
+
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+
+    for (std::size_t index = 0U; index < histogram.buckets.size(); ++index) {
+        const auto& bucket = histogram.buckets[index];
+        const auto& definition = definitions[index];
+        if (bucket.stable_id != definition.stable_id ||
+            bucket.lower_bound_inclusive != definition.lower_bound_inclusive ||
+            bucket.upper_bound_inclusive != definition.upper_bound_inclusive) {
+            return make_validation_error(layout_error, field_prefix, index);
+        }
+
+        if (!checked_add(bucket.flow_count, total_flow_count) ||
+            !checked_add(bucket.captured_byte_count, total_captured_byte_count) ||
+            !checked_add(bucket.original_byte_count, total_original_byte_count)) {
+            return make_validation_error(sum_error, field_prefix, index);
+        }
+
+        maximum_bucket_flow_count = std::max(maximum_bucket_flow_count, bucket.flow_count);
+        maximum_bucket_captured_byte_count = std::max(maximum_bucket_captured_byte_count, bucket.captured_byte_count);
+        maximum_bucket_original_byte_count = std::max(maximum_bucket_original_byte_count, bucket.original_byte_count);
+    }
+
+    if (total_flow_count != histogram.total_flow_count ||
+        total_captured_byte_count != histogram.total_captured_byte_count ||
+        total_original_byte_count != histogram.total_original_byte_count) {
+        return make_validation_error(sum_error, field_prefix);
+    }
+
+    if (maximum_bucket_flow_count != histogram.maximum_bucket_flow_count ||
+        maximum_bucket_captured_byte_count != histogram.maximum_bucket_captured_byte_count ||
+        maximum_bucket_original_byte_count != histogram.maximum_bucket_original_byte_count) {
+        return make_validation_error(layout_error, field_prefix);
+    }
+
+    if (histogram.total_flow_count != expected_total_flow_count) {
+        return make_validation_error(
+            sum_error,
+            field_prefix,
+            std::nullopt,
+            expected_total_flow_count,
+            histogram.total_flow_count
+        );
+    }
+
+    return {};
+}
+
 template <typename Row, typename Category, std::size_t Size>
 CaptureStatisticsSnapshotValidationResult validate_protocol_rows(
     const std::vector<Row>& rows,
@@ -334,6 +444,32 @@ CaptureStatisticsFlowPacketCountHistogram make_default_capture_statistics_flow_p
     histogram.buckets.reserve(kFlowPacketCountBucketDefinitions.size());
     for (const auto& definition : kFlowPacketCountBucketDefinitions) {
         histogram.buckets.push_back(CaptureStatisticsFlowPacketCountBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+        });
+    }
+    return histogram;
+}
+
+CaptureStatisticsFlowDurationHistogram make_default_capture_statistics_flow_duration_histogram() {
+    CaptureStatisticsFlowDurationHistogram histogram {};
+    histogram.buckets.reserve(kFlowDurationBucketDefinitions.size());
+    for (const auto& definition : kFlowDurationBucketDefinitions) {
+        histogram.buckets.push_back(CaptureStatisticsFlowDurationBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+        });
+    }
+    return histogram;
+}
+
+CaptureStatisticsFlowOriginalByteSizeHistogram make_default_capture_statistics_flow_original_byte_size_histogram() {
+    CaptureStatisticsFlowOriginalByteSizeHistogram histogram {};
+    histogram.buckets.reserve(kFlowOriginalByteSizeBucketDefinitions.size());
+    for (const auto& definition : kFlowOriginalByteSizeBucketDefinitions) {
+        histogram.buckets.push_back(CaptureStatisticsFlowOriginalByteSizeBucket {
             .stable_id = definition.stable_id,
             .lower_bound_inclusive = definition.lower_bound_inclusive,
             .upper_bound_inclusive = definition.upper_bound_inclusive,
@@ -500,6 +636,95 @@ CaptureStatisticsSnapshotValidationResult validate_capture_statistics_snapshot(
     const auto flow_histogram_validation = validate_flow_packet_count_histogram(snapshot);
     if (!flow_histogram_validation.ok) {
         return flow_histogram_validation;
+    }
+
+    const auto duration_histogram_validation = validate_flow_triple_metric_histogram(
+        snapshot.flow_duration_histogram,
+        kFlowDurationBucketDefinitions,
+        snapshot.total_flow_count,
+        CaptureStatisticsSnapshotValidationErrorCode::invalid_flow_duration_histogram_layout,
+        CaptureStatisticsSnapshotValidationErrorCode::flow_duration_histogram_sum_mismatch,
+        "flow_duration_histogram.buckets"
+    );
+    if (!duration_histogram_validation.ok) {
+        return duration_histogram_validation;
+    }
+
+    const auto original_byte_histogram_validation = validate_flow_triple_metric_histogram(
+        snapshot.flow_original_byte_size_histogram,
+        kFlowOriginalByteSizeBucketDefinitions,
+        snapshot.total_flow_count,
+        CaptureStatisticsSnapshotValidationErrorCode::invalid_flow_original_byte_size_histogram_layout,
+        CaptureStatisticsSnapshotValidationErrorCode::flow_original_byte_size_histogram_sum_mismatch,
+        "flow_original_byte_size_histogram.buckets"
+    );
+    if (!original_byte_histogram_validation.ok) {
+        return original_byte_histogram_validation;
+    }
+
+    if (snapshot.flow_duration_histogram.total_flow_count !=
+            snapshot.flow_original_byte_size_histogram.total_flow_count ||
+        snapshot.flow_duration_histogram.total_captured_byte_count !=
+            snapshot.flow_original_byte_size_histogram.total_captured_byte_count ||
+        snapshot.flow_duration_histogram.total_original_byte_count !=
+            snapshot.flow_original_byte_size_histogram.total_original_byte_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::flow_histogram_aggregate_mismatch,
+            "flow_histograms"
+        );
+    }
+
+    std::uint64_t effective_ip_packet_count {snapshot.ip_fragmentation.effective_ipv4_packet_count};
+    if (!checked_add(snapshot.ip_fragmentation.effective_ipv6_packet_count, effective_ip_packet_count) ||
+        effective_ip_packet_count > snapshot.total_packet_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::ip_fragmentation_family_count_exceeds_total,
+            "ip_fragmentation.effective_packet_count",
+            std::nullopt,
+            snapshot.total_packet_count,
+            effective_ip_packet_count
+        );
+    }
+    if (snapshot.ip_fragmentation.ipv4_fragmented_packet_count >
+        snapshot.ip_fragmentation.effective_ipv4_packet_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::ipv4_fragmented_packet_count_exceeds_effective_ipv4,
+            "ip_fragmentation.ipv4_fragmented_packet_count"
+        );
+    }
+    if (snapshot.ip_fragmentation.ipv6_fragmented_packet_count >
+        snapshot.ip_fragmentation.effective_ipv6_packet_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::ipv6_fragmented_packet_count_exceeds_effective_ipv6,
+            "ip_fragmentation.ipv6_fragmented_packet_count"
+        );
+    }
+    std::uint64_t ipv6_fragment_and_atomic_count {snapshot.ip_fragmentation.ipv6_fragmented_packet_count};
+    if (!checked_add(snapshot.ip_fragmentation.ipv6_atomic_fragment_packet_count, ipv6_fragment_and_atomic_count) ||
+        ipv6_fragment_and_atomic_count > snapshot.ip_fragmentation.effective_ipv6_packet_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::ipv6_fragment_and_atomic_count_exceeds_effective_ipv6,
+            "ip_fragmentation.ipv6_fragment_and_atomic_packet_count"
+        );
+    }
+    std::uint64_t initial_and_non_initial_count {snapshot.ip_fragmentation.initial_fragment_packet_count};
+    std::uint64_t real_fragment_count {snapshot.ip_fragmentation.ipv4_fragmented_packet_count};
+    if (!checked_add(snapshot.ip_fragmentation.non_initial_fragment_packet_count, initial_and_non_initial_count) ||
+        !checked_add(snapshot.ip_fragmentation.ipv6_fragmented_packet_count, real_fragment_count) ||
+        initial_and_non_initial_count != real_fragment_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::fragment_kind_sum_mismatch,
+            "ip_fragmentation.fragment_kind_counts"
+        );
+    }
+    if (snapshot.flows_containing_fragments_count > snapshot.total_flow_count) {
+        return make_validation_error(
+            CaptureStatisticsSnapshotValidationErrorCode::flows_containing_fragments_count_exceeds_total,
+            "flows_containing_fragments_count",
+            std::nullopt,
+            snapshot.total_flow_count,
+            snapshot.flows_containing_fragments_count
+        );
     }
 
     if (snapshot.top_endpoints.size() > kCaptureStatisticsSnapshotTopEndpointCapacity) {

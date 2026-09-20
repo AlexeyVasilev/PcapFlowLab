@@ -163,6 +163,10 @@ constexpr char kFutureStableIndexRevisionMessage[] =
         return "missing v16 capture statistics snapshot section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section:
         return "duplicate v16 capture statistics snapshot section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_import_settings_section:
+        return "missing v16 capture import settings section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section:
+        return "duplicate v16 capture import settings section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section:
         return "missing v16 protocol path registry section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section:
@@ -181,6 +185,10 @@ constexpr char kFutureStableIndexRevisionMessage[] =
         return "malformed v16 capture statistics snapshot payload";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::capture_statistics_snapshot_semantic_inconsistency:
         return "invalid v16 capture statistics snapshot";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_import_settings_payload:
+        return "malformed v16 capture import settings payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::capture_import_settings_semantic_inconsistency:
+        return "invalid v16 capture import settings";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload:
         return "malformed v16 protocol path registry payload";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_terminal_aggregates_payload:

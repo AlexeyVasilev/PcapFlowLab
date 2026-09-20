@@ -86,6 +86,49 @@ namespace {
     );
 }
 
+[[nodiscard]] IpFragmentationKind effective_ip_fragmentation_kind(
+    const dissection::ImportDissectionFacts& facts
+) noexcept {
+    switch (facts.family) {
+    case dissection::DissectionAddressFamily::ipv4:
+        if (!facts.has_ipv4_fragmentation) {
+            return IpFragmentationKind::none;
+        }
+        if (facts.ipv4_fragmentation.fragment_offset_units > 0U) {
+            return IpFragmentationKind::ipv4_non_initial;
+        }
+        return facts.ipv4_fragmentation.more_fragments
+            ? IpFragmentationKind::ipv4_initial
+            : IpFragmentationKind::none;
+    case dissection::DissectionAddressFamily::ipv6:
+        if (!facts.has_ipv6_fragmentation || !facts.ipv6_fragmentation.has_fragment_header) {
+            return IpFragmentationKind::none;
+        }
+        if (facts.ipv6_fragmentation.fragment_offset_units > 0U) {
+            return IpFragmentationKind::ipv6_non_initial;
+        }
+        return facts.ipv6_fragmentation.more_fragments
+            ? IpFragmentationKind::ipv6_initial
+            : IpFragmentationKind::ipv6_atomic;
+    case dissection::DissectionAddressFamily::unknown:
+        break;
+    }
+
+    return IpFragmentationKind::none;
+}
+
+void observe_final_import_result_ip_statistics(
+    CapturePacketStatistics& statistics,
+    const dissection::ImportDissectionFacts& facts
+) noexcept {
+    observe_effective_ip_fragmentation_statistics(
+        statistics.ip_fragmentation,
+        facts.family == dissection::DissectionAddressFamily::ipv4 && facts.has_ipv4_fragmentation,
+        facts.family == dissection::DissectionAddressFamily::ipv6 && facts.has_ipv6_fragmentation,
+        effective_ip_fragmentation_kind(facts)
+    );
+}
+
 template <typename Connection, typename FlowKey>
 [[nodiscard]] std::optional<FlowKey> pending_tls_client_hello_flow_key(const Connection& connection) {
     switch (pending_tls_client_hello_flow_slot(connection.hint_search_state)) {
@@ -866,11 +909,16 @@ bool apply_unified_import_packet_result(
             }
         }
 
-        return apply_decoded_packet_import(packet, decoded, state, hint_service, materializer);
+        const auto applied = apply_decoded_packet_import(packet, decoded, state, hint_service, materializer);
+        if (applied) {
+            observe_final_import_result_ip_statistics(state.packet_statistics, result.facts);
+        }
+        return applied;
     }
 
     const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
     apply_unrecognized_packet_import(packet, packet_bytes, state);
+    observe_final_import_result_ip_statistics(state.packet_statistics, result.facts);
     return true;
 }
 

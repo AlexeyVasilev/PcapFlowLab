@@ -92,9 +92,12 @@ Implemented slice:
   - IP family summary
   - shared C++ compact byte/count/percentage formatting for overview bytes, Protocol Summary byte columns, and Detected Protocol Hints values
   - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
-  - six optional collapsible sections, initially closed for each capture:
+  - nine optional collapsible sections, initially closed for each capture:
     - Packet Size Distribution
     - Flows by Packet Count
+    - Flows by Duration
+    - Flows by Data Size
+    - IP Fragmentation
     - Protocol Path Tree
     - Detected Protocol Hints
     - QUIC and TLS

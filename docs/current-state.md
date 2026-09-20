@@ -17,8 +17,8 @@ metadata and bounded decode facts. Saved indexes reopen metadata-backed session
 state without reimporting the original capture.
 
 Indexes are exact-version artifacts. The current stable index baseline is
-revision `18`, with header inspection kept independent from full payload
-compatibility. Stable revision 17 and older indexes are recognized but require
+revision `19`, with header inspection kept independent from full payload
+compatibility. Stable revision 18 and older indexes are recognized but require
 rebuilding from the source capture for full load. When the saved index revision
 or required section schemas are not supported, the product requires rebuilding
 the index from the source capture.
@@ -156,8 +156,13 @@ Statistics is whole-capture / whole-index oriented.
 
 The current product exposes whole-session overview data plus structured
 whole-capture statistics such as transport/family summaries, packet-size
-distribution, flow-count histograms, protocol-path trees, detected-protocol
-hints, QUIC/TLS summary views, and top endpoint/port summaries.
+distribution, flow-count/duration/original-size histograms, IP fragmentation,
+protocol-path trees, detected-protocol hints, QUIC/TLS summary views, and top
+endpoint/port summaries.
+
+The shared HTML/Markdown Statistics report and CLI extended output also present
+revision-19 capture import settings provenance. That provenance section is not
+currently a live Qt/Tauri Statistics workspace section.
 
 Optional heavier Statistics sections are loaded lazily and reuse cached results
 for the current session.

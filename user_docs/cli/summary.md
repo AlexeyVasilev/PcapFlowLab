@@ -176,7 +176,7 @@ This workflow shows that:
 - the full Protocol Path Tree can be exported as a side output;
 - this summary workflow does not require packet-byte-backed inspection.
 
-For current revision 18 indexes using the v16 physical architecture, standard
+For current revision 19 indexes using the v16 physical architecture, standard
 summary output, `--extended`, Protocol Path Tree preview, and Protocol Path Tree export are read from the index's fast
 Statistics tier. This means the command can report summary data without
 opening the original capture file and without scanning the later flow-detail
@@ -232,6 +232,34 @@ Packets / Flow     Flows  Original Bytes
 ```
 
 ```text
+Flows by Duration
+
+Duration     Flows  Captured Bytes  Original Bytes
+0            12 (21%)    8 KB (1%)       8 KB (1%)
+1-10 ms       4 (7%)    12 KB (2%)      12 KB (2%)
+...
+```
+
+```text
+Flows by Data Size
+
+Original Flow Size     Flows  Captured Bytes  Original Bytes
+0-255 B              20 (34%)    5 KB (1%)       5 KB (1%)
+1-4 KiB               8 (14%)   24 KB (4%)      24 KB (4%)
+...
+```
+
+```text
+IP Fragmentation
+
+Metric                         Count
+Fragmented IP packets          3 (0.19%)
+Initial fragments              2 (67%)
+Non-initial fragments          1 (33%)
+Flows containing fragments      1 (2%)
+```
+
+```text
 Detected Protocol Hints
 
 Protocol Hint      Flows     Packets  Captured Bytes  Original Bytes
@@ -271,6 +299,13 @@ These sections help you notice different kinds of structure:
   packets and some much larger packet-size buckets.
 - `Flows by Packet Count` shows that many flows are one-packet flows, while a
   small number of larger flows contribute most of the bytes.
+- `Flows by Duration` and `Flows by Data Size` show where flow count and byte
+  volume concentrate across time-span and original-size buckets. Flow duration
+  is the time between the first and last packet. One-packet Flows have duration
+  0.
+- `IP Fragmentation` shows capture-wide fragmentation counts. Fragmented packet
+  percentages use effective IP/family totals; initial and non-initial
+  percentages use all fragmented IP packets; flow percentage uses all Flows.
 - `Detected Protocol Hints` shows that TLS is a major detected-protocol
   component in this showcase.
 - `Top Endpoints` and `Top Ports` quickly show the most active participants and
@@ -481,7 +516,7 @@ For `summary`, an index is meant to be self-sufficient for summary data.
 Unlike byte-backed inspection commands, `summary` does not need
 `--source-capture`.
 
-For current revision 18 indexes using the v16 physical architecture,
+For current revision 19 indexes using the v16 physical architecture,
 summary-style outputs use the index fast Statistics tier when possible. This is a quick metadata read, not a full validation of
 every later flow-detail section in the index.
 

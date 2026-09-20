@@ -22,6 +22,31 @@ PacketImportMetadata make_import_semantic_packet_metadata(const dissection::Impo
     if (facts.has_tcp_sequence_number && facts.terminal_protocol == ProtocolId::tcp) {
         metadata.tcp_sequence_number = facts.tcp_sequence_number;
     }
+    switch (facts.family) {
+    case dissection::DissectionAddressFamily::ipv4:
+        if (facts.has_ipv4_fragmentation) {
+            if (facts.ipv4_fragmentation.fragment_offset_units > 0U) {
+                metadata.ip_fragmentation_kind = IpFragmentationKind::ipv4_non_initial;
+            } else if (facts.ipv4_fragmentation.more_fragments) {
+                metadata.ip_fragmentation_kind = IpFragmentationKind::ipv4_initial;
+            }
+        }
+        break;
+    case dissection::DissectionAddressFamily::ipv6:
+        if (facts.has_ipv6_fragmentation && facts.ipv6_fragmentation.has_fragment_header) {
+            if (facts.ipv6_fragmentation.fragment_offset_units > 0U) {
+                metadata.ip_fragmentation_kind = IpFragmentationKind::ipv6_non_initial;
+            } else if (facts.ipv6_fragmentation.more_fragments) {
+                metadata.ip_fragmentation_kind = IpFragmentationKind::ipv6_initial;
+            } else {
+                metadata.ip_fragmentation_kind = IpFragmentationKind::ipv6_atomic;
+            }
+        }
+        break;
+    case dissection::DissectionAddressFamily::unknown:
+        break;
+    }
+
     metadata.is_ip_fragmented =
         (facts.has_ipv4_fragmentation && facts.ipv4_fragmentation.is_fragmented) ||
         (facts.has_ipv6_fragmentation && facts.ipv6_fragmentation.has_fragment_header);

@@ -296,6 +296,61 @@ struct FrontendFlowPacketCountHistogramDto {
     std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
 };
 
+struct FrontendFlowHistogramBucketDto {
+    std::string bucket_id {};
+    std::string label {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::string flow_count_with_total_percent_text {};
+    std::uint64_t captured_byte_count {0};
+    std::string captured_byte_count_text {};
+    std::string captured_byte_count_with_total_percent_text {};
+    std::uint64_t original_byte_count {0};
+    std::string original_byte_count_text {};
+    std::string original_byte_count_with_total_percent_text {};
+    double total_flow_fraction {0.0};
+    double total_captured_byte_fraction {0.0};
+    double total_original_byte_fraction {0.0};
+    double normalized_flow_fraction {0.0};
+    double normalized_captured_byte_fraction {0.0};
+    double normalized_original_byte_fraction {0.0};
+};
+
+struct FrontendFlowHistogramDto {
+    bool has_capture {false};
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::vector<FrontendFlowHistogramBucketDto> buckets {};
+};
+
+struct FrontendCaptureImportSettingDto {
+    std::string stable_key {};
+    std::string display_name {};
+    std::string display_value {};
+};
+
+struct FrontendIpFragmentationStatisticsRowDto {
+    std::string stable_id {};
+    std::string label {};
+    std::uint64_t count {0};
+    double fraction {0.0};
+    std::string count_with_percent_text {};
+};
+
+struct FrontendIpFragmentationStatisticsDto {
+    bool has_capture {false};
+    std::uint64_t effective_ip_packet_count {0};
+    std::uint64_t fragmented_ip_packet_count {0};
+    std::uint64_t total_flow_count {0};
+    std::string help_text {};
+    std::vector<FrontendIpFragmentationStatisticsRowDto> rows {};
+};
+
 struct FrontendCapturePacketSizeStatisticsBucketDto {
     std::string bucket_id {};
     std::string label {};
@@ -415,6 +470,9 @@ struct FrontendFlowCharacteristicsDto {
     std::uint64_t service_recognized_flow_count {0};
     double service_recognized_flow_fraction {0.0};
     std::string service_recognized_flows_text {};
+    std::uint64_t flows_containing_fragments_count {0};
+    double flows_containing_fragments_fraction {0.0};
+    std::string flows_containing_fragments_text {};
 };
 
 struct FrontendDirectionDistributionRowDto {

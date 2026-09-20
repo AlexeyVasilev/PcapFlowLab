@@ -44,8 +44,12 @@ struct FrontendStatisticsReportMetadata {
 struct FrontendStatisticsReportInput {
     FrontendStatisticsReportMetadata metadata {};
     FrontendOverviewDto overview {};
+    std::vector<FrontendCaptureImportSettingDto> capture_import_settings {};
     FrontendCapturePacketSizeStatisticsDto packet_size_statistics {};
     FrontendFlowPacketCountHistogramDto flow_packet_count_histogram {};
+    FrontendFlowHistogramDto flow_duration_histogram {};
+    FrontendFlowHistogramDto flow_original_byte_size_histogram {};
+    FrontendIpFragmentationStatisticsDto ip_fragmentation_statistics {};
     FrontendProtocolHintStatisticsDto protocol_hint_statistics {};
     FrontendQuicTlsStatisticsDto quic_tls_statistics {};
     FrontendTopEndpointPortStatisticsDto top_endpoint_port_statistics {};

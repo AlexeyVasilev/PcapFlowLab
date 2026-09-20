@@ -27,6 +27,9 @@
     tcpFlags: "tcpFlags",
     packetSizeDistribution: "packetSizeDistribution",
     flowPacketHistogram: "flowPacketHistogram",
+    flowDurationHistogram: "flowDurationHistogram",
+    flowOriginalByteSizeHistogram: "flowOriginalByteSizeHistogram",
+    ipFragmentation: "ipFragmentation",
     protocolPath: "protocolPath",
     protocolHints: "protocolHints",
     quicTls: "quicTls",
@@ -57,6 +60,9 @@
       [statisticsSectionKeys.tcpFlags]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.packetSizeDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowPacketHistogram]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.flowDurationHistogram]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.flowOriginalByteSizeHistogram]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.ipFragmentation]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolHints]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.quicTls]: createStatisticsSectionEntry(),
@@ -326,6 +332,11 @@
     packetSizeDistributionDisplayMode: "captured",
     flowPacketCountHistogram: null,
     flowPacketHistogramDisplayMode: "flows",
+    flowDurationHistogram: null,
+    flowDurationHistogramDisplayMode: "flows",
+    flowOriginalByteSizeHistogram: null,
+    flowOriginalByteSizeHistogramDisplayMode: "flows",
+    ipFragmentationStatistics: null,
     protocolHintStatistics: null,
     quicTlsStatistics: null,
     topEndpointPortStatistics: null,
@@ -3614,6 +3625,24 @@
     flowPacketHistogramModeOriginalBytes: document.getElementById("flowPacketHistogramModeOriginalBytes"),
     flowPacketHistogramExcludedZeroPacketLabel: document.getElementById("flowPacketHistogramExcludedZeroPacketLabel"),
     flowPacketHistogramRows: document.getElementById("flowPacketHistogramRows"),
+    flowDurationHistogramDetails: document.getElementById("flowDurationHistogramDetails"),
+    flowDurationHistogramSummaryValue: document.getElementById("flowDurationHistogramSummaryValue"),
+    flowDurationHistogramStateText: document.getElementById("flowDurationHistogramStateText"),
+    flowDurationHistogramModeFlows: document.getElementById("flowDurationHistogramModeFlows"),
+    flowDurationHistogramModeCapturedBytes: document.getElementById("flowDurationHistogramModeCapturedBytes"),
+    flowDurationHistogramModeOriginalBytes: document.getElementById("flowDurationHistogramModeOriginalBytes"),
+    flowDurationHistogramRows: document.getElementById("flowDurationHistogramRows"),
+    flowOriginalByteSizeHistogramDetails: document.getElementById("flowOriginalByteSizeHistogramDetails"),
+    flowOriginalByteSizeHistogramSummaryValue: document.getElementById("flowOriginalByteSizeHistogramSummaryValue"),
+    flowOriginalByteSizeHistogramStateText: document.getElementById("flowOriginalByteSizeHistogramStateText"),
+    flowOriginalByteSizeHistogramModeFlows: document.getElementById("flowOriginalByteSizeHistogramModeFlows"),
+    flowOriginalByteSizeHistogramModeCapturedBytes: document.getElementById("flowOriginalByteSizeHistogramModeCapturedBytes"),
+    flowOriginalByteSizeHistogramModeOriginalBytes: document.getElementById("flowOriginalByteSizeHistogramModeOriginalBytes"),
+    flowOriginalByteSizeHistogramRows: document.getElementById("flowOriginalByteSizeHistogramRows"),
+    ipFragmentationStatisticsDetails: document.getElementById("ipFragmentationStatisticsDetails"),
+    ipFragmentationStatisticsStateText: document.getElementById("ipFragmentationStatisticsStateText"),
+    ipFragmentationStatisticsHelpText: document.getElementById("ipFragmentationStatisticsHelpText"),
+    ipFragmentationStatisticsBody: document.getElementById("ipFragmentationStatisticsBody"),
     protocolPathDetails: document.getElementById("protocolPathDetails"),
     protocolPathSummaryValue: document.getElementById("protocolPathSummaryValue"),
     protocolHintsDetails: document.getElementById("protocolHintsDetails"),
@@ -3729,6 +3758,11 @@
     state.packetSizeDistributionDisplayMode = "captured";
     state.flowPacketCountHistogram = null;
     state.flowPacketHistogramDisplayMode = "flows";
+    state.flowDurationHistogram = null;
+    state.flowDurationHistogramDisplayMode = "flows";
+    state.flowOriginalByteSizeHistogram = null;
+    state.flowOriginalByteSizeHistogramDisplayMode = "flows";
+    state.ipFragmentationStatistics = null;
     state.protocolHintStatistics = null;
     state.quicTlsStatistics = null;
     state.topEndpointPortStatistics = null;
@@ -3749,6 +3783,9 @@
       [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
       [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
       [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
+      [elements.flowDurationHistogramDetails, statisticsSectionKeys.flowDurationHistogram],
+      [elements.flowOriginalByteSizeHistogramDetails, statisticsSectionKeys.flowOriginalByteSizeHistogram],
+      [elements.ipFragmentationStatisticsDetails, statisticsSectionKeys.ipFragmentation],
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
       [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
       [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
@@ -6028,6 +6065,135 @@
     }
   }
 
+  async function ensureFlowHistogramLoaded({
+    sectionKey,
+    stateKey,
+    command,
+    renderSection,
+    errorLabel,
+  }) {
+    const section = statisticsSectionEntry(sectionKey);
+    if (state.openState !== "opened" || !state.overview) {
+      return null;
+    }
+
+    if (state[stateKey]) {
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.ready);
+      return state[stateKey];
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.unavailable || section?.requestState === statisticsSectionRequestStates.error) {
+      return null;
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.loading) {
+      return null;
+    }
+
+    const captureGeneration = currentCaptureGeneration();
+    setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.loading);
+    if (state.activeTab === "statistics") {
+      renderSection();
+    }
+
+    try {
+      const histogram = await invoke(command);
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      state[stateKey] = histogram || null;
+      setStatisticsSectionRequestState(
+        sectionKey,
+        histogram?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
+      );
+      return state[stateKey];
+    } catch (error) {
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.error, `Failed to load ${errorLabel}: ${String(error)}`);
+      return null;
+    } finally {
+      if (captureGeneration === currentCaptureGeneration() && state.activeTab === "statistics") {
+        renderSection();
+      }
+    }
+  }
+
+  async function ensureFlowDurationHistogramLoaded() {
+    return ensureFlowHistogramLoaded({
+      sectionKey: statisticsSectionKeys.flowDurationHistogram,
+      stateKey: "flowDurationHistogram",
+      command: "get_flow_duration_histogram",
+      renderSection: renderFlowDurationHistogramSection,
+      errorLabel: "flow-duration histogram",
+    });
+  }
+
+  async function ensureFlowOriginalByteSizeHistogramLoaded() {
+    return ensureFlowHistogramLoaded({
+      sectionKey: statisticsSectionKeys.flowOriginalByteSizeHistogram,
+      stateKey: "flowOriginalByteSizeHistogram",
+      command: "get_flow_original_byte_size_histogram",
+      renderSection: renderFlowOriginalByteSizeHistogramSection,
+      errorLabel: "flow data-size histogram",
+    });
+  }
+
+  async function ensureIpFragmentationStatisticsLoaded() {
+    const sectionKey = statisticsSectionKeys.ipFragmentation;
+    const section = statisticsSectionEntry(sectionKey);
+    if (state.openState !== "opened" || !state.overview) {
+      return null;
+    }
+
+    if (state.ipFragmentationStatistics) {
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.ready);
+      return state.ipFragmentationStatistics;
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.unavailable || section?.requestState === statisticsSectionRequestStates.error) {
+      return null;
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.loading) {
+      return null;
+    }
+
+    const captureGeneration = currentCaptureGeneration();
+    setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.loading);
+    if (state.activeTab === "statistics") {
+      renderIpFragmentationStatisticsSection();
+    }
+
+    try {
+      const statistics = await invoke("get_ip_fragmentation_statistics");
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      state.ipFragmentationStatistics = statistics || null;
+      setStatisticsSectionRequestState(
+        sectionKey,
+        statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
+      );
+      return state.ipFragmentationStatistics;
+    } catch (error) {
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.error, `Failed to load IP fragmentation statistics: ${String(error)}`);
+      return null;
+    } finally {
+      if (captureGeneration === currentCaptureGeneration() && state.activeTab === "statistics") {
+        renderIpFragmentationStatisticsSection();
+      }
+    }
+  }
+
   async function ensureCapturePacketSizeStatisticsLoaded() {
     const sectionKey = statisticsSectionKeys.packetSizeDistribution;
     const section = statisticsSectionEntry(sectionKey);
@@ -6260,6 +6426,15 @@
     }
     if (statisticsSectionEligible(statisticsSectionKeys.flowPacketHistogram)) {
       void ensureFlowPacketCountHistogramLoaded();
+    }
+    if (statisticsSectionEligible(statisticsSectionKeys.flowDurationHistogram)) {
+      void ensureFlowDurationHistogramLoaded();
+    }
+    if (statisticsSectionEligible(statisticsSectionKeys.flowOriginalByteSizeHistogram)) {
+      void ensureFlowOriginalByteSizeHistogramLoaded();
+    }
+    if (statisticsSectionEligible(statisticsSectionKeys.ipFragmentation)) {
+      void ensureIpFragmentationStatisticsLoaded();
     }
     if (statisticsSectionEligible(statisticsSectionKeys.protocolPath)) {
       void ensureProtocolPathStatsLoaded();
@@ -7375,6 +7550,15 @@
       elements.flowPacketHistogramExcludedZeroPacketLabel.textContent = "";
       elements.flowPacketHistogramExcludedZeroPacketLabel.classList.add("is-hidden");
     }
+    elements.flowDurationHistogramStateText && (elements.flowDurationHistogramStateText.textContent = "");
+    elements.flowDurationHistogramRows && (elements.flowDurationHistogramRows.innerHTML = "");
+    elements.flowDurationHistogramSummaryValue && (elements.flowDurationHistogramSummaryValue.textContent = "");
+    elements.flowOriginalByteSizeHistogramStateText && (elements.flowOriginalByteSizeHistogramStateText.textContent = "");
+    elements.flowOriginalByteSizeHistogramRows && (elements.flowOriginalByteSizeHistogramRows.innerHTML = "");
+    elements.flowOriginalByteSizeHistogramSummaryValue && (elements.flowOriginalByteSizeHistogramSummaryValue.textContent = "");
+    elements.ipFragmentationStatisticsStateText && (elements.ipFragmentationStatisticsStateText.textContent = "");
+    elements.ipFragmentationStatisticsHelpText && (elements.ipFragmentationStatisticsHelpText.textContent = "");
+    elements.ipFragmentationStatisticsBody && (elements.ipFragmentationStatisticsBody.innerHTML = "");
     elements.protocolPathSummaryValue && (elements.protocolPathSummaryValue.textContent = "");
     elements.protocolHintsSummaryValue && (elements.protocolHintsSummaryValue.textContent = "");
     elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
@@ -7421,6 +7605,12 @@
     elements.flowPacketHistogramModeOriginalBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "original_bytes");
   }
 
+  function renderFlowHistogramModeButtons({ mode, flowsButton, capturedBytesButton, originalBytesButton }) {
+    flowsButton?.classList.toggle("is-active", mode === "flows");
+    capturedBytesButton?.classList.toggle("is-active", mode === "captured_bytes");
+    originalBytesButton?.classList.toggle("is-active", mode === "original_bytes");
+  }
+
   function renderPacketSizeDistributionModeButtons() {
     elements.packetSizeDistributionModeCaptured?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "captured");
     elements.packetSizeDistributionModeOriginal?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "original");
@@ -7448,6 +7638,19 @@
 
     state.flowPacketHistogramDisplayMode = normalizedMode;
     renderFlowPacketHistogramSection();
+  }
+
+  function setFlowHistogramDisplayMode(mode, stateKey, renderSection, buttons) {
+    const normalizedMode = mode === "captured_bytes"
+      ? "captured_bytes"
+      : (mode === "original_bytes" ? "original_bytes" : "flows");
+    if (state[stateKey] === normalizedMode) {
+      renderFlowHistogramModeButtons({ mode: normalizedMode, ...buttons });
+      return;
+    }
+
+    state[stateKey] = normalizedMode;
+    renderSection();
   }
 
   function renderCapturePacketSizeStatisticsSection() {
@@ -8175,6 +8378,179 @@
     }
   }
 
+  function renderFlowHistogramSection({
+    sectionKey,
+    histogram,
+    mode,
+    summaryElement,
+    stateTextElement,
+    rowsElement,
+    emptyText,
+    unavailableText,
+    openFailedText,
+    openPromptText,
+    deferredText,
+    modeButtons,
+  }) {
+    const section = statisticsSectionEntry(sectionKey);
+    renderFlowHistogramModeButtons({ mode, ...modeButtons });
+    if (summaryElement) {
+      summaryElement.textContent = histogram?.has_capture
+        ? `${formatNumber(histogram.total_flow_count)} flows`
+        : "";
+    }
+
+    if (section.requestState === statisticsSectionRequestStates.ready && histogram?.has_capture) {
+      if (stateTextElement) {
+        stateTextElement.textContent = "";
+      }
+
+      const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
+      const showingCapturedBytes = mode === "captured_bytes";
+      const showingOriginalBytes = mode === "original_bytes";
+      rowsElement.innerHTML = buckets.length > 0
+        ? buckets
+          .map((bucket) => {
+            const flowCount = Number(bucket?.flow_count ?? 0);
+            const normalizedFraction = Number(
+              showingOriginalBytes
+                ? bucket?.normalized_original_byte_fraction
+                : (showingCapturedBytes
+                    ? bucket?.normalized_captured_byte_fraction
+                    : bucket?.normalized_flow_fraction)
+            );
+            const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
+            const valueText = showingOriginalBytes
+              ? String(bucket?.original_byte_count_with_total_percent_text || bucket?.original_byte_count_text || "0 B")
+              : (showingCapturedBytes
+                  ? String(bucket?.captured_byte_count_with_total_percent_text || bucket?.captured_byte_count_text || "0 B")
+                  : String(bucket?.flow_count_with_total_percent_text || formatNumber(flowCount)));
+            return `
+              <div class="statistics-histogram-row">
+                <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
+                <div class="statistics-histogram-track">
+                  <div class="statistics-histogram-fill" style="width:${percent}%;"></div>
+                </div>
+                <span class="statistics-histogram-count">${escapeHtml(valueText)}</span>
+              </div>
+            `;
+          })
+          .join("")
+        : `<div class="statistics-histogram-empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+
+    if (rowsElement) {
+      rowsElement.innerHTML = "";
+    }
+
+    if (stateTextElement) {
+      if (section.requestState === statisticsSectionRequestStates.loading) {
+        stateTextElement.textContent = "Calculating...";
+      } else if (section.requestState === statisticsSectionRequestStates.error) {
+        stateTextElement.textContent = section.errorText || "Failed to load histogram.";
+      } else if (section.requestState === statisticsSectionRequestStates.unavailable) {
+        stateTextElement.textContent = unavailableText;
+      } else if (state.openState === "error") {
+        stateTextElement.textContent = openFailedText;
+      } else if (state.openState !== "opened" || !state.overview) {
+        stateTextElement.textContent = openPromptText;
+      } else {
+        stateTextElement.textContent = deferredText;
+      }
+    }
+  }
+
+  function renderFlowDurationHistogramSection() {
+    renderFlowHistogramSection({
+      sectionKey: statisticsSectionKeys.flowDurationHistogram,
+      histogram: state.flowDurationHistogram,
+      mode: state.flowDurationHistogramDisplayMode,
+      summaryElement: elements.flowDurationHistogramSummaryValue,
+      stateTextElement: elements.flowDurationHistogramStateText,
+      rowsElement: elements.flowDurationHistogramRows,
+      emptyText: "No flow-duration histogram is available.",
+      unavailableText: "Flow-duration histogram is unavailable.",
+      openFailedText: "Open failed. No flow-duration histogram was loaded.",
+      openPromptText: "Open a capture or index to load flow-duration histogram.",
+      deferredText: "Flow-duration histogram loads when this section is opened.",
+      modeButtons: {
+        flowsButton: elements.flowDurationHistogramModeFlows,
+        capturedBytesButton: elements.flowDurationHistogramModeCapturedBytes,
+        originalBytesButton: elements.flowDurationHistogramModeOriginalBytes,
+      },
+    });
+  }
+
+  function renderFlowOriginalByteSizeHistogramSection() {
+    renderFlowHistogramSection({
+      sectionKey: statisticsSectionKeys.flowOriginalByteSizeHistogram,
+      histogram: state.flowOriginalByteSizeHistogram,
+      mode: state.flowOriginalByteSizeHistogramDisplayMode,
+      summaryElement: elements.flowOriginalByteSizeHistogramSummaryValue,
+      stateTextElement: elements.flowOriginalByteSizeHistogramStateText,
+      rowsElement: elements.flowOriginalByteSizeHistogramRows,
+      emptyText: "No flow data-size histogram is available.",
+      unavailableText: "Flow data-size histogram is unavailable.",
+      openFailedText: "Open failed. No flow data-size histogram was loaded.",
+      openPromptText: "Open a capture or index to load flow data-size histogram.",
+      deferredText: "Flow data-size histogram loads when this section is opened.",
+      modeButtons: {
+        flowsButton: elements.flowOriginalByteSizeHistogramModeFlows,
+        capturedBytesButton: elements.flowOriginalByteSizeHistogramModeCapturedBytes,
+        originalBytesButton: elements.flowOriginalByteSizeHistogramModeOriginalBytes,
+      },
+    });
+  }
+
+  function renderIpFragmentationStatisticsSection() {
+    const section = statisticsSectionEntry(statisticsSectionKeys.ipFragmentation);
+    const statistics = state.ipFragmentationStatistics;
+    const rows = Array.isArray(statistics?.rows) ? statistics.rows : [];
+    if (elements.ipFragmentationStatisticsHelpText) {
+      elements.ipFragmentationStatisticsHelpText.textContent =
+        section.requestState === statisticsSectionRequestStates.ready && statistics?.has_capture
+          ? String(statistics.help_text || "")
+          : "";
+    }
+
+    if (section.requestState === statisticsSectionRequestStates.ready && statistics?.has_capture) {
+      if (elements.ipFragmentationStatisticsStateText) {
+        elements.ipFragmentationStatisticsStateText.textContent = "";
+      }
+      elements.ipFragmentationStatisticsBody.innerHTML = rows.length > 0
+        ? rows
+          .map((row) => `
+            <tr>
+              <td>${escapeHtml(String(row?.label || ""))}</td>
+              <td>${escapeHtml(String(row?.count_with_percent_text || formatNumber(row?.count)))}</td>
+            </tr>
+          `)
+          .join("")
+        : renderStatsStateRow(2, "No IP fragmentation statistics are available.");
+      return;
+    }
+
+    if (elements.ipFragmentationStatisticsBody) {
+      elements.ipFragmentationStatisticsBody.innerHTML = "";
+    }
+    if (elements.ipFragmentationStatisticsStateText) {
+      if (section.requestState === statisticsSectionRequestStates.loading) {
+        elements.ipFragmentationStatisticsStateText.textContent = "Calculating...";
+      } else if (section.requestState === statisticsSectionRequestStates.error) {
+        elements.ipFragmentationStatisticsStateText.textContent = section.errorText || "Failed to load IP fragmentation statistics.";
+      } else if (section.requestState === statisticsSectionRequestStates.unavailable) {
+        elements.ipFragmentationStatisticsStateText.textContent = "IP fragmentation statistics are unavailable.";
+      } else if (state.openState === "error") {
+        elements.ipFragmentationStatisticsStateText.textContent = "Open failed. No IP fragmentation statistics were loaded.";
+      } else if (state.openState !== "opened" || !state.overview) {
+        elements.ipFragmentationStatisticsStateText.textContent = "Open a capture or index to load IP fragmentation statistics.";
+      } else {
+        elements.ipFragmentationStatisticsStateText.textContent = "IP fragmentation statistics load when this section is opened.";
+      }
+    }
+  }
+
   function renderProtocolHintSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.protocolHints);
     const statistics = state.protocolHintStatistics;
@@ -8430,6 +8806,9 @@
     renderStatisticsOverview();
     renderCapturePacketSizeStatisticsSection();
     renderFlowPacketHistogramSection();
+    renderFlowDurationHistogramSection();
+    renderFlowOriginalByteSizeHistogramSection();
+    renderIpFragmentationStatisticsSection();
     renderProtocolPathStatsSection();
     renderProtocolHintSection();
     renderQuicTlsSection();
@@ -13065,6 +13444,9 @@
     [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
     [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
     [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
+    [elements.flowDurationHistogramDetails, statisticsSectionKeys.flowDurationHistogram],
+    [elements.flowOriginalByteSizeHistogramDetails, statisticsSectionKeys.flowOriginalByteSizeHistogram],
+    [elements.ipFragmentationStatisticsDetails, statisticsSectionKeys.ipFragmentation],
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
     [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
     [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
@@ -13089,6 +13471,48 @@
   });
   elements.flowPacketHistogramModeOriginalBytes?.addEventListener("click", () => {
     setFlowPacketHistogramDisplayMode("original_bytes");
+  });
+  elements.flowDurationHistogramModeFlows?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("flows", "flowDurationHistogramDisplayMode", renderFlowDurationHistogramSection, {
+      flowsButton: elements.flowDurationHistogramModeFlows,
+      capturedBytesButton: elements.flowDurationHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowDurationHistogramModeOriginalBytes,
+    });
+  });
+  elements.flowDurationHistogramModeCapturedBytes?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("captured_bytes", "flowDurationHistogramDisplayMode", renderFlowDurationHistogramSection, {
+      flowsButton: elements.flowDurationHistogramModeFlows,
+      capturedBytesButton: elements.flowDurationHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowDurationHistogramModeOriginalBytes,
+    });
+  });
+  elements.flowDurationHistogramModeOriginalBytes?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("original_bytes", "flowDurationHistogramDisplayMode", renderFlowDurationHistogramSection, {
+      flowsButton: elements.flowDurationHistogramModeFlows,
+      capturedBytesButton: elements.flowDurationHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowDurationHistogramModeOriginalBytes,
+    });
+  });
+  elements.flowOriginalByteSizeHistogramModeFlows?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("flows", "flowOriginalByteSizeHistogramDisplayMode", renderFlowOriginalByteSizeHistogramSection, {
+      flowsButton: elements.flowOriginalByteSizeHistogramModeFlows,
+      capturedBytesButton: elements.flowOriginalByteSizeHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowOriginalByteSizeHistogramModeOriginalBytes,
+    });
+  });
+  elements.flowOriginalByteSizeHistogramModeCapturedBytes?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("captured_bytes", "flowOriginalByteSizeHistogramDisplayMode", renderFlowOriginalByteSizeHistogramSection, {
+      flowsButton: elements.flowOriginalByteSizeHistogramModeFlows,
+      capturedBytesButton: elements.flowOriginalByteSizeHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowOriginalByteSizeHistogramModeOriginalBytes,
+    });
+  });
+  elements.flowOriginalByteSizeHistogramModeOriginalBytes?.addEventListener("click", () => {
+    setFlowHistogramDisplayMode("original_bytes", "flowOriginalByteSizeHistogramDisplayMode", renderFlowOriginalByteSizeHistogramSection, {
+      flowsButton: elements.flowOriginalByteSizeHistogramModeFlows,
+      capturedBytesButton: elements.flowOriginalByteSizeHistogramModeCapturedBytes,
+      originalBytesButton: elements.flowOriginalByteSizeHistogramModeOriginalBytes,
+    });
   });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", async () => {

@@ -115,6 +115,36 @@ CaptureStatisticsFlowPacketCountHistogram make_flow_histogram() {
     return histogram;
 }
 
+void populate_flow_triple_metric_histograms(
+    CaptureStatisticsSnapshot& snapshot,
+    const std::uint64_t total_flow_count,
+    const std::uint64_t total_captured_bytes,
+    const std::uint64_t total_original_bytes
+) {
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.buckets[0].original_byte_count = total_original_bytes;
+
+    snapshot.flow_original_byte_size_histogram =
+        make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].original_byte_count = total_original_bytes;
+}
+
 CaptureStatisticsSnapshot make_valid_snapshot() {
     CaptureStatisticsSnapshot snapshot {};
     snapshot.scope = CaptureStatisticsScope::complete;
@@ -153,6 +183,17 @@ CaptureStatisticsSnapshot make_valid_snapshot() {
         .rst_packet_count = 1U,
     };
     snapshot.flow_packet_count_histogram = make_flow_histogram();
+    populate_flow_triple_metric_histograms(snapshot, 4U, 610U, 720U);
+    snapshot.ip_fragmentation = CaptureIpFragmentationStatistics {
+        .effective_ipv4_packet_count = 2U,
+        .effective_ipv6_packet_count = 1U,
+        .ipv4_fragmented_packet_count = 1U,
+        .ipv6_fragmented_packet_count = 0U,
+        .initial_fragment_packet_count = 1U,
+        .non_initial_fragment_packet_count = 0U,
+        .ipv6_atomic_fragment_packet_count = 1U,
+    };
+    snapshot.flows_containing_fragments_count = 1U;
     snapshot.transport_protocols = make_default_capture_statistics_transport_protocol_rows();
     snapshot.transport_protocols[0].counters = counters(2U, 6U, 900U, 1'100U);
     snapshot.transport_protocols[1].counters = counters(1U, 3U, 250U, 300U);
@@ -287,6 +328,11 @@ CaptureStatisticsSnapshot make_rich_snapshot_with_maximum_top_capacities() {
     snapshot.flow_packet_count_histogram.total_flow_count = top_flow_capacity;
     snapshot.flow_packet_count_histogram.maximum_bucket_flow_count = top_flow_capacity;
     snapshot.flow_packet_count_histogram.buckets[0].flow_count = top_flow_capacity;
+    populate_flow_triple_metric_histograms(snapshot, top_flow_capacity, 0U, 0U);
+    snapshot.flows_containing_fragments_count = std::min<std::uint64_t>(
+        snapshot.flows_containing_fragments_count,
+        top_flow_capacity
+    );
     snapshot.top_endpoints.clear();
     snapshot.top_ports.clear();
     snapshot.top_flows.clear();
@@ -434,6 +480,15 @@ std::size_t service_length_offset_for_first_top_flow(const std::vector<std::uint
     const auto flow_bucket_count = read_le32_at(bytes, offset);
     offset += 4U + static_cast<std::size_t>(flow_bucket_count) * (8U * 3U);
 
+    const auto skip_flow_triple_metric_histogram = [&](std::size_t& histogram_offset) {
+        histogram_offset += 8U * 6U;
+        const auto bucket_count = read_le32_at(bytes, histogram_offset);
+        histogram_offset += 4U + static_cast<std::size_t>(bucket_count) * (8U * 3U);
+    };
+    skip_flow_triple_metric_histogram(offset);
+    skip_flow_triple_metric_histogram(offset);
+    offset += 8U * 8U;
+
     const auto transport_count = read_le32_at(bytes, offset);
     offset += 4U + static_cast<std::size_t>(transport_count) * (1U + 8U * 4U);
     const auto family_count = read_le32_at(bytes, offset);
@@ -499,6 +554,49 @@ void expect_default_and_scope_variants_are_valid() {
     fill_distribution_counts(snapshot.captured_packet_size_distribution, {0U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U});
     fill_distribution_counts(snapshot.original_packet_size_distribution, {0U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U});
     PFL_EXPECT(validate_capture_statistics_snapshot(snapshot).ok);
+}
+
+void expect_partial_scope_roundtrip_preserves_revision19_fields() {
+    auto snapshot = make_valid_snapshot();
+    snapshot.scope = CaptureStatisticsScope::partial;
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count = snapshot.total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count = 610U;
+    snapshot.flow_duration_histogram.total_original_byte_count = 720U;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count = 3U;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count = 310U;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count = 360U;
+    snapshot.flow_duration_histogram.buckets[0].flow_count = 3U;
+    snapshot.flow_duration_histogram.buckets[0].captured_byte_count = 300U;
+    snapshot.flow_duration_histogram.buckets[0].original_byte_count = 360U;
+    snapshot.flow_duration_histogram.buckets[1].flow_count = 1U;
+    snapshot.flow_duration_histogram.buckets[1].captured_byte_count = 310U;
+    snapshot.flow_duration_histogram.buckets[1].original_byte_count = 360U;
+
+    snapshot.flow_original_byte_size_histogram = make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count = snapshot.total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count = 610U;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count = 720U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count = 3U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count = 310U;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count = 360U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].flow_count = 3U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].captured_byte_count = 300U;
+    snapshot.flow_original_byte_size_histogram.buckets[0].original_byte_count = 360U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].flow_count = 1U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].captured_byte_count = 310U;
+    snapshot.flow_original_byte_size_histogram.buckets[1].original_byte_count = 360U;
+
+    PFL_REQUIRE(validate_capture_statistics_snapshot(snapshot).ok);
+    CaptureStatisticsSnapshot decoded {};
+    PFL_REQUIRE(deserialize_snapshot(serialize_snapshot(snapshot), decoded));
+    PFL_EXPECT(decoded == snapshot);
+    PFL_EXPECT(decoded.scope == CaptureStatisticsScope::partial);
+    PFL_EXPECT(decoded.flow_duration_histogram.buckets[1].flow_count == 1U);
+    PFL_EXPECT(decoded.flow_original_byte_size_histogram.buckets[1].flow_count == 1U);
+    PFL_EXPECT(decoded.ip_fragmentation.ipv4_fragmented_packet_count == 1U);
+    PFL_EXPECT(decoded.ip_fragmentation.ipv6_atomic_fragment_packet_count == 1U);
+    PFL_EXPECT(decoded.flows_containing_fragments_count == 1U);
 }
 
 void expect_runtime_builder_projects_current_statistics() {
@@ -846,6 +944,55 @@ void expect_decoder_rejects_malformed_payloads() {
 
     {
         auto snapshot = make_valid_snapshot();
+        ++snapshot.flow_duration_histogram.buckets[0].flow_count;
+        ++snapshot.flow_duration_histogram.maximum_bucket_flow_count;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flow_duration_histogram_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        ++snapshot.flow_original_byte_size_histogram.total_original_byte_count;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flow_original_byte_size_histogram_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.ip_fragmentation.non_initial_fragment_packet_count = 1U;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::fragment_kind_sum_mismatch);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
+        snapshot.flows_containing_fragments_count = snapshot.total_flow_count + 1U;
+        const auto validation = validate_capture_statistics_snapshot(snapshot);
+        PFL_REQUIRE(!validation.ok);
+        PFL_REQUIRE(validation.error.has_value());
+        PFL_EXPECT(
+            validation.error->code ==
+            CaptureStatisticsSnapshotValidationErrorCode::flows_containing_fragments_count_exceeds_total);
+        expect_decode_fails(snapshot);
+    }
+
+    {
+        auto snapshot = make_valid_snapshot();
         snapshot.unrecognized_packet_count = snapshot.total_packet_count + 1U;
         expect_decode_fails(snapshot);
     }
@@ -914,14 +1061,103 @@ void expect_encoding_layout_is_stable() {
     PFL_EXPECT(read_le32_at(bytes, first_top_flow_service_offset) == 13U);
 }
 
+struct ExpectedHistogramBucket {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+template <typename Bucket>
+void expect_zeroed_future_flow_histogram_bucket(
+    const Bucket& bucket,
+    const ExpectedHistogramBucket& expected
+) {
+    PFL_EXPECT(bucket.stable_id == expected.stable_id);
+    PFL_EXPECT(bucket.lower_bound_inclusive == expected.lower_bound_inclusive);
+    PFL_EXPECT(bucket.upper_bound_inclusive == expected.upper_bound_inclusive);
+    PFL_EXPECT(bucket.flow_count == 0U);
+    PFL_EXPECT(bucket.captured_byte_count == 0U);
+    PFL_EXPECT(bucket.original_byte_count == 0U);
+}
+
+template <typename Histogram>
+void expect_zeroed_future_flow_histogram_totals(const Histogram& histogram) {
+    PFL_EXPECT(histogram.total_flow_count == 0U);
+    PFL_EXPECT(histogram.total_captured_byte_count == 0U);
+    PFL_EXPECT(histogram.total_original_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_flow_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_captured_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 0U);
+}
+
+void expect_flow_duration_histogram_layout_is_stable() {
+    const auto histogram = make_default_capture_statistics_flow_duration_histogram();
+    const std::vector<ExpectedHistogramBucket> expected {{
+        {"duration_zero", 0U, 0U},
+        {"duration_gt0_lt1ms", 1U, 999U},
+        {"duration_1_10ms", 1'000U, 9'999U},
+        {"duration_10_100ms", 10'000U, 99'999U},
+        {"duration_100ms_1s", 100'000U, 999'999U},
+        {"duration_1_10s", 1'000'000U, 9'999'999U},
+        {"duration_10_60s", 10'000'000U, 59'999'999U},
+        {"duration_1_10min", 60'000'000U, 599'999'999U},
+        {"duration_10min_plus", 600'000'000U, std::nullopt},
+    }};
+
+    expect_zeroed_future_flow_histogram_totals(histogram);
+    PFL_EXPECT(kCaptureStatisticsFlowDurationHistogramBucketCount == expected.size());
+    PFL_REQUIRE(histogram.buckets.size() == expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        expect_zeroed_future_flow_histogram_bucket(histogram.buckets[index], expected[index]);
+        if (index + 1U < expected.size()) {
+            PFL_REQUIRE(histogram.buckets[index].upper_bound_inclusive.has_value());
+            PFL_EXPECT(*histogram.buckets[index].upper_bound_inclusive + 1U ==
+                       histogram.buckets[index + 1U].lower_bound_inclusive);
+        }
+    }
+    PFL_EXPECT(!histogram.buckets.back().upper_bound_inclusive.has_value());
+}
+
+void expect_flow_original_byte_size_histogram_layout_is_stable() {
+    const auto histogram = make_default_capture_statistics_flow_original_byte_size_histogram();
+    const std::vector<ExpectedHistogramBucket> expected {{
+        {"original_bytes_0_255", 0U, 255U},
+        {"original_bytes_256_1023", 256U, 1'023U},
+        {"original_bytes_1_4kib", 1'024U, 4'095U},
+        {"original_bytes_4_16kib", 4'096U, 16'383U},
+        {"original_bytes_16_64kib", 16'384U, 65'535U},
+        {"original_bytes_64_256kib", 65'536U, 262'143U},
+        {"original_bytes_256kib_1mib", 262'144U, 1'048'575U},
+        {"original_bytes_1_10mib", 1'048'576U, 10'485'759U},
+        {"original_bytes_10_100mib", 10'485'760U, 104'857'599U},
+        {"original_bytes_100mib_plus", 104'857'600U, std::nullopt},
+    }};
+
+    expect_zeroed_future_flow_histogram_totals(histogram);
+    PFL_EXPECT(kCaptureStatisticsFlowOriginalByteSizeHistogramBucketCount == expected.size());
+    PFL_REQUIRE(histogram.buckets.size() == expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        expect_zeroed_future_flow_histogram_bucket(histogram.buckets[index], expected[index]);
+        if (index + 1U < expected.size()) {
+            PFL_REQUIRE(histogram.buckets[index].upper_bound_inclusive.has_value());
+            PFL_EXPECT(*histogram.buckets[index].upper_bound_inclusive + 1U ==
+                       histogram.buckets[index + 1U].lower_bound_inclusive);
+        }
+    }
+    PFL_EXPECT(!histogram.buckets.back().upper_bound_inclusive.has_value());
+}
+
 }  // namespace
 
 void run_capture_statistics_snapshot_tests() {
     expect_default_and_scope_variants_are_valid();
+    expect_partial_scope_roundtrip_preserves_revision19_fields();
     expect_runtime_builder_projects_current_statistics();
     expect_roundtrip_preserves_rich_snapshot();
     expect_decoder_rejects_malformed_payloads();
     expect_encoding_layout_is_stable();
+    expect_flow_duration_histogram_layout_is_stable();
+    expect_flow_original_byte_size_histogram_layout_is_stable();
 }
 
 }  // namespace pfl::tests

@@ -682,6 +682,59 @@ pub struct FlowPacketCountHistogramDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowHistogramBucketDto {
+    pub bucket_id: String,
+    pub label: String,
+    pub lower_bound_inclusive: u64,
+    pub upper_bound_inclusive: Option<u64>,
+    pub flow_count: u64,
+    pub flow_count_with_total_percent_text: String,
+    pub captured_byte_count: u64,
+    pub captured_byte_count_text: String,
+    pub captured_byte_count_with_total_percent_text: String,
+    pub original_byte_count: u64,
+    pub original_byte_count_text: String,
+    pub original_byte_count_with_total_percent_text: String,
+    pub total_flow_fraction: f64,
+    pub total_captured_byte_fraction: f64,
+    pub total_original_byte_fraction: f64,
+    pub normalized_flow_fraction: f64,
+    pub normalized_captured_byte_fraction: f64,
+    pub normalized_original_byte_fraction: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowHistogramDto {
+    pub has_capture: bool,
+    pub total_flow_count: u64,
+    pub total_captured_byte_count: u64,
+    pub total_original_byte_count: u64,
+    pub maximum_bucket_flow_count: u64,
+    pub maximum_bucket_captured_byte_count: u64,
+    pub maximum_bucket_original_byte_count: u64,
+    pub buckets: Vec<FlowHistogramBucketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpFragmentationStatisticsRowDto {
+    pub stable_id: String,
+    pub label: String,
+    pub count: u64,
+    pub fraction: f64,
+    pub count_with_percent_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpFragmentationStatisticsDto {
+    pub has_capture: bool,
+    pub effective_ip_packet_count: u64,
+    pub fragmented_ip_packet_count: u64,
+    pub total_flow_count: u64,
+    pub help_text: String,
+    pub rows: Vec<IpFragmentationStatisticsRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolHintStatisticsDto {
     pub has_capture: bool,
     pub protocol_hints: Vec<ProtocolHintStatsDto>,

@@ -76,6 +76,19 @@ Item {
     property var flowPacketHistogramMaximumBucketFlowCount: 0
     property var flowPacketHistogramExcludedZeroPacketFlowCount: 0
     property var flowPacketHistogramRows: []
+    property int flowDurationHistogramState: 0
+    property string flowDurationHistogramStatusText: ""
+    property string flowDurationHistogramSummaryText: ""
+    property string flowDurationHistogramHelpText: ""
+    property var flowDurationHistogramRows: []
+    property int flowOriginalByteSizeHistogramState: 0
+    property string flowOriginalByteSizeHistogramStatusText: ""
+    property string flowOriginalByteSizeHistogramSummaryText: ""
+    property var flowOriginalByteSizeHistogramRows: []
+    property int ipFragmentationStatisticsState: 0
+    property string ipFragmentationStatisticsStatusText: ""
+    property string ipFragmentationStatisticsHelpText: ""
+    property var ipFragmentationStatisticsRows: []
     property int protocolHintsSectionState: 0
     property string protocolHintsSectionStatusText: ""
     property var protocolHintDistribution: []
@@ -114,11 +127,14 @@ Item {
     readonly property int requestStateError: 4
     readonly property int sectionPacketSizeDistribution: 0
     readonly property int sectionFlowPacketHistogram: 1
-    readonly property int sectionProtocolPath: 2
-    readonly property int sectionProtocolHints: 3
-    readonly property int sectionQuicTls: 4
-    readonly property int sectionTopFlows: 5
-    readonly property int sectionTopEndpointsPorts: 6
+    readonly property int sectionFlowDurationHistogram: 2
+    readonly property int sectionFlowOriginalByteSizeHistogram: 3
+    readonly property int sectionIpFragmentation: 4
+    readonly property int sectionProtocolPath: 5
+    readonly property int sectionProtocolHints: 6
+    readonly property int sectionQuicTls: 7
+    readonly property int sectionTopFlows: 8
+    readonly property int sectionTopEndpointsPorts: 9
     readonly property int packetSizeDistributionModeCaptured: 0
     readonly property int packetSizeDistributionModeOriginal: 1
     readonly property int flowPacketHistogramModeFlows: 0
@@ -168,6 +184,9 @@ Item {
     property bool tcpFlagsExpanded: false
     property bool packetSizeDistributionExpanded: false
     property bool flowPacketHistogramExpanded: false
+    property bool flowDurationHistogramExpanded: false
+    property bool flowOriginalByteSizeHistogramExpanded: false
+    property bool ipFragmentationStatisticsExpanded: false
     property bool protocolPathExpanded: false
     property bool protocolHintsExpanded: false
     property bool quicTlsExpanded: false
@@ -175,6 +194,8 @@ Item {
     property bool topEndpointsPortsExpanded: false
     property int packetSizeDistributionDisplayMode: packetSizeDistributionModeCaptured
     property int flowPacketHistogramDisplayMode: flowPacketHistogramModeFlows
+    property int flowDurationHistogramDisplayMode: flowPacketHistogramModeFlows
+    property int flowOriginalByteSizeHistogramDisplayMode: flowPacketHistogramModeFlows
 
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
@@ -190,6 +211,9 @@ Item {
         tcpFlagsExpanded = false
         packetSizeDistributionExpanded = false
         flowPacketHistogramExpanded = false
+        flowDurationHistogramExpanded = false
+        flowOriginalByteSizeHistogramExpanded = false
+        ipFragmentationStatisticsExpanded = false
         protocolPathExpanded = false
         protocolHintsExpanded = false
         quicTlsExpanded = false
@@ -197,6 +221,8 @@ Item {
         topEndpointsPortsExpanded = false
         packetSizeDistributionDisplayMode = packetSizeDistributionModeCaptured
         flowPacketHistogramDisplayMode = flowPacketHistogramModeFlows
+        flowDurationHistogramDisplayMode = flowPacketHistogramModeFlows
+        flowOriginalByteSizeHistogramDisplayMode = flowPacketHistogramModeFlows
     }
 
     function groupInteger(value) {
@@ -1085,6 +1111,396 @@ Item {
                             text: "Excluded zero-packet flows: " + root.groupInteger(root.flowPacketHistogramExcludedZeroPacketFlowCount)
                             color: "#64748b"
                             font.pixelSize: 12
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: flowDurationHistogramSection
+                    objectName: "flowDurationHistogramSection"
+                    title: "Flows by Duration"
+                    toggleObjectName: "flowDurationHistogramToggleButton"
+                    summaryText: root.flowDurationHistogramSummaryText
+                    expanded: root.flowDurationHistogramExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.flowDurationHistogramExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionFlowDurationHistogram, expanded)
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        visible: root.hasCapture
+                        spacing: 8
+
+                        Label {
+                            text: "Mode"
+                            color: "#64748b"
+                        }
+
+                        Rectangle {
+                            color: "#f8fafc"
+                            border.color: "#cbd5e1"
+                            radius: 6
+                            implicitHeight: flowDurationHistogramModeLayout.implicitHeight + 4
+                            implicitWidth: flowDurationHistogramModeLayout.implicitWidth + 8
+
+                            RowLayout {
+                                id: flowDurationHistogramModeLayout
+                                anchors.fill: parent
+                                anchors.margins: 2
+                                spacing: 2
+
+                                ButtonGroup {
+                                    id: flowDurationHistogramModeGroup
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowDurationHistogramModeFlowsButton"
+                                    text: "Flows"
+                                    checked: root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                    ButtonGroup.group: flowDurationHistogramModeGroup
+                                    onClicked: root.flowDurationHistogramDisplayMode = root.flowPacketHistogramModeFlows
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowDurationHistogramModeCapturedBytesButton"
+                                    text: "Captured bytes"
+                                    checked: root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                    ButtonGroup.group: flowDurationHistogramModeGroup
+                                    onClicked: root.flowDurationHistogramDisplayMode = root.flowPacketHistogramModeCapturedBytes
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowDurationHistogramModeOriginalBytesButton"
+                                    text: "Original bytes"
+                                    checked: root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeOriginalBytes
+                                    ButtonGroup.group: flowDurationHistogramModeGroup
+                                    onClicked: root.flowDurationHistogramDisplayMode = root.flowPacketHistogramModeOriginalBytes
+                                }
+                            }
+                        }
+                    }
+
+                    Label {
+                        objectName: "flowDurationHistogramHelpText"
+                        Layout.fillWidth: true
+                        visible: root.hasCapture
+                        text: root.flowDurationHistogramHelpText
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Label {
+                        visible: root.flowDurationHistogramState === root.requestStateLoading ||
+                            root.flowDurationHistogramState === root.requestStateUnavailable ||
+                            root.flowDurationHistogramState === root.requestStateError
+                        text: root.flowDurationHistogramStatusText
+                        color: "#64748b"
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        visible: root.flowDurationHistogramState === root.requestStateReady
+                        spacing: 8
+
+                        Repeater {
+                            model: root.flowDurationHistogramRows
+
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 10
+
+                                Label {
+                                    Layout.preferredWidth: 110
+                                    Layout.minimumWidth: 70
+                                    text: modelData.label
+                                    color: "#0f172a"
+                                    elide: Text.ElideRight
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 18
+                                    radius: 9
+                                    color: "#f1f5f9"
+                                    border.color: "#e2e8f0"
+
+                                    Rectangle {
+                                        width: Math.max(
+                                            0,
+                                            (parent.width - 2) * Number(
+                                                root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                                    ? modelData.normalizedFlowFraction
+                                                    : (root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                                        ? modelData.normalizedCapturedByteFraction
+                                                        : modelData.normalizedOriginalByteFraction)
+                                            )
+                                        )
+                                        height: parent.height - 2
+                                        radius: 8
+                                        x: 1
+                                        y: 1
+                                        color: "#60a5fa"
+                                    }
+                                }
+
+                                Label {
+                                    objectName: "flowDurationHistogramValueLabel"
+                                    Layout.preferredWidth: 140
+                                    Layout.minimumWidth: 0
+                                    horizontalAlignment: Text.AlignRight
+                                    text: root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                        ? modelData.flowCountWithTotalPercentText
+                                        : (root.flowDurationHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                            ? modelData.capturedByteCountWithTotalPercentText
+                                            : modelData.originalByteCountWithTotalPercentText)
+                                    color: "#334155"
+                                    elide: Text.ElideLeft
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: flowOriginalByteSizeHistogramSection
+                    objectName: "flowOriginalByteSizeHistogramSection"
+                    title: "Flows by Data Size"
+                    toggleObjectName: "flowOriginalByteSizeHistogramToggleButton"
+                    summaryText: root.flowOriginalByteSizeHistogramSummaryText
+                    expanded: root.flowOriginalByteSizeHistogramExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.flowOriginalByteSizeHistogramExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionFlowOriginalByteSizeHistogram, expanded)
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        spacing: 8
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.hasCapture
+                            spacing: 8
+
+                            Label {
+                                text: "Mode"
+                                color: "#64748b"
+                            }
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: flowOriginalByteSizeHistogramModeLayout.implicitHeight + 4
+                                implicitWidth: flowOriginalByteSizeHistogramModeLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: flowOriginalByteSizeHistogramModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: flowOriginalByteSizeHistogramModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "flowOriginalByteSizeHistogramModeFlowsButton"
+                                        text: "Flows"
+                                        checked: root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                        ButtonGroup.group: flowOriginalByteSizeHistogramModeGroup
+                                        onClicked: root.flowOriginalByteSizeHistogramDisplayMode = root.flowPacketHistogramModeFlows
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "flowOriginalByteSizeHistogramModeCapturedBytesButton"
+                                        text: "Captured bytes"
+                                        checked: root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                        ButtonGroup.group: flowOriginalByteSizeHistogramModeGroup
+                                        ToolTip.visible: hovered
+                                        ToolTip.delay: 250
+                                        ToolTip.timeout: 8000
+                                        ToolTip.text: "Bucket assignment is still based on original Flow size."
+                                        onClicked: root.flowOriginalByteSizeHistogramDisplayMode = root.flowPacketHistogramModeCapturedBytes
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "flowOriginalByteSizeHistogramModeOriginalBytesButton"
+                                        text: "Original bytes"
+                                        checked: root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeOriginalBytes
+                                        ButtonGroup.group: flowOriginalByteSizeHistogramModeGroup
+                                        onClicked: root.flowOriginalByteSizeHistogramDisplayMode = root.flowPacketHistogramModeOriginalBytes
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.hasCapture
+                            text: "Bucketed by original Flow size."
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            visible: root.flowOriginalByteSizeHistogramState === root.requestStateLoading ||
+                                root.flowOriginalByteSizeHistogramState === root.requestStateUnavailable ||
+                                root.flowOriginalByteSizeHistogramState === root.requestStateError
+                            text: root.flowOriginalByteSizeHistogramStatusText
+                            color: "#64748b"
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.flowOriginalByteSizeHistogramState === root.requestStateReady
+                            spacing: 8
+
+                            Repeater {
+                                model: root.flowOriginalByteSizeHistogramRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.preferredWidth: 150
+                                        Layout.minimumWidth: 90
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredHeight: 18
+                                        radius: 9
+                                        color: "#f1f5f9"
+                                        border.color: "#e2e8f0"
+
+                                        Rectangle {
+                                            width: Math.max(
+                                                0,
+                                                (parent.width - 2) * Number(
+                                                    root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                                        ? modelData.normalizedFlowFraction
+                                                        : (root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                                            ? modelData.normalizedCapturedByteFraction
+                                                            : modelData.normalizedOriginalByteFraction)
+                                                )
+                                            )
+                                            height: parent.height - 2
+                                            radius: 8
+                                            x: 1
+                                            y: 1
+                                            color: "#60a5fa"
+                                        }
+                                    }
+
+                                    Label {
+                                        objectName: "flowOriginalByteSizeHistogramValueLabel"
+                                        Layout.preferredWidth: 140
+                                        Layout.minimumWidth: 0
+                                        horizontalAlignment: Text.AlignRight
+                                        text: root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                            ? modelData.flowCountWithTotalPercentText
+                                            : (root.flowOriginalByteSizeHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                                ? modelData.capturedByteCountWithTotalPercentText
+                                                : modelData.originalByteCountWithTotalPercentText)
+                                        color: "#334155"
+                                        elide: Text.ElideLeft
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: ipFragmentationStatisticsSection
+                    objectName: "ipFragmentationStatisticsSection"
+                    title: "IP Fragmentation"
+                    toggleObjectName: "ipFragmentationStatisticsToggleButton"
+                    expanded: root.ipFragmentationStatisticsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.ipFragmentationStatisticsExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionIpFragmentation, expanded)
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        spacing: 8
+
+                        Label {
+                            visible: root.ipFragmentationStatisticsState === root.requestStateLoading ||
+                                root.ipFragmentationStatisticsState === root.requestStateUnavailable ||
+                                root.ipFragmentationStatisticsState === root.requestStateError
+                            text: root.ipFragmentationStatisticsStatusText
+                            color: "#64748b"
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.ipFragmentationStatisticsState === root.requestStateReady
+                            text: root.ipFragmentationStatisticsHelpText
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.ipFragmentationStatisticsState === root.requestStateReady
+                            spacing: 6
+
+                            Repeater {
+                                model: root.ipFragmentationStatisticsRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 24
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.preferredWidth: 230
+                                        Layout.minimumWidth: 120
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    Label {
+                                        objectName: "ipFragmentationStatisticsValueLabel"
+                                        Layout.preferredWidth: 130
+                                        Layout.minimumWidth: 0
+                                        horizontalAlignment: Text.AlignRight
+                                        text: modelData.countWithPercentText
+                                        color: "#334155"
+                                        elide: Text.ElideLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                    }
+                                }
+                            }
                         }
                     }
                 }

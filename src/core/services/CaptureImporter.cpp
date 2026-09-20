@@ -1,5 +1,6 @@
 #include "core/services/CaptureImporter.h"
 
+#include "core/domain/CaptureImportSettings.h"
 #include "core/services/CaptureImportProcessor.h"
 
 namespace pfl {
@@ -45,7 +46,11 @@ CaptureImportResult CaptureImporter::import_capture_result(const std::filesystem
                                                            OpenContext* ctx) {
     state = {};
     CaptureImportProcessor processor {options.settings};
-    return import_capture_from_path(path, state, processor, ctx);
+    const auto result = import_capture_from_path(path, state, processor, ctx);
+    if (result != CaptureImportResult::failure) {
+        state.capture_import_settings = make_capture_import_settings_snapshot(options.settings);
+    }
+    return result;
 }
 
 }  // namespace pfl

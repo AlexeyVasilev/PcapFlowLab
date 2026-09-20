@@ -4,10 +4,12 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/FlowRows.h"
+#include "core/domain/CaptureImportSettings.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/services/AnalysisSettings.h"
@@ -53,6 +55,21 @@ namespace pfl {
 );
 [[nodiscard]] FrontendFlowPacketCountHistogramDto build_frontend_flow_packet_count_histogram(
     const FlowPacketCountHistogram& histogram
+);
+[[nodiscard]] FrontendFlowHistogramDto build_frontend_flow_duration_histogram(
+    const FlowDurationHistogram& histogram
+);
+[[nodiscard]] std::string_view frontend_flow_duration_histogram_help_text() noexcept;
+[[nodiscard]] FrontendFlowHistogramDto build_frontend_flow_original_byte_size_histogram(
+    const FlowOriginalByteSizeHistogram& histogram
+);
+[[nodiscard]] FrontendIpFragmentationStatisticsDto build_frontend_ip_fragmentation_statistics(
+    const CaptureIpFragmentationStatistics& statistics,
+    std::uint64_t total_flow_count,
+    std::uint64_t flows_containing_fragments_count
+);
+[[nodiscard]] std::vector<FrontendCaptureImportSettingDto> build_frontend_capture_import_settings(
+    const CaptureImportSettingsSnapshot& snapshot
 );
 [[nodiscard]] FrontendProtocolHintStatisticsDto build_frontend_protocol_hint_statistics(
     const CaptureProtocolSummary& summary

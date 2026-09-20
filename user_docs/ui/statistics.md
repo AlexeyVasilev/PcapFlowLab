@@ -33,6 +33,17 @@ Statistics report data as the CLI HTML/Markdown exports. The exported report is
 not limited by which optional Statistics sections are currently expanded in the
 workspace.
 
+The full HTML/Markdown report and CLI extended summary also include shared
+revision-19 sections. The live Qt/Tauri Statistics workspace exposes the flow
+histogram and IP-fragmentation sections interactively, while `Capture Import
+Settings` remains report/CLI-only in this pass:
+
+- `Capture Import Settings`, showing the import-time provenance stored with
+  the capture/index rather than later mutable runtime settings.
+- `Flows by Duration`, using the persisted flow-duration buckets.
+- `Flows by Data Size`, using persisted original-flow-size buckets.
+- `IP Fragmentation`, including IPv6 atomic fragments as a separate metric.
+
 ## Capture overview
 
 ![Statistics overview](images/statistics/statistics-overview.png)
@@ -385,6 +396,44 @@ displayed for each bucket changes.
 If zero-packet flows exist in stored metadata, the UI can report them
 separately as `Excluded zero-packet flows`, rather than mixing them into the
 normal positive packet-count buckets.
+
+## Flows by Duration
+
+`Flows by Duration` groups recognized canonical flows by the interval between
+their first and last observed packet timestamps.
+
+Flow duration is the time between the first and last packet. One-packet Flows
+have duration 0.
+
+The mode buttons are the same as `Flows by Packet Count`:
+
+- `Flows`
+- `Captured bytes`
+- `Original bytes`
+
+Changing mode does not move flows between duration buckets. It only changes the
+value summarized for each bucket.
+
+## Flows by Data Size
+
+`Flows by Data Size` groups recognized canonical flows by total original bytes.
+
+The mode buttons are:
+
+- `Flows`
+- `Captured bytes`
+- `Original bytes`
+
+Bucket membership is always based on original flow size. This remains true when
+the visible mode is `Flows` or `Captured bytes`.
+
+## IP Fragmentation
+
+`IP Fragmentation` summarizes capture-wide IP fragmentation counters.
+
+Fragmented packet percentages use effective IP/family totals. Initial and
+non-initial percentages use all fragmented IP packets. Flow percentage uses all
+Flows.
 
 ## Protocol Path Tree
 

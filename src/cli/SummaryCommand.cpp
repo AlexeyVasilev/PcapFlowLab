@@ -71,8 +71,12 @@ struct OutputPreflightResult {
 };
 
 struct SummaryStatisticsDtos {
+    std::vector<FrontendCaptureImportSettingDto> capture_import_settings {};
     FrontendCapturePacketSizeStatisticsDto packet_size_statistics {};
     FrontendFlowPacketCountHistogramDto flow_packet_count_histogram {};
+    FrontendFlowHistogramDto flow_duration_histogram {};
+    FrontendFlowHistogramDto flow_original_byte_size_histogram {};
+    FrontendIpFragmentationStatisticsDto ip_fragmentation_statistics {};
     FrontendProtocolHintStatisticsDto protocol_hint_statistics {};
     FrontendQuicTlsStatisticsDto quic_tls_statistics {};
     FrontendTopEndpointPortStatisticsDto top_endpoint_port_statistics {};
@@ -387,8 +391,12 @@ SummaryStatisticsDtos build_summary_statistics_dtos(
     const std::size_t top_endpoint_port_limit = 5U
 ) {
     return SummaryStatisticsDtos {
+        .capture_import_settings = adapter.get_capture_import_settings(),
         .packet_size_statistics = adapter.get_capture_packet_size_statistics(),
         .flow_packet_count_histogram = adapter.get_flow_packet_count_histogram(),
+        .flow_duration_histogram = adapter.get_flow_duration_histogram(),
+        .flow_original_byte_size_histogram = adapter.get_flow_original_byte_size_histogram(),
+        .ip_fragmentation_statistics = adapter.get_ip_fragmentation_statistics(),
         .protocol_hint_statistics = adapter.get_protocol_hint_statistics(),
         .quic_tls_statistics = adapter.get_quic_tls_statistics(),
         .top_endpoint_port_statistics = adapter.get_top_endpoint_port_statistics(top_endpoint_port_limit),
@@ -609,9 +617,19 @@ SummaryStatisticsDtos build_fast_v16_summary_statistics_dtos(
         session_detail::slice_top_summary(general_statistics.top_summary, top_endpoint_port_limit);
 
     return SummaryStatisticsDtos {
+        .capture_import_settings = build_frontend_capture_import_settings(tier.capture_import_settings),
         .packet_size_statistics = build_frontend_capture_packet_size_statistics(packet_statistics),
         .flow_packet_count_histogram =
             build_frontend_flow_packet_count_histogram(general_statistics.flow_packet_count_histogram),
+        .flow_duration_histogram =
+            build_frontend_flow_duration_histogram(general_statistics.flow_duration_histogram),
+        .flow_original_byte_size_histogram =
+            build_frontend_flow_original_byte_size_histogram(general_statistics.flow_original_byte_size_histogram),
+        .ip_fragmentation_statistics = build_frontend_ip_fragmentation_statistics(
+            packet_statistics.ip_fragmentation,
+            general_statistics.flow_characteristics.total_flow_count,
+            general_statistics.flow_characteristics.flows_containing_fragments_count
+        ),
         .protocol_hint_statistics = build_frontend_protocol_hint_statistics(protocol_summary),
         .quic_tls_statistics = FrontendQuicTlsStatisticsDto {
             .has_capture = true,
@@ -682,8 +700,12 @@ FrontendStatisticsReportInput make_statistics_report_input(
     return FrontendStatisticsReportInput {
         .metadata = std::move(metadata),
         .overview = std::move(overview),
+        .capture_import_settings = std::move(statistics.capture_import_settings),
         .packet_size_statistics = std::move(statistics.packet_size_statistics),
         .flow_packet_count_histogram = std::move(statistics.flow_packet_count_histogram),
+        .flow_duration_histogram = std::move(statistics.flow_duration_histogram),
+        .flow_original_byte_size_histogram = std::move(statistics.flow_original_byte_size_histogram),
+        .ip_fragmentation_statistics = std::move(statistics.ip_fragmentation_statistics),
         .protocol_hint_statistics = std::move(statistics.protocol_hint_statistics),
         .quic_tls_statistics = std::move(statistics.quic_tls_statistics),
         .top_endpoint_port_statistics = std::move(statistics.top_endpoint_port_statistics),
@@ -767,6 +789,26 @@ std::string render_extended_summary_text(
     const auto quic_version_label_width = longest_label_width(quic_version_labels);
     const auto tls_sni_label_width = longest_label_width(tls_sni_labels);
     const auto tls_version_label_width = longest_label_width(tls_version_labels);
+
+    out << "\nCapture Import Settings\n\n";
+    std::vector<std::vector<std::string>> capture_import_setting_rows {};
+    capture_import_setting_rows.reserve(statistics.capture_import_settings.size());
+    for (const auto& setting : statistics.capture_import_settings) {
+        capture_import_setting_rows.push_back({
+            setting.display_name,
+            setting.display_value,
+        });
+    }
+    if (capture_import_setting_rows.empty()) {
+        out << "Unavailable\n";
+    } else {
+        out << render_table(
+            {
+                {.header = "Setting", .right_align = false},
+                {.header = "Value", .right_align = false},
+            },
+            capture_import_setting_rows);
+    }
 
     out << "\nCapture Metrics\n";
     append_key_value_line(
@@ -958,6 +1000,66 @@ std::string render_extended_summary_text(
             {.header = "Original Bytes", .right_align = true},
         },
         histogram_rows);
+
+    const auto render_flow_histogram = [&](const std::string_view title,
+                                           const std::string_view first_column_header,
+                                           const FrontendFlowHistogramDto& flow_histogram,
+                                           const std::string_view help_text = {}) {
+        out << "\n" << title << "\n\n";
+        if (!help_text.empty()) {
+            out << help_text << "\n\n";
+        }
+        std::vector<std::vector<std::string>> rows {};
+        rows.reserve(flow_histogram.buckets.size());
+        for (const auto& bucket : flow_histogram.buckets) {
+            rows.push_back({
+                bucket.label,
+                bucket.flow_count_with_total_percent_text,
+                bucket.captured_byte_count_with_total_percent_text,
+                bucket.original_byte_count_with_total_percent_text,
+            });
+        }
+        out << render_table(
+            {
+                {.header = std::string {first_column_header}, .right_align = false},
+                {.header = "Flows", .right_align = true},
+                {.header = "Captured Bytes", .right_align = true},
+                {.header = "Original Bytes", .right_align = true},
+            },
+            rows);
+    };
+
+    render_flow_histogram(
+        "Flows by Duration",
+        "Duration",
+        statistics.flow_duration_histogram,
+        frontend_flow_duration_histogram_help_text()
+    );
+    render_flow_histogram(
+        "Flows by Data Size",
+        "Original Flow Size",
+        statistics.flow_original_byte_size_histogram
+    );
+
+    const auto& ip_fragmentation_statistics = statistics.ip_fragmentation_statistics;
+    out << "\nIP Fragmentation\n\n";
+    std::vector<std::vector<std::string>> ip_fragmentation_rows {};
+    ip_fragmentation_rows.reserve(ip_fragmentation_statistics.rows.size());
+    for (const auto& row : ip_fragmentation_statistics.rows) {
+        ip_fragmentation_rows.push_back({
+            row.label,
+            row.count_with_percent_text,
+        });
+    }
+    out << render_table(
+        {
+            {.header = "Metric", .right_align = false},
+            {.header = "Count", .right_align = true},
+        },
+        ip_fragmentation_rows);
+    if (!ip_fragmentation_statistics.help_text.empty()) {
+        out << '\n' << ip_fragmentation_statistics.help_text << '\n';
+    }
 
     const auto& protocol_hints = statistics.protocol_hint_statistics;
     out << "\nDetected Protocol Hints\n\n";

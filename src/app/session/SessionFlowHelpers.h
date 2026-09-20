@@ -165,6 +165,8 @@ std::string format_statistics_percent_text(double percent);
 std::string format_statistics_count_with_percent_text(std::uint64_t count, double percent);
 std::string format_statistics_size_with_percent_text(std::uint64_t size, double percent);
 std::string format_statistics_size_value(std::uint64_t value);
+[[nodiscard]] std::size_t flow_duration_histogram_bucket_index(std::uint64_t duration_us) noexcept;
+[[nodiscard]] std::size_t flow_original_byte_size_histogram_bucket_index(std::uint64_t original_bytes) noexcept;
 std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary);
 CaptureStatisticsSnapshot make_capture_statistics_snapshot(
     const CapturePacketStatistics& packet_statistics,

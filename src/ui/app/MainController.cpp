@@ -279,13 +279,23 @@ FrontendStatisticsReportInput build_statistics_report_input(
     FrontendStatisticsReportMetadata metadata
 ) {
     const auto top_summary = session.top_summary(kStatisticsReportTopEndpointPortLimit);
+    const auto flow_characteristics = session.flow_characteristics_statistics();
 
     return FrontendStatisticsReportInput {
         .metadata = std::move(metadata),
         .overview = build_statistics_report_overview(session),
+        .capture_import_settings = build_frontend_capture_import_settings(session.state().capture_import_settings),
         .packet_size_statistics = build_frontend_capture_packet_size_statistics(session.packet_statistics()),
         .flow_packet_count_histogram =
             build_frontend_flow_packet_count_histogram(session.flow_packet_count_histogram()),
+        .flow_duration_histogram = build_frontend_flow_duration_histogram(session.flow_duration_histogram()),
+        .flow_original_byte_size_histogram =
+            build_frontend_flow_original_byte_size_histogram(session.flow_original_byte_size_histogram()),
+        .ip_fragmentation_statistics = build_frontend_ip_fragmentation_statistics(
+            session.packet_statistics().ip_fragmentation,
+            flow_characteristics.total_flow_count,
+            flow_characteristics.flows_containing_fragments_count
+        ),
         .protocol_hint_statistics = build_frontend_protocol_hint_statistics(session.protocol_summary()),
         .quic_tls_statistics = FrontendQuicTlsStatisticsDto {
             .has_capture = true,
@@ -795,6 +805,62 @@ QVariantList build_flow_packet_histogram_rows(const FrontendFlowPacketCountHisto
         row.insert(QStringLiteral("normalizedFlowFraction"), normalized_flow_fraction);
         row.insert(QStringLiteral("normalizedCapturedByteFraction"), bucket.normalized_captured_byte_fraction);
         row.insert(QStringLiteral("normalizedOriginalByteFraction"), bucket.normalized_original_byte_fraction);
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList build_flow_histogram_rows(const FrontendFlowHistogramDto& histogram) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
+
+    for (const auto& bucket : histogram.buckets) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.bucket_id));
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+            : QVariant {});
+        row.insert(QStringLiteral("label"), QString::fromStdString(bucket.label));
+        row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
+        row.insert(
+            QStringLiteral("flowCountWithTotalPercentText"),
+            QString::fromStdString(bucket.flow_count_with_total_percent_text)
+        );
+        row.insert(QStringLiteral("capturedByteCount"), static_cast<qulonglong>(bucket.captured_byte_count));
+        row.insert(QStringLiteral("capturedByteCountText"), QString::fromStdString(bucket.captured_byte_count_text));
+        row.insert(
+            QStringLiteral("capturedByteCountWithTotalPercentText"),
+            QString::fromStdString(bucket.captured_byte_count_with_total_percent_text)
+        );
+        row.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(bucket.original_byte_count));
+        row.insert(QStringLiteral("originalByteCountText"), QString::fromStdString(bucket.original_byte_count_text));
+        row.insert(
+            QStringLiteral("originalByteCountWithTotalPercentText"),
+            QString::fromStdString(bucket.original_byte_count_with_total_percent_text)
+        );
+        row.insert(QStringLiteral("normalizedFraction"), bucket.normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedFlowFraction"), bucket.normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedCapturedByteFraction"), bucket.normalized_captured_byte_fraction);
+        row.insert(QStringLiteral("normalizedOriginalByteFraction"), bucket.normalized_original_byte_fraction);
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList ip_fragmentation_rows_to_variant_list(const FrontendIpFragmentationStatisticsDto& statistics) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(statistics.rows.size()));
+
+    for (const auto& source_row : statistics.rows) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("stableId"), QString::fromStdString(source_row.stable_id));
+        row.insert(QStringLiteral("label"), QString::fromStdString(source_row.label));
+        row.insert(QStringLiteral("count"), static_cast<qulonglong>(source_row.count));
+        row.insert(QStringLiteral("fraction"), source_row.fraction);
+        row.insert(QStringLiteral("countWithPercentText"), QString::fromStdString(source_row.count_with_percent_text));
         rows.push_back(row);
     }
 
@@ -2138,6 +2204,15 @@ QVariantMap flow_characteristics_to_variant_map(const FrontendFlowCharacteristic
     );
     map.insert(QStringLiteral("serviceRecognizedFlowFraction"), statistics.service_recognized_flow_fraction);
     map.insert(QStringLiteral("serviceRecognizedFlowsText"), qstring_from_utf8(statistics.service_recognized_flows_text));
+    map.insert(
+        QStringLiteral("flowsContainingFragmentsCount"),
+        QVariant::fromValue<qulonglong>(statistics.flows_containing_fragments_count)
+    );
+    map.insert(QStringLiteral("flowsContainingFragmentsFraction"), statistics.flows_containing_fragments_fraction);
+    map.insert(
+        QStringLiteral("flowsContainingFragmentsText"),
+        qstring_from_utf8(statistics.flows_containing_fragments_text)
+    );
     return map;
 }
 
@@ -3716,6 +3791,63 @@ qulonglong MainController::flowPacketHistogramExcludedZeroPacketFlowCount() cons
 
 QVariantList MainController::flowPacketHistogramRows() const {
     return flow_packet_histogram_rows_;
+}
+
+int MainController::flowDurationHistogramState() const noexcept {
+    return static_cast<int>(flow_duration_histogram_state_);
+}
+
+QString MainController::flowDurationHistogramStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::flow_duration_histogram);
+}
+
+QString MainController::flowDurationHistogramSummaryText() const {
+    return flow_duration_histogram_.total_flow_count > 0U
+        ? QStringLiteral("%1 flows").arg(flow_duration_histogram_.total_flow_count)
+        : QString {};
+}
+
+QString MainController::flowDurationHistogramHelpText() const {
+    const auto text = frontend_flow_duration_histogram_help_text();
+    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+}
+
+QVariantList MainController::flowDurationHistogramRows() const {
+    return flow_duration_histogram_rows_;
+}
+
+int MainController::flowOriginalByteSizeHistogramState() const noexcept {
+    return static_cast<int>(flow_original_byte_size_histogram_state_);
+}
+
+QString MainController::flowOriginalByteSizeHistogramStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::flow_original_byte_size_histogram);
+}
+
+QString MainController::flowOriginalByteSizeHistogramSummaryText() const {
+    return flow_original_byte_size_histogram_.total_flow_count > 0U
+        ? QStringLiteral("%1 flows").arg(flow_original_byte_size_histogram_.total_flow_count)
+        : QString {};
+}
+
+QVariantList MainController::flowOriginalByteSizeHistogramRows() const {
+    return flow_original_byte_size_histogram_rows_;
+}
+
+int MainController::ipFragmentationStatisticsState() const noexcept {
+    return static_cast<int>(ip_fragmentation_statistics_state_);
+}
+
+QString MainController::ipFragmentationStatisticsStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::ip_fragmentation);
+}
+
+QString MainController::ipFragmentationStatisticsHelpText() const {
+    return QString::fromStdString(ip_fragmentation_statistics_.help_text);
+}
+
+QVariantList MainController::ipFragmentationStatisticsRows() const {
+    return ip_fragmentation_statistics_rows_;
 }
 
 int MainController::protocolHintsSectionState() const noexcept {
@@ -5817,6 +5949,18 @@ void MainController::setStatisticsSectionState(
         flow_packet_histogram_state_ = state;
         flow_packet_histogram_error_text_ = std::move(errorText);
         break;
+    case StatisticsOptionalSection::flow_duration_histogram:
+        flow_duration_histogram_state_ = state;
+        flow_duration_histogram_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::flow_original_byte_size_histogram:
+        flow_original_byte_size_histogram_state_ = state;
+        flow_original_byte_size_histogram_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::ip_fragmentation:
+        ip_fragmentation_statistics_state_ = state;
+        ip_fragmentation_statistics_error_text_ = std::move(errorText);
+        break;
     case StatisticsOptionalSection::protocol_path:
         protocol_path_section_state_ = state;
         protocol_path_error_text_ = std::move(errorText);
@@ -5852,6 +5996,18 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
     case StatisticsOptionalSection::flow_packet_histogram:
         state = flow_packet_histogram_state_;
         error_text = flow_packet_histogram_error_text_;
+        break;
+    case StatisticsOptionalSection::flow_duration_histogram:
+        state = flow_duration_histogram_state_;
+        error_text = flow_duration_histogram_error_text_;
+        break;
+    case StatisticsOptionalSection::flow_original_byte_size_histogram:
+        state = flow_original_byte_size_histogram_state_;
+        error_text = flow_original_byte_size_histogram_error_text_;
+        break;
+    case StatisticsOptionalSection::ip_fragmentation:
+        state = ip_fragmentation_statistics_state_;
+        error_text = ip_fragmentation_statistics_error_text_;
         break;
     case StatisticsOptionalSection::protocol_path:
         state = protocol_path_section_state_;
@@ -5896,6 +6052,9 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
 void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     packet_size_distribution_expanded_ = false;
     flow_packet_histogram_expanded_ = false;
+    flow_duration_histogram_expanded_ = false;
+    flow_original_byte_size_histogram_expanded_ = false;
+    ip_fragmentation_statistics_expanded_ = false;
     protocol_path_section_expanded_ = false;
     protocol_hints_section_expanded_ = false;
     quic_tls_section_expanded_ = false;
@@ -5906,6 +6065,12 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     packet_size_distribution_rows_.clear();
     flow_packet_count_histogram_ = {};
     flow_packet_histogram_rows_.clear();
+    flow_duration_histogram_ = {};
+    flow_duration_histogram_rows_.clear();
+    flow_original_byte_size_histogram_ = {};
+    flow_original_byte_size_histogram_rows_.clear();
+    ip_fragmentation_statistics_ = {};
+    ip_fragmentation_statistics_rows_.clear();
     protocol_hint_distribution_.clear();
     protocol_path_summary_ = {};
     protocol_path_stats_model_.clear();
@@ -5919,6 +6084,9 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
 
     setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_duration_histogram, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_original_byte_size_histogram, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::ip_fragmentation, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::not_requested);
@@ -5978,6 +6146,85 @@ void MainController::ensureFlowPacketHistogramLoaded() {
     flow_packet_histogram_rows_ =
         build_flow_packet_histogram_rows(build_frontend_flow_packet_count_histogram(flow_packet_count_histogram_));
     setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureFlowDurationHistogramLoaded() {
+    if (!flow_duration_histogram_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::flow_duration_histogram, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (flow_duration_histogram_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::flow_duration_histogram, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    flow_duration_histogram_ = build_frontend_flow_duration_histogram(session_.flow_duration_histogram());
+    flow_duration_histogram_rows_ = build_flow_histogram_rows(flow_duration_histogram_);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_duration_histogram, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureFlowOriginalByteSizeHistogramLoaded() {
+    if (!flow_original_byte_size_histogram_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::flow_original_byte_size_histogram, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (flow_original_byte_size_histogram_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::flow_original_byte_size_histogram, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    flow_original_byte_size_histogram_ =
+        build_frontend_flow_original_byte_size_histogram(session_.flow_original_byte_size_histogram());
+    flow_original_byte_size_histogram_rows_ = build_flow_histogram_rows(flow_original_byte_size_histogram_);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_original_byte_size_histogram, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureIpFragmentationStatisticsLoaded() {
+    if (!ip_fragmentation_statistics_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::ip_fragmentation, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (ip_fragmentation_statistics_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::ip_fragmentation, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    const auto packet_statistics = session_.packet_statistics();
+    const auto flow_characteristics = session_.flow_characteristics_statistics();
+    ip_fragmentation_statistics_ = build_frontend_ip_fragmentation_statistics(
+        packet_statistics.ip_fragmentation,
+        flow_characteristics.total_flow_count,
+        flow_characteristics.flows_containing_fragments_count
+    );
+    ip_fragmentation_statistics_rows_ = ip_fragmentation_rows_to_variant_list(ip_fragmentation_statistics_);
+    setStatisticsSectionState(StatisticsOptionalSection::ip_fragmentation, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }
 
@@ -6106,6 +6353,9 @@ void MainController::ensureTopStatisticsLoaded() {
 void MainController::maybeLoadExpandedStatisticsSections() {
     ensurePacketSizeDistributionLoaded();
     ensureFlowPacketHistogramLoaded();
+    ensureFlowDurationHistogramLoaded();
+    ensureFlowOriginalByteSizeHistogramLoaded();
+    ensureIpFragmentationStatisticsLoaded();
     ensureProtocolPathSectionLoaded();
     ensureProtocolHintsLoaded();
     ensureQuicTlsSectionLoaded();
@@ -6121,6 +6371,15 @@ void MainController::setStatisticsSectionExpanded(const int section, const bool 
         break;
     case StatisticsOptionalSection::flow_packet_histogram:
         flow_packet_histogram_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::flow_duration_histogram:
+        flow_duration_histogram_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::flow_original_byte_size_histogram:
+        flow_original_byte_size_histogram_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::ip_fragmentation:
+        ip_fragmentation_statistics_expanded_ = expanded;
         break;
     case StatisticsOptionalSection::protocol_path:
         protocol_path_section_expanded_ = expanded;

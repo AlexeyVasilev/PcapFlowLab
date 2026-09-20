@@ -136,6 +136,7 @@ fn main() {
         "src/core/domain/ConnectionTable.cpp",
         "src/core/domain/PacketRef.cpp",
         "src/core/domain/CaptureSummary.cpp",
+        "src/core/domain/CaptureImportSettings.cpp",
         "src/core/domain/CaptureStatisticsSnapshot.cpp",
         "src/core/domain/PacketDetails.cpp",
         "src/core/dissection/PacketSlice.cpp",

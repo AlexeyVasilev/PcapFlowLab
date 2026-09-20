@@ -108,6 +108,10 @@ public:
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] FrontendCapturePacketSizeStatisticsDto get_capture_packet_size_statistics() const;
     [[nodiscard]] FrontendFlowPacketCountHistogramDto get_flow_packet_count_histogram() const;
+    [[nodiscard]] FrontendFlowHistogramDto get_flow_duration_histogram() const;
+    [[nodiscard]] FrontendFlowHistogramDto get_flow_original_byte_size_histogram() const;
+    [[nodiscard]] FrontendIpFragmentationStatisticsDto get_ip_fragmentation_statistics() const;
+    [[nodiscard]] std::vector<FrontendCaptureImportSettingDto> get_capture_import_settings() const;
     [[nodiscard]] FrontendProtocolHintStatisticsDto get_protocol_hint_statistics() const;
     [[nodiscard]] FrontendQuicTlsStatisticsDto get_quic_tls_statistics() const;
     [[nodiscard]] FrontendTopEndpointPortStatisticsDto get_top_endpoint_port_statistics(std::size_t limit = 5U) const;

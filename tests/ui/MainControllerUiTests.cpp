@@ -3624,16 +3624,18 @@ int main(int argc, char* argv[]) {
     });
 
     run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
+        const auto gtpu_teid_grouping_info_text =
+            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.");
         MainController gtpu_grouping_index_controller {};
         UI_EXPECT(!gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
         gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
@@ -3994,6 +3996,11 @@ int main(int argc, char* argv[]) {
 
     const int packet_size_section = static_cast<int>(MainController::StatisticsOptionalSection::packet_size_distribution);
     const int histogram_section = static_cast<int>(MainController::StatisticsOptionalSection::flow_packet_histogram);
+    const int flow_duration_histogram_section =
+        static_cast<int>(MainController::StatisticsOptionalSection::flow_duration_histogram);
+    const int flow_original_byte_size_histogram_section =
+        static_cast<int>(MainController::StatisticsOptionalSection::flow_original_byte_size_histogram);
+    const int ip_fragmentation_section = static_cast<int>(MainController::StatisticsOptionalSection::ip_fragmentation);
     const int protocol_path_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_path);
     const int protocol_hints_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_hints);
     const int quic_tls_section = static_cast<int>(MainController::StatisticsOptionalSection::quic_tls);
@@ -4031,6 +4038,9 @@ int main(int argc, char* argv[]) {
         auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
         UI_REQUIRE(named_object(statistics_pane.object.get(), "packetSizeDistributionToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "flowPacketHistogramToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowDurationHistogramToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "ipFragmentationStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolPathStatisticsToggleButton") != nullptr);
         auto* protocol_path_export_button = named_object(statistics_pane.object.get(), "protocolPathExportButton");
         UI_REQUIRE(protocol_path_export_button != nullptr);
@@ -4110,6 +4120,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!protocol_path_export_button->property("enabled").toBool());
 
         statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty(
+            "flowDurationHistogramHelpText",
+            QStringLiteral("Flow duration is the time between the first and last packet. One-packet Flows have duration 0.")
+        );
         statistics_pane.object->setProperty("flowCount", 58);
         statistics_pane.object->setProperty("statisticsPartialOpenWarningText",
             QStringLiteral("Statistics cover successfully imported packets only; the capture was opened partially."));
@@ -4316,8 +4330,14 @@ int main(int argc, char* argv[]) {
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("unrecognizedStatsSection")));
         UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowPacketHistogramSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("packetSizeDistributionSection")));
-        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolPathSection"))
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowDurationHistogramSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowPacketHistogramSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowOriginalByteSizeHistogramSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowDurationHistogramSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("ipFragmentationStatisticsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowOriginalByteSizeHistogramSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolPathSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("ipFragmentationStatisticsSection")));
         UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolHintsSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolPathSection")));
         UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("captureMetricsSection"))
@@ -4460,6 +4480,89 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 2);
 
+        statistics_pane.object->setProperty("flowDurationHistogramExpanded", true);
+        statistics_pane.object->setProperty("flowDurationHistogramState", section_ready);
+        statistics_pane.object->setProperty("flowDurationHistogramRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("0-1 ms")},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("2 (67%)")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("2 KB (50%)")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("3 KB (60%)")},
+                {QStringLiteral("normalizedFlowFraction"), 1.0},
+                {QStringLiteral("normalizedCapturedByteFraction"), 0.5},
+                {QStringLiteral("normalizedOriginalByteFraction"), 0.6},
+            },
+        });
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeFlowsButton") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeCapturedBytesButton") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeOriginalBytesButton") != nullptr);
+        auto* flow_duration_histogram_help_text = named_object(
+            statistics_pane.object.get(),
+            "flowDurationHistogramHelpText"
+        );
+        UI_REQUIRE(flow_duration_histogram_help_text != nullptr);
+        UI_EXPECT(flow_duration_histogram_help_text->property("text").toString() ==
+                  QStringLiteral("Flow duration is the time between the first and last packet. One-packet Flows have duration 0."));
+        auto* flow_duration_histogram_value_label = find_quick_item_by_object_name(
+            qobject_cast<QQuickItem*>(statistics_pane.object.get()),
+            QStringLiteral("flowDurationHistogramValueLabel")
+        );
+        UI_REQUIRE(flow_duration_histogram_value_label != nullptr);
+        UI_EXPECT(flow_duration_histogram_value_label->property("text").toString() == QStringLiteral("2 (67%)"));
+        statistics_pane.object->setProperty("flowDurationHistogramDisplayMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeCapturedBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_duration_histogram_value_label->property("text").toString() == QStringLiteral("2 KB (50%)"));
+        statistics_pane.object->setProperty("flowDurationHistogramDisplayMode", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowDurationHistogramModeOriginalBytesButton")->property("checked").toBool());
+        UI_EXPECT(flow_duration_histogram_value_label->property("text").toString() == QStringLiteral("3 KB (60%)"));
+
+        statistics_pane.object->setProperty("flowOriginalByteSizeHistogramExpanded", true);
+        statistics_pane.object->setProperty("flowOriginalByteSizeHistogramState", section_ready);
+        statistics_pane.object->setProperty("flowOriginalByteSizeHistogramRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("0-255 B")},
+                {QStringLiteral("flowCountWithTotalPercentText"), QStringLiteral("1 (33%)")},
+                {QStringLiteral("capturedByteCountWithTotalPercentText"), QStringLiteral("512 B (25%)")},
+                {QStringLiteral("originalByteCountWithTotalPercentText"), QStringLiteral("255 B (20%)")},
+                {QStringLiteral("normalizedFlowFraction"), 1.0},
+                {QStringLiteral("normalizedCapturedByteFraction"), 0.25},
+                {QStringLiteral("normalizedOriginalByteFraction"), 0.2},
+            },
+        });
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramModeFlowsButton") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramModeCapturedBytesButton") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramModeOriginalBytesButton") != nullptr);
+        auto* flow_original_byte_size_histogram_value_label = find_quick_item_by_object_name(
+            qobject_cast<QQuickItem*>(statistics_pane.object.get()),
+            QStringLiteral("flowOriginalByteSizeHistogramValueLabel")
+        );
+        UI_REQUIRE(flow_original_byte_size_histogram_value_label != nullptr);
+        UI_EXPECT(flow_original_byte_size_histogram_value_label->property("text").toString() == QStringLiteral("1 (33%)"));
+
+        statistics_pane.object->setProperty("ipFragmentationStatisticsExpanded", true);
+        statistics_pane.object->setProperty("ipFragmentationStatisticsState", section_ready);
+        statistics_pane.object->setProperty(
+            "ipFragmentationStatisticsHelpText",
+            QStringLiteral("Fragmented packet percentages use effective IP/family totals; initial and non-initial percentages use all fragmented IP packets; flow percentage uses all Flows.")
+        );
+        statistics_pane.object->setProperty("ipFragmentationStatisticsRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("Fragmented IP packets")},
+                {QStringLiteral("countWithPercentText"), QStringLiteral("3 (20%)")},
+            },
+        });
+        app.processEvents(QEventLoop::AllEvents, 25);
+        auto* ip_fragmentation_statistics_value_label = find_quick_item_by_object_name(
+            qobject_cast<QQuickItem*>(statistics_pane.object.get()),
+            QStringLiteral("ipFragmentationStatisticsValueLabel")
+        );
+        UI_REQUIRE(ip_fragmentation_statistics_value_label != nullptr);
+        UI_EXPECT(ip_fragmentation_statistics_value_label->property("text").toString() == QStringLiteral("3 (20%)"));
+
         const auto histogram_capture_path = write_temp_pcap(
             "pfl_ui_flow_packet_histogram_sections.pcap",
             make_classic_pcap({
@@ -4478,6 +4581,9 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(histogram_controller.currentTabIndex() == 0);
         UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.flowDurationHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.flowOriginalByteSizeHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.ipFragmentationStatisticsState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.quicTlsSectionState() == section_not_requested);
@@ -4487,6 +4593,9 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(histogram_controller.currentTabIndex() == 2);
         UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.flowDurationHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.flowOriginalByteSizeHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.ipFragmentationStatisticsState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.quicTlsSectionState() == section_not_requested);
@@ -4549,6 +4658,30 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("normalizedOriginalByteFraction")).toDouble() == 1.0);
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("capturedByteCountText")).toString() != QStringLiteral("0 B"));
         UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountText")).toString() != QStringLiteral("0 B"));
+
+        histogram_controller.setStatisticsSectionExpanded(flow_duration_histogram_section, true);
+        UI_EXPECT(histogram_controller.flowDurationHistogramState() == section_ready);
+        const auto duration_rows = histogram_controller.flowDurationHistogramRows();
+        UI_EXPECT(!duration_rows.isEmpty());
+        UI_EXPECT(duration_rows.front().toMap().contains(QStringLiteral("flowCountWithTotalPercentText")));
+        UI_EXPECT(duration_rows.front().toMap().contains(QStringLiteral("capturedByteCountWithTotalPercentText")));
+        UI_EXPECT(duration_rows.front().toMap().contains(QStringLiteral("originalByteCountWithTotalPercentText")));
+
+        histogram_controller.setStatisticsSectionExpanded(flow_original_byte_size_histogram_section, true);
+        UI_EXPECT(histogram_controller.flowOriginalByteSizeHistogramState() == section_ready);
+        const auto original_size_rows = histogram_controller.flowOriginalByteSizeHistogramRows();
+        UI_EXPECT(!original_size_rows.isEmpty());
+        UI_EXPECT(original_size_rows.front().toMap().contains(QStringLiteral("flowCountWithTotalPercentText")));
+        UI_EXPECT(original_size_rows.front().toMap().contains(QStringLiteral("capturedByteCountWithTotalPercentText")));
+        UI_EXPECT(original_size_rows.front().toMap().contains(QStringLiteral("originalByteCountWithTotalPercentText")));
+
+        histogram_controller.setStatisticsSectionExpanded(ip_fragmentation_section, true);
+        UI_EXPECT(histogram_controller.ipFragmentationStatisticsState() == section_ready);
+        UI_EXPECT(histogram_controller.ipFragmentationStatisticsHelpText()
+            == QStringLiteral("Fragmented packet percentages use effective IP/family totals; initial and non-initial percentages use all fragmented IP packets; flow percentage uses all Flows."));
+        const auto ip_fragmentation_rows = histogram_controller.ipFragmentationStatisticsRows();
+        UI_EXPECT(!ip_fragmentation_rows.isEmpty());
+        UI_EXPECT(ip_fragmentation_rows.front().toMap().contains(QStringLiteral("countWithPercentText")));
 
         MainController deferred_histogram_controller {};
         UI_EXPECT(open_capture_and_wait(app, deferred_histogram_controller, histogram_capture_path));
