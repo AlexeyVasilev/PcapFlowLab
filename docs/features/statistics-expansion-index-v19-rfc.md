@@ -469,8 +469,10 @@ Known bool values render as `Yes` / `No`. Unknown future entries render stored
 Qt and Tauri must consume shared C++ Statistics data.
 
 The shared report/presentation projection for revision 19 is implemented.
-Final live Qt/Tauri Statistics view exposure for these sections remains a
-separate rollout step.
+Qt and Tauri also expose the live interactive Statistics sections for Flows by
+Duration, Flows by Data Size, and IP Fragmentation. Capture Import Settings is
+stored as index provenance and shown in shared reports and CLI extended output,
+but is not a separate interactive Qt/Tauri Statistics section.
 
 Do not recompute histogram assignment or fragmentation counters in QML or
 JavaScript.
