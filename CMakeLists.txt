@@ -432,6 +432,7 @@ if(BUILD_TESTING)
         tests/unit/MplsPseudowirePcapFixtureTests.cpp
         tests/unit/PppoePcapFixtureTests.cpp
         tests/unit/VlanPcapFixtureTests.cpp
+        tests/unit/ErfPcapFixtureTests.cpp
         tests/unit/LlcSnapPcapFixtureTests.cpp
         tests/unit/PbbPcapFixtureTests.cpp
         tests/unit/MacsecPcapFixtureTests.cpp

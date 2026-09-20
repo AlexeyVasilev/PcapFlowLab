@@ -1,8 +1,8 @@
 # ERF Ethernet Parsing Fixtures
 
 This directory defines the deterministic fixture contract for the first
-PcapFlowLab ERF Ethernet capture-support pass. The generated `.pcap` files are
-not committed by this pass; they are produced later by the local generator.
+PcapFlowLab ERF Ethernet capture-support pass. The committed generated `.pcap`
+files are the authoritative permanent fixture contract.
 
 ## Target First ERF Support
 
@@ -49,27 +49,28 @@ ERF is a capture/storage envelope, not network-path identity.
 
 ## Local Generation
 
-The committed generator is self-contained and uses only the Python 3 standard
-library:
+The helper script used to generate these fixtures is intentionally not
+committed and should remain a local generation helper only. It is a
+deterministic Python helper that uses only the Python 3 standard library.
+
+To regenerate the committed fixtures, run the developer's local helper from the
+repository root with an output directory such as `tests/data/parsing/erf`, for
+example:
 
 ```bash
-python tests/data/parsing/erf/generate_erf_pcaps.py --output-dir tests/data/parsing/erf --force
+python /path/to/local/generate_erf_pcaps.py --output-dir tests/data/parsing/erf --force
 ```
 
 To write into the current directory on a separate fixture-generation VM, `cd`
-to the desired output directory and omit `--output-dir`:
+to the desired output directory and run the local helper without `--output-dir`.
 
-```bash
-python /path/to/tests/data/parsing/erf/generate_erf_pcaps.py --force
-```
-
-The generator creates the output directory when necessary, refuses to overwrite
-existing fixture files unless `--force` is supplied, writes only the ten files
-listed below, and prints the generated paths. It performs no network access and
-does not depend on Scapy or libpcap.
+The local generator creates the output directory when necessary, refuses to
+overwrite existing fixture files unless `--force` is supplied, writes only the
+ten files listed below, and prints the generated paths. It performs no network
+access and does not depend on Scapy or libpcap.
 
 Do not edit generated packet bytes by hand. If a fixture needs to change,
-adjust the generator and regenerate the PCAPs.
+adjust the local generator and regenerate the PCAPs.
 
 ## ERF Layout Used by Fixtures
 
