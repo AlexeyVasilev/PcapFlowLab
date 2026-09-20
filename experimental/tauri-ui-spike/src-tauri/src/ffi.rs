@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowHistogramDto, FlowPacketCountHistogramDto, IpFragmentationStatisticsDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDataDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -46,6 +46,15 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_flow_duration_histogram_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_flow_original_byte_size_histogram_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_ip_fragmentation_statistics_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_hint_statistics_json(
@@ -490,6 +499,21 @@ impl CppFrontendSessionAdapter {
     pub fn get_flow_packet_count_histogram(&self) -> Result<FlowPacketCountHistogramDto, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(self.handle) };
         parse_json_owned::<FlowPacketCountHistogramDto>(json)
+    }
+
+    pub fn get_flow_duration_histogram(&self) -> Result<FlowHistogramDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_flow_duration_histogram_json(self.handle) };
+        parse_json_owned::<FlowHistogramDto>(json)
+    }
+
+    pub fn get_flow_original_byte_size_histogram(&self) -> Result<FlowHistogramDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_flow_original_byte_size_histogram_json(self.handle) };
+        parse_json_owned::<FlowHistogramDto>(json)
+    }
+
+    pub fn get_ip_fragmentation_statistics(&self) -> Result<IpFragmentationStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_ip_fragmentation_statistics_json(self.handle) };
+        parse_json_owned::<IpFragmentationStatisticsDto>(json)
     }
 
     pub fn get_protocol_hint_statistics(&self) -> Result<ProtocolHintStatisticsDto, String> {

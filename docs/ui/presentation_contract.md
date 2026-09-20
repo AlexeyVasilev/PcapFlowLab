@@ -428,6 +428,9 @@ The current optional independently collapsible/lazy statistics sections are:
 
 - `Packet Size Distribution`
 - `Flows by Packet Count`
+- `Flows by Duration`
+- `Flows by Data Size`
+- `IP Fragmentation`
 - `Protocol Path Tree`
 - `Detected Protocol Hints`
 - `Capture Metrics`
@@ -449,6 +452,33 @@ itself trigger another backend statistics request.
 `Flows by Packet Count` likewise loads one shared whole-capture histogram DTO
 per expansion and supports frontend-local `Flows`, `Captured bytes`, and
 `Original bytes` modes over identical packet-count bucket membership.
+
+`Flows by Duration` and `Flows by Data Size` use the same frontend-local
+histogram mode behavior. `Flows by Data Size` bucket membership is based on
+original flow size even when the visible metric is `Flows` or
+`Captured bytes`.
+
+`IP Fragmentation` is a compact metric table. Its help text must explain that
+fragmented packet percentages use effective IP/family totals, initial and
+non-initial percentages use all fragmented IP packets, and flow percentage uses
+all Flows.
+
+The shared full Statistics report and CLI extended output also consume
+frontend-neutral presentation DTOs for revision-19 sections:
+
+- `Capture Import Settings` uses the stored import provenance snapshot, not
+  mutable runtime settings. Known boolean values render as `Yes` / `No`;
+  unknown future records render their stored display name and value text.
+- `Flows by Duration` uses persisted flow-duration buckets and local histogram
+  totals for flow/captured-byte/original-byte percentages.
+- `Flows by Data Size` uses persisted original-flow-size buckets and the same
+  local histogram percentage rules.
+- `IP Fragmentation` uses capture-wide packet fragmentation counters and the
+  persisted flow count for `Flows containing fragments`.
+
+`Capture Import Settings` is intentionally report/CLI extended output for now;
+the live Qt/Tauri Statistics views do not expose a matching interactive
+section in this pass.
 
 `Direction Distribution` is one collapsible section containing both:
 

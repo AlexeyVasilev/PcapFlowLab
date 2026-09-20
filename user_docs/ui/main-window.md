@@ -276,10 +276,13 @@ The current optional/collapsible statistics sections are:
 
 1. `Packet Size Distribution`
 2. `Flows by Packet Count`
-3. `Protocol Path Tree`
-4. `Detected Protocol Hints`
-5. `QUIC and TLS`
-6. `Top Endpoints and Ports`
+3. `Flows by Duration`
+4. `Flows by Data Size`
+5. `IP Fragmentation`
+6. `Protocol Path Tree`
+7. `Detected Protocol Hints`
+8. `QUIC and TLS`
+9. `Top Endpoints and Ports`
 
 These sections load lazily. In practice, that means the application can defer
 some heavier calculations until you actually open the section.

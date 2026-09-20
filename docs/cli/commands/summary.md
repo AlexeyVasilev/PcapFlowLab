@@ -144,12 +144,16 @@ Statistics cover successfully imported packets only; the capture was opened part
 
 `--extended` appends exactly these sections:
 
+- `Capture Import Settings`
 - `Capture Metrics`
 - `Flow Characteristics`
 - `Direction Distribution`
 - `TCP Flags`
 - `Packet Size Distribution`
 - `Flows by Packet Count`
+- `Flows by Duration`
+- `Flows by Data Size`
+- `IP Fragmentation`
 - `Detected Protocol Hints`
 - `QUIC and TLS`
 - `Top Flows by Original Bytes`
@@ -157,6 +161,8 @@ Statistics cover successfully imported packets only; the capture was opened part
 
 Important details:
 
+- `Capture Import Settings` renders stored import provenance from the active
+  capture/index, not mutable runtime settings.
 - `Capture Metrics` renders:
   - average captured packet size;
   - average original packet size;
@@ -190,6 +196,13 @@ Important details:
   - `Flows`;
   - `Captured Bytes`;
   - `Original Bytes`.
+- `Flows by Duration` uses the same combined table shape with duration bucket
+  labels.
+- `Flows by Data Size` uses the same combined table shape with original
+  flow-size bucket labels.
+- `IP Fragmentation` uses a compact `Metric` / `Count` table. Fragmented packet
+  percentages use effective IP/family totals; initial and non-initial
+  percentages use all fragmented IP packets; flow percentage uses all Flows.
 - `Detected Protocol Hints` omits zero rows and prints `None` when empty.
 - `Detected Protocol Hints` follows the shared runtime protocol-hint
   projection. The CLI does not apply a separate hint-suppression policy for

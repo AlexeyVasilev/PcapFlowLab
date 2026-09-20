@@ -193,6 +193,15 @@ Current shared statistics coverage includes:
   lazy load;
 - flows-by-packet-count histogram DTO rows carrying flow counts plus captured
   and original byte aggregates for the same bucket membership;
+- flow-duration and original-flow-size histogram DTO rows for full
+  Statistics reports and live Qt/Tauri Statistics sections, using shared
+  labels, local histogram percentage denominators, and captured/original byte
+  aggregates;
+- capture-import-setting DTO rows derived from stored import provenance, with
+  known boolean values converted to `Yes` / `No` for presentation and unknown
+  values preserved as stored text;
+- IP-fragmentation DTO rows with shared count/percentage text, including
+  separate IPv6 atomic-fragment presentation;
 - protocol-hint statistics;
 - Protocol Path statistics;
 - QUIC/TLS statistics;

@@ -1483,6 +1483,18 @@ ApplicationWindow {
                 flowPacketHistogramMaximumBucketFlowCount: mainController.flowPacketHistogramMaximumBucketFlowCount
                 flowPacketHistogramExcludedZeroPacketFlowCount: mainController.flowPacketHistogramExcludedZeroPacketFlowCount
                 flowPacketHistogramRows: mainController.flowPacketHistogramRows
+                flowDurationHistogramState: mainController.flowDurationHistogramState
+                flowDurationHistogramStatusText: mainController.flowDurationHistogramStatusText
+                flowDurationHistogramSummaryText: mainController.flowDurationHistogramSummaryText
+                flowDurationHistogramRows: mainController.flowDurationHistogramRows
+                flowOriginalByteSizeHistogramState: mainController.flowOriginalByteSizeHistogramState
+                flowOriginalByteSizeHistogramStatusText: mainController.flowOriginalByteSizeHistogramStatusText
+                flowOriginalByteSizeHistogramSummaryText: mainController.flowOriginalByteSizeHistogramSummaryText
+                flowOriginalByteSizeHistogramRows: mainController.flowOriginalByteSizeHistogramRows
+                ipFragmentationStatisticsState: mainController.ipFragmentationStatisticsState
+                ipFragmentationStatisticsStatusText: mainController.ipFragmentationStatisticsStatusText
+                ipFragmentationStatisticsHelpText: mainController.ipFragmentationStatisticsHelpText
+                ipFragmentationStatisticsRows: mainController.ipFragmentationStatisticsRows
                 protocolHintsSectionState: mainController.protocolHintsSectionState
                 protocolHintsSectionStatusText: mainController.protocolHintsSectionStatusText
                 protocolHintDistribution: mainController.protocolHintDistribution

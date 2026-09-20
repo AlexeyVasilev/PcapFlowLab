@@ -469,6 +469,76 @@
                 </div>
               </details>
 
+              <details id="flowDurationHistogramDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Flows by Duration</span>
+                  </span>
+                  <span id="flowDurationHistogramSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section-heading">
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Flow duration histogram mode">
+                        <button id="flowDurationHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each duration range.">Flows</button>
+                        <button id="flowDurationHistogramModeCapturedBytes" type="button" class="secondary-button" title="Sum of captured bytes for flows in each duration range.">Captured bytes</button>
+                        <button id="flowDurationHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each duration range.">Original bytes</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p id="flowDurationHistogramStateText" class="status-text compact-status-text"></p>
+                  <div id="flowDurationHistogramRows" class="statistics-histogram-rows"></div>
+                </div>
+              </details>
+
+              <details id="flowOriginalByteSizeHistogramDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Flows by Data Size</span>
+                  </span>
+                  <span id="flowOriginalByteSizeHistogramSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section-heading">
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Flow data-size histogram mode">
+                        <button id="flowOriginalByteSizeHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each original-size range.">Flows</button>
+                        <button id="flowOriginalByteSizeHistogramModeCapturedBytes" type="button" class="secondary-button" title="Sum of captured bytes for flows in each original-size range.">Captured bytes</button>
+                        <button id="flowOriginalByteSizeHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each original-size range.">Original bytes</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="panel-subtitle">Bucketed by original Flow size.</p>
+                  <p id="flowOriginalByteSizeHistogramStateText" class="status-text compact-status-text"></p>
+                  <div id="flowOriginalByteSizeHistogramRows" class="statistics-histogram-rows"></div>
+                </div>
+              </details>
+
+              <details id="ipFragmentationStatisticsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">IP Fragmentation</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <p id="ipFragmentationStatisticsStateText" class="status-text compact-status-text"></p>
+                  <p id="ipFragmentationStatisticsHelpText" class="panel-subtitle"></p>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Count</th>
+                        </tr>
+                      </thead>
+                      <tbody id="ipFragmentationStatisticsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </details>
+
               <details id="protocolPathDetails" class="statistics-disclosure">
                 <summary class="statistics-disclosure-summary">
                   <span class="statistics-disclosure-title-wrap">

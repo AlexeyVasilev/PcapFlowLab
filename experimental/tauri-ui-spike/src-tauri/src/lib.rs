@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, ExportStatisticsReportResultDto, FlowDto, FlowHistogramDto, FlowPacketCountHistogramDto, IpFragmentationStatisticsDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDataDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -1091,6 +1091,36 @@ fn get_flow_packet_count_histogram(
 }
 
 #[tauri::command]
+fn get_flow_duration_histogram(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<FlowHistogramDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_flow_duration_histogram()
+}
+
+#[tauri::command]
+fn get_flow_original_byte_size_histogram(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<FlowHistogramDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_flow_original_byte_size_histogram()
+}
+
+#[tauri::command]
+fn get_ip_fragmentation_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<IpFragmentationStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_ip_fragmentation_statistics()
+}
+
+#[tauri::command]
 fn get_capture_packet_size_statistics(
     state: State<'_, Mutex<AdapterState>>,
 ) -> Result<CapturePacketSizeStatisticsDto, String> {
@@ -1655,6 +1685,9 @@ pub fn run() {
             clear_advanced_flow_filter_unsaved_changes,
             clear_advanced_flow_filter_document,
             get_flow_packet_count_histogram,
+            get_flow_duration_histogram,
+            get_flow_original_byte_size_histogram,
+            get_ip_fragmentation_statistics,
             get_capture_packet_size_statistics,
             get_protocol_hint_statistics,
             get_quic_tls_statistics,

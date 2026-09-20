@@ -226,8 +226,32 @@ const FrontendCapturePacketSizeStatisticsBucketDto* find_bucket(
     return nullptr;
 }
 
+const FrontendFlowHistogramBucketDto* find_bucket(
+    const FrontendFlowHistogramDto& histogram,
+    const std::string_view stable_id
+) {
+    for (const auto& bucket : histogram.buckets) {
+        if (bucket.bucket_id == stable_id) {
+            return &bucket;
+        }
+    }
+    return nullptr;
+}
+
 const FrontendTcpFlagStatisticsRowDto* find_tcp_flag_row(
     const FrontendTcpFlagStatisticsDto& statistics,
+    const std::string_view stable_id
+) {
+    for (const auto& row : statistics.rows) {
+        if (row.stable_id == stable_id) {
+            return &row;
+        }
+    }
+    return nullptr;
+}
+
+const FrontendIpFragmentationStatisticsRowDto* find_ip_fragmentation_row(
+    const FrontendIpFragmentationStatisticsDto& statistics,
     const std::string_view stable_id
 ) {
     for (const auto& row : statistics.rows) {
@@ -576,6 +600,15 @@ std::string take_bridge_string(char* value) {
 
 bool contains_text(const std::string& text, const std::string_view fragment) {
     return text.find(fragment) != std::string::npos;
+}
+
+std::string markdown_section(const std::string& text, const std::string_view heading) {
+    const auto begin = text.find(heading);
+    PFL_REQUIRE(begin != std::string::npos);
+    const auto next = text.find("\n## ", begin + heading.size());
+    return next == std::string::npos
+        ? text.substr(begin)
+        : text.substr(begin, next - begin);
 }
 
 std::string unavailable_text() {
@@ -2295,6 +2328,111 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_original_byte_fraction > 0.0);
 }
 
+void expect_frontend_revision19_statistics_projection_helpers() {
+    auto input = make_histogram_input_connections({
+        {.packet_count = 1U, .original_byte_count = 255U, .captured_byte_count = 120U, .first_timestamp_us = 1'000U, .last_timestamp_us = 1'000U},
+        {.packet_count = 2U, .original_byte_count = 1'048'576U, .captured_byte_count = 240U, .first_timestamp_us = 1'000U, .last_timestamp_us = 1'999U},
+        {.packet_count = 3U, .original_byte_count = 104'857'600U, .captured_byte_count = 360U, .first_timestamp_us = 1'000U, .last_timestamp_us = 601'000'000U},
+    });
+    const auto statistics = session_detail::build_capture_general_statistics(
+        std::span<const session_detail::ListedConnectionRef>(input.refs.data(), input.refs.size()),
+        0U
+    );
+
+    const auto duration_histogram =
+        build_frontend_flow_duration_histogram(statistics.flow_duration_histogram);
+    const auto size_histogram =
+        build_frontend_flow_original_byte_size_histogram(statistics.flow_original_byte_size_histogram);
+    const auto* zero_duration = find_bucket(duration_histogram, "duration_zero");
+    const auto* sub_ms_duration = find_bucket(duration_histogram, "duration_gt0_lt1ms");
+    const auto* long_duration = find_bucket(duration_histogram, "duration_10min_plus");
+    PFL_REQUIRE(zero_duration != nullptr);
+    PFL_REQUIRE(sub_ms_duration != nullptr);
+    PFL_REQUIRE(long_duration != nullptr);
+    PFL_EXPECT(zero_duration->label == "0");
+    PFL_EXPECT(sub_ms_duration->label == ">0 - <1 ms");
+    PFL_EXPECT(long_duration->label == "10 min+");
+    PFL_EXPECT(zero_duration->flow_count_with_total_percent_text == "1 (33%)");
+    PFL_EXPECT(zero_duration->captured_byte_count_with_total_percent_text == "120 B (17%)");
+    PFL_EXPECT(zero_duration->original_byte_count_with_total_percent_text == "255 B (<0.01%)");
+
+    const auto* small_size = find_bucket(size_histogram, "original_bytes_0_255");
+    const auto* mib_size = find_bucket(size_histogram, "original_bytes_1_10mib");
+    const auto* large_size = find_bucket(size_histogram, "original_bytes_100mib_plus");
+    PFL_REQUIRE(small_size != nullptr);
+    PFL_REQUIRE(mib_size != nullptr);
+    PFL_REQUIRE(large_size != nullptr);
+    PFL_EXPECT(small_size->label == "0-255 B");
+    PFL_EXPECT(mib_size->label == "1-10 MiB");
+    PFL_EXPECT(large_size->label == "100 MiB+");
+    PFL_EXPECT(small_size->flow_count_with_total_percent_text == "1 (33%)");
+    PFL_EXPECT(mib_size->captured_byte_count_with_total_percent_text == "240 B (33%)");
+    PFL_EXPECT(large_size->original_byte_count_with_total_percent_text == "100 MB (99%)");
+
+    const auto import_settings = build_frontend_capture_import_settings(CaptureImportSettingsSnapshot {
+        .records = {
+            CaptureImportSettingRecord {
+                .stable_key = std::string(kCaptureImportSettingHttpUsePathAsServiceHint),
+                .display_name = "HTTP: use request path as service hint when Host is missing",
+                .value_text = "false",
+            },
+            CaptureImportSettingRecord {
+                .stable_key = std::string(kCaptureImportSettingIgnoreVlanAndMplsLayersWhenGroupingFlows),
+                .display_name = "Ignore VLAN and MPLS layers when grouping flows",
+                .value_text = "true",
+            },
+            CaptureImportSettingRecord {
+                .stable_key = std::string(kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows),
+                .display_name = "Ignore GTP-U TEIDs when grouping inner flows",
+                .value_text = "false",
+            },
+            CaptureImportSettingRecord {
+                .stable_key = "future_capture_mode",
+                .display_name = "Future capture mode",
+                .value_text = "aggressive",
+            },
+        },
+    });
+    PFL_REQUIRE(import_settings.size() == 4U);
+    PFL_EXPECT(import_settings[0].display_value == "No");
+    PFL_EXPECT(import_settings[1].display_value == "Yes");
+    PFL_EXPECT(import_settings[2].display_value == "No");
+    PFL_EXPECT(import_settings[3].display_name == "Future capture mode");
+    PFL_EXPECT(import_settings[3].display_value == "aggressive");
+
+    CaptureIpFragmentationStatistics fragmentation {};
+    fragmentation.effective_ipv4_packet_count = 10U;
+    fragmentation.effective_ipv6_packet_count = 5U;
+    fragmentation.ipv4_fragmented_packet_count = 2U;
+    fragmentation.ipv6_fragmented_packet_count = 1U;
+    fragmentation.initial_fragment_packet_count = 2U;
+    fragmentation.non_initial_fragment_packet_count = 1U;
+    fragmentation.ipv6_atomic_fragment_packet_count = 4U;
+    const auto fragmentation_dto = build_frontend_ip_fragmentation_statistics(fragmentation, 20U, 3U);
+    PFL_REQUIRE(find_ip_fragmentation_row(fragmentation_dto, "fragmented_ip_packets") != nullptr);
+    PFL_REQUIRE(find_ip_fragmentation_row(fragmentation_dto, "ipv6_atomic_fragments") != nullptr);
+    PFL_EXPECT(
+        find_ip_fragmentation_row(fragmentation_dto, "fragmented_ip_packets")->count_with_percent_text
+        == "3 (20%)"
+    );
+    PFL_EXPECT(
+        find_ip_fragmentation_row(fragmentation_dto, "ipv6_fragmented_packets")->count_with_percent_text
+        == "1 (20%)"
+    );
+    PFL_EXPECT(
+        find_ip_fragmentation_row(fragmentation_dto, "initial_fragments")->count_with_percent_text
+        == "2 (67%)"
+    );
+    PFL_EXPECT(
+        find_ip_fragmentation_row(fragmentation_dto, "ipv6_atomic_fragments")->count_with_percent_text
+        == "4 (80%)"
+    );
+    PFL_EXPECT(
+        find_ip_fragmentation_row(fragmentation_dto, "flows_containing_fragments")->count_with_percent_text
+        == "3 (15%)"
+    );
+}
+
 void expect_frontend_statistics_overview_helpers_cover_availability_and_direction_distributions() {
     const auto empty_time = build_frontend_capture_time_statistics(CapturePacketStatistics {});
     const auto empty_metrics = build_frontend_capture_metrics(CapturePacketStatistics {}, 0U);
@@ -2963,6 +3101,15 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
 
     const auto histogram_json = take_bridge_string(pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(handle));
+    const auto duration_histogram_json = take_bridge_string(
+        pfl_frontend_session_adapter_get_flow_duration_histogram_json(handle)
+    );
+    const auto original_size_histogram_json = take_bridge_string(
+        pfl_frontend_session_adapter_get_flow_original_byte_size_histogram_json(handle)
+    );
+    const auto ip_fragmentation_json = take_bridge_string(
+        pfl_frontend_session_adapter_get_ip_fragmentation_statistics_json(handle)
+    );
     const auto packet_size_json = take_bridge_string(
         pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(handle)
     );
@@ -3006,6 +3153,17 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(histogram_json, "\"normalized_flow_fraction\""));
     PFL_EXPECT(contains_text(histogram_json, "\"normalized_captured_byte_fraction\""));
     PFL_EXPECT(contains_text(histogram_json, "\"normalized_original_byte_fraction\""));
+    PFL_EXPECT(contains_text(duration_histogram_json, "\"bucket_id\":\"duration_"));
+    PFL_EXPECT(contains_text(duration_histogram_json, "\"flow_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(duration_histogram_json, "\"captured_byte_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(duration_histogram_json, "\"original_byte_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(original_size_histogram_json, "\"bucket_id\":\"original_bytes_"));
+    PFL_EXPECT(contains_text(original_size_histogram_json, "\"flow_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(original_size_histogram_json, "\"captured_byte_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(original_size_histogram_json, "\"original_byte_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(ip_fragmentation_json, "\"help_text\""));
+    PFL_EXPECT(contains_text(ip_fragmentation_json, "\"fragmented_ip_packets\""));
+    PFL_EXPECT(contains_text(ip_fragmentation_json, "\"count_with_percent_text\""));
 
     const auto overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_summary\""));
@@ -3038,6 +3196,8 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"flow_characteristics\""));
     PFL_EXPECT(contains_text(overview_json, "\"only_a_to_b_flows_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"service_recognized_flows_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_containing_fragments_count\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flows_containing_fragments_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"packet_direction_distribution\""));
     PFL_EXPECT(contains_text(overview_json, "\"original_byte_direction_distribution\""));
     PFL_EXPECT(contains_text(overview_json, "\"tcp_flag_statistics\""));
@@ -3205,6 +3365,8 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     );
     const auto index_path = std::filesystem::temp_directory_path()
         / "pfl_statistics_report_index_source.idx";
+    const auto raw_report_path = std::filesystem::temp_directory_path()
+        / "pfl_statistics_report_raw_source.md";
     const auto report_path = std::filesystem::temp_directory_path()
         / "pfl_statistics_report_index_source.md";
     const auto relocated_capture_path = std::filesystem::temp_directory_path()
@@ -3212,6 +3374,7 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     const auto attached_report_path = std::filesystem::temp_directory_path()
         / "pfl_statistics_report_index_source_attached.md";
     std::filesystem::remove(index_path);
+    std::filesystem::remove(raw_report_path);
     std::filesystem::remove(report_path);
     std::filesystem::remove(relocated_capture_path);
     std::filesystem::remove(attached_report_path);
@@ -3219,8 +3382,36 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     {
         FrontendSessionAdapter raw_adapter {};
         PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+        auto mutable_settings = raw_adapter.get_settings();
+        mutable_settings.http_use_path_as_service_hint = true;
+        mutable_settings.ignore_vlan_and_mpls_layers_when_grouping_flows = true;
+        mutable_settings.ignore_gtpu_teids_when_grouping_inner_flows = true;
+        raw_adapter.update_settings(mutable_settings);
+        const auto raw_export_result = raw_adapter.export_statistics_report(
+            FrontendStatisticsReportFormat::markdown,
+            raw_report_path
+        );
+        PFL_REQUIRE(raw_export_result.exported);
+        PFL_EXPECT(raw_export_result.error_text.empty());
         PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
     }
+    const auto raw_report = read_text_file(raw_report_path);
+    PFL_EXPECT(contains_text(raw_report, "## Capture Import Settings"));
+    PFL_EXPECT(contains_text(raw_report, "## Flows by Duration"));
+    PFL_EXPECT(contains_text(raw_report, "## Flows by Data Size"));
+    PFL_EXPECT(contains_text(raw_report, "## IP Fragmentation"));
+    PFL_EXPECT(contains_text(
+        raw_report,
+        "| HTTP: use request path as service hint when Host is missing | No |"
+    ));
+    PFL_EXPECT(contains_text(
+        raw_report,
+        "| Ignore VLAN and MPLS layers when grouping flows | No |"
+    ));
+    PFL_EXPECT(contains_text(
+        raw_report,
+        "| Ignore GTP-U TEIDs when grouping inner flows | No |"
+    ));
 
     const auto source_capture_file_size = static_cast<std::uint64_t>(std::filesystem::file_size(capture_path));
     const auto index_file_size = static_cast<std::uint64_t>(std::filesystem::file_size(index_path));
@@ -3302,6 +3493,14 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_EXPECT(!contains_text(report, "Input file size"));
     PFL_EXPECT(contains_text(report, "## Top Endpoints and Ports"));
     PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree"));
+    PFL_EXPECT(markdown_section(report, "## Capture Import Settings") ==
+               markdown_section(raw_report, "## Capture Import Settings"));
+    PFL_EXPECT(markdown_section(report, "## Flows by Duration") ==
+               markdown_section(raw_report, "## Flows by Duration"));
+    PFL_EXPECT(markdown_section(report, "## Flows by Data Size") ==
+               markdown_section(raw_report, "## Flows by Data Size"));
+    PFL_EXPECT(markdown_section(report, "## IP Fragmentation") ==
+               markdown_section(raw_report, "## IP Fragmentation"));
 
     const auto attach_result = index_adapter.attach_source_capture(relocated_capture_path);
     PFL_REQUIRE(attach_result.attached);
@@ -3647,6 +3846,7 @@ void run_statistics_section_tests() {
     expect_capture_general_statistics_track_flow_characteristics_distributions_and_captured_bytes();
     expect_general_statistics_cache_survives_possible_tls_projection_changes();
     expect_frontend_top_flows_preserve_shared_projection_semantics();
+    expect_frontend_revision19_statistics_projection_helpers();
     expect_capture_packet_size_statistics_boundaries();
     expect_capture_packet_size_statistics_supports_empty_state();
     expect_capture_packet_statistics_supports_empty_state();

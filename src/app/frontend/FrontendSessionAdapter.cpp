@@ -2619,8 +2619,12 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
     const FrontendStatisticsReportInput input {
         .metadata = std::move(metadata),
         .overview = overview,
+        .capture_import_settings = get_capture_import_settings(),
         .packet_size_statistics = get_capture_packet_size_statistics(),
         .flow_packet_count_histogram = get_flow_packet_count_histogram(),
+        .flow_duration_histogram = get_flow_duration_histogram(),
+        .flow_original_byte_size_histogram = get_flow_original_byte_size_histogram(),
+        .ip_fragmentation_statistics = get_ip_fragmentation_statistics(),
         .protocol_hint_statistics = get_protocol_hint_statistics(),
         .quic_tls_statistics = get_quic_tls_statistics(),
         .top_endpoint_port_statistics =
@@ -3041,6 +3045,43 @@ FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_coun
     }
 
     return build_frontend_flow_packet_count_histogram(session_.flow_packet_count_histogram());
+}
+
+FrontendFlowHistogramDto FrontendSessionAdapter::get_flow_duration_histogram() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_frontend_flow_duration_histogram(session_.flow_duration_histogram());
+}
+
+FrontendFlowHistogramDto FrontendSessionAdapter::get_flow_original_byte_size_histogram() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_frontend_flow_original_byte_size_histogram(session_.flow_original_byte_size_histogram());
+}
+
+FrontendIpFragmentationStatisticsDto FrontendSessionAdapter::get_ip_fragmentation_statistics() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    const auto flow_characteristics = session_.flow_characteristics_statistics();
+    return build_frontend_ip_fragmentation_statistics(
+        session_.packet_statistics().ip_fragmentation,
+        flow_characteristics.total_flow_count,
+        flow_characteristics.flows_containing_fragments_count
+    );
+}
+
+std::vector<FrontendCaptureImportSettingDto> FrontendSessionAdapter::get_capture_import_settings() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_frontend_capture_import_settings(session_.state().capture_import_settings);
 }
 
 FrontendProtocolHintStatisticsDto FrontendSessionAdapter::get_protocol_hint_statistics() const {

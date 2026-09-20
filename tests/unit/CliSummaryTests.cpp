@@ -16,6 +16,7 @@
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/SummaryCommand.h"
+#include "core/domain/CaptureImportSettings.h"
 
 namespace pfl::tests {
 
@@ -1014,6 +1015,12 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Packets / Flow"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Captured Bytes"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Bytes"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Capture Import Settings"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Duration"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Duration"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Data Size"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Flow Size"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "IP Fragmentation"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Detected Protocol Hints"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "QUIC and TLS"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Recognized Initial"));
@@ -1029,8 +1036,12 @@ void expect_extended_summary_rendering() {
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
     const auto overview = adapter.get_overview();
+    const auto capture_import_settings = adapter.get_capture_import_settings();
     const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
     const auto flow_histogram = adapter.get_flow_packet_count_histogram();
+    const auto flow_duration_histogram = adapter.get_flow_duration_histogram();
+    const auto flow_original_byte_size_histogram = adapter.get_flow_original_byte_size_histogram();
+    const auto ip_fragmentation_statistics = adapter.get_ip_fragmentation_statistics();
     const auto protocol_hints = adapter.get_protocol_hint_statistics();
     const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
 
@@ -1045,6 +1056,9 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.capture_completeness_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.flow_characteristics.only_a_to_b_flows_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.flow_characteristics.service_recognized_flows_text));
+    PFL_REQUIRE(!capture_import_settings.empty());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, capture_import_settings.front().display_name));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, capture_import_settings.front().display_value));
     PFL_REQUIRE(overview.packet_direction_distribution.rows.size() == 3U);
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.packet_direction_distribution.rows[0].label));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.packet_direction_distribution.rows[0].percent_text));
@@ -1080,6 +1094,34 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->flow_count_with_total_percent_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->captured_byte_count_with_total_percent_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->original_byte_count_with_total_percent_text));
+    const auto nonzero_duration_bucket = std::find_if(
+        flow_duration_histogram.buckets.begin(),
+        flow_duration_histogram.buckets.end(),
+        [](const FrontendFlowHistogramBucketDto& bucket) {
+            return bucket.flow_count > 0U;
+        }
+    );
+    PFL_REQUIRE(nonzero_duration_bucket != flow_duration_histogram.buckets.end());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_duration_bucket->label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_duration_bucket->flow_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_duration_bucket->captured_byte_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_duration_bucket->original_byte_count_with_total_percent_text));
+    const auto nonzero_size_bucket = std::find_if(
+        flow_original_byte_size_histogram.buckets.begin(),
+        flow_original_byte_size_histogram.buckets.end(),
+        [](const FrontendFlowHistogramBucketDto& bucket) {
+            return bucket.flow_count > 0U;
+        }
+    );
+    PFL_REQUIRE(nonzero_size_bucket != flow_original_byte_size_histogram.buckets.end());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_size_bucket->label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_size_bucket->flow_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_size_bucket->captured_byte_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_size_bucket->original_byte_count_with_total_percent_text));
+    PFL_REQUIRE(!ip_fragmentation_statistics.rows.empty());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, ip_fragmentation_statistics.rows.front().label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, ip_fragmentation_statistics.rows.front().count_with_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, ip_fragmentation_statistics.help_text));
     const auto first_nonzero_hint = std::find_if(
         protocol_hints.protocol_hints.begin(),
         protocol_hints.protocol_hints.end(),
@@ -1422,6 +1464,145 @@ void expect_statistics_report_rendering_escaping_contracts() {
     PFL_EXPECT(!contains_text(html, "<script>"));
 }
 
+void expect_statistics_report_revision19_sections_render_in_markdown_and_html() {
+    FrontendStatisticsReportInput input {};
+    input.metadata = FrontendStatisticsReportMetadata {
+        .application_name = "Pcap Flow Lab",
+        .application_version = "9.9.9-test",
+        .client_name = "CLI",
+        .generated_at_utc = "2026-03-22 12:27:32 UTC",
+        .statistics_scope = "Complete",
+    };
+    input.capture_import_settings = {
+        FrontendCaptureImportSettingDto {
+            .stable_key = std::string(kCaptureImportSettingHttpUsePathAsServiceHint),
+            .display_name = "HTTP: use request path as service hint when Host is missing",
+            .display_value = "No",
+        },
+        FrontendCaptureImportSettingDto {
+            .stable_key = std::string(kCaptureImportSettingIgnoreVlanAndMplsLayersWhenGroupingFlows),
+            .display_name = "Ignore VLAN and MPLS layers when grouping flows",
+            .display_value = "Yes",
+        },
+        FrontendCaptureImportSettingDto {
+            .stable_key = std::string(kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows),
+            .display_name = "Ignore GTP-U TEIDs when grouping inner flows",
+            .display_value = "No",
+        },
+        FrontendCaptureImportSettingDto {
+            .stable_key = "future_capture_mode",
+            .display_name = "Future capture mode",
+            .display_value = "aggressive <fast>",
+        },
+    };
+    input.flow_duration_histogram = FrontendFlowHistogramDto {
+        .has_capture = true,
+        .buckets = {
+            FrontendFlowHistogramBucketDto {
+                .bucket_id = "duration_zero",
+                .label = "0",
+                .flow_count_with_total_percent_text = "1 (33%)",
+                .captured_byte_count_with_total_percent_text = "120 B (17%)",
+                .original_byte_count_with_total_percent_text = "255 B (<0.01%)",
+            },
+            FrontendFlowHistogramBucketDto {
+                .bucket_id = "duration_gt0_lt1ms",
+                .label = ">0 - <1 ms",
+                .flow_count_with_total_percent_text = "1 (33%)",
+                .captured_byte_count_with_total_percent_text = "240 B (33%)",
+                .original_byte_count_with_total_percent_text = "1 MB (1%)",
+            },
+        },
+    };
+    input.flow_original_byte_size_histogram = FrontendFlowHistogramDto {
+        .has_capture = true,
+        .buckets = {
+            FrontendFlowHistogramBucketDto {
+                .bucket_id = "original_bytes_0_255",
+                .label = "0-255 B",
+                .flow_count_with_total_percent_text = "1 (33%)",
+                .captured_byte_count_with_total_percent_text = "120 B (17%)",
+                .original_byte_count_with_total_percent_text = "255 B (<0.01%)",
+            },
+            FrontendFlowHistogramBucketDto {
+                .bucket_id = "original_bytes_100mib_plus",
+                .label = "100 MiB+",
+                .flow_count_with_total_percent_text = "1 (33%)",
+                .captured_byte_count_with_total_percent_text = "360 B (50%)",
+                .original_byte_count_with_total_percent_text = "100 MB (99%)",
+            },
+        },
+    };
+    input.ip_fragmentation_statistics = FrontendIpFragmentationStatisticsDto {
+        .has_capture = true,
+        .help_text =
+            "Fragmented packet percentages use effective IP/family totals; initial and non-initial percentages use all fragmented IP packets; flow percentage uses all Flows.",
+        .rows = {
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "fragmented_ip_packets",
+                .label = "Fragmented IP packets",
+                .count_with_percent_text = "3 (20%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "ipv4_fragmented_packets",
+                .label = "IPv4 fragmented packets",
+                .count_with_percent_text = "2 (20%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "ipv6_fragmented_packets",
+                .label = "IPv6 fragmented packets",
+                .count_with_percent_text = "1 (20%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "initial_fragments",
+                .label = "Initial fragments",
+                .count_with_percent_text = "2 (67%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "non_initial_fragments",
+                .label = "Non-initial fragments",
+                .count_with_percent_text = "1 (33%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "ipv6_atomic_fragments",
+                .label = "IPv6 atomic fragments",
+                .count_with_percent_text = "4 (80%)",
+            },
+            FrontendIpFragmentationStatisticsRowDto {
+                .stable_id = "flows_containing_fragments",
+                .label = "Flows containing fragments",
+                .count_with_percent_text = "3 (15%)",
+            },
+        },
+    };
+
+    const auto report = build_frontend_statistics_report_data(input);
+    const auto markdown = render_frontend_statistics_report_markdown(report);
+    const auto html = render_frontend_statistics_report_html(report);
+
+    PFL_EXPECT(contains_text(markdown, "## Capture Import Settings"));
+    PFL_EXPECT(contains_text(markdown, "| Ignore VLAN and MPLS layers when grouping flows | Yes |"));
+    PFL_EXPECT(contains_text(markdown, "| Future capture mode | aggressive <fast> |"));
+    PFL_EXPECT(contains_text(markdown, "## Flows by Duration"));
+    PFL_EXPECT(contains_text(markdown, "| >0 - <1 ms | 1 (33%) | 240 B (33%) | 1 MB (1%) |"));
+    PFL_EXPECT(contains_text(markdown, "## Flows by Data Size"));
+    PFL_EXPECT(contains_text(markdown, "| 100 MiB+ | 1 (33%) | 360 B (50%) | 100 MB (99%) |"));
+    PFL_EXPECT(contains_text(markdown, "## IP Fragmentation"));
+    PFL_EXPECT(contains_text(markdown, "| IPv6 atomic fragments | 4 (80%) |"));
+    PFL_EXPECT(contains_text(markdown, "| Flows containing fragments | 3 (15%) |"));
+
+    PFL_EXPECT(contains_text(html, "<h2>Capture Import Settings</h2>"));
+    PFL_EXPECT(contains_text(html, "Ignore VLAN and MPLS layers when grouping flows"));
+    PFL_EXPECT(contains_text(html, "aggressive &lt;fast&gt;"));
+    PFL_EXPECT(contains_text(html, "<h2>Flows by Duration</h2>"));
+    PFL_EXPECT(contains_text(html, "&gt;0 - &lt;1 ms"));
+    PFL_EXPECT(contains_text(html, "<h2>Flows by Data Size</h2>"));
+    PFL_EXPECT(contains_text(html, "100 MiB+"));
+    PFL_EXPECT(contains_text(html, "<h2>IP Fragmentation</h2>"));
+    PFL_EXPECT(contains_text(html, "IPv6 atomic fragments"));
+    PFL_EXPECT(!contains_text(html, "aggressive <fast>"));
+}
+
 void expect_statistics_report_side_output_contracts() {
     const auto capture_path = build_extended_summary_capture_path();
     const auto markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report.md";
@@ -1450,15 +1631,19 @@ void expect_statistics_report_side_output_contracts() {
     const std::vector<std::string_view> section_order {
         "## Report Information",
         "## Input",
+        "## Capture Import Settings",
         "## Overview",
         "## Capture Time",
         "## Protocol Summary",
         "## Unrecognized Packets",
         "## Packet Size Distribution",
         "## Flows by Packet Count",
+        "## Flows by Duration",
+        "## Flows by Data Size",
         "## Detected Protocol Hints",
         "## Capture Metrics",
         "## Flow Characteristics",
+        "## IP Fragmentation",
         "## Direction Distribution",
         "## TCP Flags",
         "## QUIC and TLS",
@@ -1469,15 +1654,19 @@ void expect_statistics_report_side_output_contracts() {
     const std::vector<std::string_view> html_section_order {
         "<h2>Report Information</h2>",
         "<h2>Input</h2>",
+        "<h2>Capture Import Settings</h2>",
         "<h2>Overview</h2>",
         "<h2>Capture Time</h2>",
         "<h2>Protocol Summary</h2>",
         "<h2>Unrecognized Packets</h2>",
         "<h2>Packet Size Distribution</h2>",
         "<h2>Flows by Packet Count</h2>",
+        "<h2>Flows by Duration</h2>",
+        "<h2>Flows by Data Size</h2>",
         "<h2>Detected Protocol Hints</h2>",
         "<h2>Capture Metrics</h2>",
         "<h2>Flow Characteristics</h2>",
+        "<h2>IP Fragmentation</h2>",
         "<h2>Direction Distribution</h2>",
         "<h2>TCP Flags</h2>",
         "<h2>QUIC and TLS</h2>",
@@ -1497,6 +1686,13 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(markdown, "| Input type | PCAP |"));
     PFL_EXPECT(contains_text(markdown, "| Capture path |"));
     PFL_EXPECT(contains_text(markdown, "| Capture file size |"));
+    PFL_EXPECT(contains_text(markdown, "| HTTP: use request path as service hint when Host is missing | No |"));
+    PFL_EXPECT(contains_text(markdown, "| Ignore VLAN and MPLS layers when grouping flows | No |"));
+    PFL_EXPECT(contains_text(markdown, "| Ignore GTP-U TEIDs when grouping inner flows | No |"));
+    PFL_EXPECT(contains_text(markdown, "| >0 - <1 ms |"));
+    PFL_EXPECT(contains_text(markdown, "| 0-255 B |"));
+    PFL_EXPECT(contains_text(markdown, "| Fragmented IP packets |"));
+    PFL_EXPECT(contains_text(markdown, "| IPv6 atomic fragments |"));
     PFL_EXPECT(!contains_text(markdown, "Source capture status"));
     PFL_EXPECT(!contains_text(markdown, "Input file size"));
     PFL_EXPECT(!contains_text(markdown, "Index file size"));
@@ -1527,6 +1723,10 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(contains_text(html, "<!doctype html>"));
     PFL_EXPECT(contains_text(html, "<h1>PcapFlowLab Statistics Report</h1>"));
     PFL_EXPECT(contains_text_in_order(html, html_section_order));
+    PFL_EXPECT(contains_text(html, "HTTP: use request path as service hint when Host is missing"));
+    PFL_EXPECT(contains_text(html, "&gt;0 - &lt;1 ms"));
+    PFL_EXPECT(contains_text(html, "0-255 B"));
+    PFL_EXPECT(contains_text(html, "IPv6 atomic fragments"));
     PFL_EXPECT(contains_text(html, "<th>Application</th><td>Pcap Flow Lab</td>"));
     PFL_EXPECT(contains_text(html, std::string {"<th>Version</th><td>"} + PFL_APP_VERSION + "</td>"));
     PFL_EXPECT(contains_text(html, "<th>Client</th><td>CLI</td>"));
@@ -2395,6 +2595,7 @@ void run_cli_summary_tests() {
     expect_protocol_path_preview_rendering();
     expect_protocol_path_summary_execution();
     expect_statistics_report_rendering_escaping_contracts();
+    expect_statistics_report_revision19_sections_render_in_markdown_and_html();
     expect_statistics_report_side_output_contracts();
     expect_settings_file_contracts();
     expect_index_output_contracts();

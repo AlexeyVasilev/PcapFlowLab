@@ -235,6 +235,8 @@ public:
     [[nodiscard]] CapturePacketSizeStatistics packet_size_statistics() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     [[nodiscard]] FlowPacketCountHistogram flow_packet_count_histogram() const;
+    [[nodiscard]] FlowDurationHistogram flow_duration_histogram() const;
+    [[nodiscard]] FlowOriginalByteSizeHistogram flow_original_byte_size_histogram() const;
     [[nodiscard]] CaptureFlowCharacteristicsStatistics flow_characteristics_statistics() const;
     [[nodiscard]] FlowDirectionDistributionStatistics packet_direction_distribution_statistics() const;
     [[nodiscard]] FlowDirectionDistributionStatistics original_byte_direction_distribution_statistics() const;

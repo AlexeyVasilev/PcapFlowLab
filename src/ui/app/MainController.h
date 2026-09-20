@@ -16,6 +16,7 @@
 #include <QVariantMap>
 
 #include "app/session/CaptureSession.h"
+#include "app/frontend/FrontendDtos.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "core/services/AnalysisSettings.h"
 #include "../../../core/open_progress.h"
@@ -54,6 +55,9 @@ public:
     enum class StatisticsOptionalSection {
         packet_size_distribution = 0,
         flow_packet_histogram,
+        flow_duration_histogram,
+        flow_original_byte_size_histogram,
+        ip_fragmentation,
         protocol_path,
         protocol_hints,
         quic_tls,
@@ -252,6 +256,18 @@ private:
     Q_PROPERTY(qulonglong flowPacketHistogramMaximumBucketFlowCount READ flowPacketHistogramMaximumBucketFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowPacketHistogramExcludedZeroPacketFlowCount READ flowPacketHistogramExcludedZeroPacketFlowCount NOTIFY stateChanged)
     Q_PROPERTY(QVariantList flowPacketHistogramRows READ flowPacketHistogramRows NOTIFY stateChanged)
+    Q_PROPERTY(int flowDurationHistogramState READ flowDurationHistogramState NOTIFY stateChanged)
+    Q_PROPERTY(QString flowDurationHistogramStatusText READ flowDurationHistogramStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QString flowDurationHistogramSummaryText READ flowDurationHistogramSummaryText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList flowDurationHistogramRows READ flowDurationHistogramRows NOTIFY stateChanged)
+    Q_PROPERTY(int flowOriginalByteSizeHistogramState READ flowOriginalByteSizeHistogramState NOTIFY stateChanged)
+    Q_PROPERTY(QString flowOriginalByteSizeHistogramStatusText READ flowOriginalByteSizeHistogramStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QString flowOriginalByteSizeHistogramSummaryText READ flowOriginalByteSizeHistogramSummaryText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList flowOriginalByteSizeHistogramRows READ flowOriginalByteSizeHistogramRows NOTIFY stateChanged)
+    Q_PROPERTY(int ipFragmentationStatisticsState READ ipFragmentationStatisticsState NOTIFY stateChanged)
+    Q_PROPERTY(QString ipFragmentationStatisticsStatusText READ ipFragmentationStatisticsStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QString ipFragmentationStatisticsHelpText READ ipFragmentationStatisticsHelpText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList ipFragmentationStatisticsRows READ ipFragmentationStatisticsRows NOTIFY stateChanged)
     Q_PROPERTY(int protocolHintsSectionState READ protocolHintsSectionState NOTIFY stateChanged)
     Q_PROPERTY(QString protocolHintsSectionStatusText READ protocolHintsSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList protocolHintDistribution READ protocolHintDistribution NOTIFY stateChanged)
@@ -547,6 +563,18 @@ public:
     [[nodiscard]] qulonglong flowPacketHistogramMaximumBucketFlowCount() const noexcept;
     [[nodiscard]] qulonglong flowPacketHistogramExcludedZeroPacketFlowCount() const noexcept;
     [[nodiscard]] QVariantList flowPacketHistogramRows() const;
+    [[nodiscard]] int flowDurationHistogramState() const noexcept;
+    [[nodiscard]] QString flowDurationHistogramStatusText() const;
+    [[nodiscard]] QString flowDurationHistogramSummaryText() const;
+    [[nodiscard]] QVariantList flowDurationHistogramRows() const;
+    [[nodiscard]] int flowOriginalByteSizeHistogramState() const noexcept;
+    [[nodiscard]] QString flowOriginalByteSizeHistogramStatusText() const;
+    [[nodiscard]] QString flowOriginalByteSizeHistogramSummaryText() const;
+    [[nodiscard]] QVariantList flowOriginalByteSizeHistogramRows() const;
+    [[nodiscard]] int ipFragmentationStatisticsState() const noexcept;
+    [[nodiscard]] QString ipFragmentationStatisticsStatusText() const;
+    [[nodiscard]] QString ipFragmentationStatisticsHelpText() const;
+    [[nodiscard]] QVariantList ipFragmentationStatisticsRows() const;
     [[nodiscard]] int protocolHintsSectionState() const noexcept;
     [[nodiscard]] QString protocolHintsSectionStatusText() const;
     [[nodiscard]] QVariantList protocolHintDistribution() const;
@@ -849,6 +877,9 @@ private:
     void maybeLoadExpandedStatisticsSections();
     void ensurePacketSizeDistributionLoaded();
     void ensureFlowPacketHistogramLoaded();
+    void ensureFlowDurationHistogramLoaded();
+    void ensureFlowOriginalByteSizeHistogramLoaded();
+    void ensureIpFragmentationStatisticsLoaded();
     void ensureProtocolHintsLoaded();
     void ensureProtocolPathSectionLoaded();
     void ensureQuicTlsSectionLoaded();
@@ -967,6 +998,12 @@ private:
     QVariantList packet_size_distribution_rows_ {};
     FlowPacketCountHistogram flow_packet_count_histogram_ {};
     QVariantList flow_packet_histogram_rows_ {};
+    FrontendFlowHistogramDto flow_duration_histogram_ {};
+    QVariantList flow_duration_histogram_rows_ {};
+    FrontendFlowHistogramDto flow_original_byte_size_histogram_ {};
+    QVariantList flow_original_byte_size_histogram_rows_ {};
+    FrontendIpFragmentationStatisticsDto ip_fragmentation_statistics_ {};
+    QVariantList ip_fragmentation_statistics_rows_ {};
     QVariantList protocol_hint_distribution_ {};
     QVariantMap capture_time_statistics_ {};
     QVariantMap capture_metrics_ {};
@@ -1004,6 +1041,9 @@ private:
     QString last_directory_path_ {};
     QString packet_size_distribution_error_text_ {};
     QString flow_packet_histogram_error_text_ {};
+    QString flow_duration_histogram_error_text_ {};
+    QString flow_original_byte_size_histogram_error_text_ {};
+    QString ip_fragmentation_statistics_error_text_ {};
     QString protocol_hints_error_text_ {};
     QString protocol_path_error_text_ {};
     QString quic_tls_error_text_ {};
@@ -1027,6 +1067,9 @@ private:
     bool status_is_error_ {false};
     bool packet_size_distribution_expanded_ {false};
     bool flow_packet_histogram_expanded_ {false};
+    bool flow_duration_histogram_expanded_ {false};
+    bool flow_original_byte_size_histogram_expanded_ {false};
+    bool ip_fragmentation_statistics_expanded_ {false};
     bool protocol_path_section_expanded_ {false};
     bool protocol_hints_section_expanded_ {false};
     bool quic_tls_section_expanded_ {false};
@@ -1062,6 +1105,9 @@ private:
     bool analysis_loading_ {false};
     StatisticsSectionRequestState packet_size_distribution_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState flow_packet_histogram_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState flow_duration_histogram_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState flow_original_byte_size_histogram_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState ip_fragmentation_statistics_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState protocol_hints_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState protocol_path_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState quic_tls_section_state_ {StatisticsSectionRequestState::not_requested};

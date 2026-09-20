@@ -253,6 +253,32 @@ FrontendStatisticsReportSection make_packet_size_distribution_section(
     return section;
 }
 
+FrontendStatisticsReportSection make_capture_import_settings_section(
+    const std::vector<FrontendCaptureImportSettingDto>& settings
+) {
+    FrontendStatisticsReportSection section {
+        .title = "Capture Import Settings",
+    };
+
+    std::vector<std::vector<std::string>> rows {};
+    rows.reserve(settings.size());
+    for (const auto& setting : settings) {
+        rows.push_back({
+            setting.display_name,
+            setting.display_value,
+        });
+    }
+    if (rows.empty()) {
+        add_note(section, "Unavailable");
+    }
+    section.tables.push_back(FrontendStatisticsReportTable {
+        .title = {},
+        .headers = {"Setting", "Value"},
+        .rows = std::move(rows),
+    });
+    return section;
+}
+
 FrontendStatisticsReportSection make_flow_packet_count_histogram_section(
     const FrontendFlowPacketCountHistogramDto& histogram
 ) {
@@ -279,6 +305,58 @@ FrontendStatisticsReportSection make_flow_packet_count_histogram_section(
     section.tables.push_back(FrontendStatisticsReportTable {
         .title = "Flow Packet Count Buckets",
         .headers = {"Packet Count", "Flows", "Captured Bytes", "Original Bytes"},
+        .rows = std::move(rows),
+    });
+    return section;
+}
+
+FrontendStatisticsReportSection make_flow_histogram_section(
+    std::string title,
+    std::string first_column_header,
+    std::string table_title,
+    const FrontendFlowHistogramDto& histogram
+) {
+    FrontendStatisticsReportSection section {
+        .title = std::move(title),
+    };
+
+    std::vector<std::vector<std::string>> rows {};
+    rows.reserve(histogram.buckets.size());
+    for (const auto& bucket : histogram.buckets) {
+        rows.push_back({
+            bucket.label,
+            bucket.flow_count_with_total_percent_text,
+            bucket.captured_byte_count_with_total_percent_text,
+            bucket.original_byte_count_with_total_percent_text,
+        });
+    }
+    section.tables.push_back(FrontendStatisticsReportTable {
+        .title = std::move(table_title),
+        .headers = {std::move(first_column_header), "Flows", "Captured Bytes", "Original Bytes"},
+        .rows = std::move(rows),
+    });
+    return section;
+}
+
+FrontendStatisticsReportSection make_ip_fragmentation_section(
+    const FrontendIpFragmentationStatisticsDto& statistics
+) {
+    FrontendStatisticsReportSection section {
+        .title = "IP Fragmentation",
+    };
+    add_note(section, statistics.help_text);
+
+    std::vector<std::vector<std::string>> rows {};
+    rows.reserve(statistics.rows.size());
+    for (const auto& row : statistics.rows) {
+        rows.push_back({
+            row.label,
+            row.count_with_percent_text,
+        });
+    }
+    section.tables.push_back(FrontendStatisticsReportTable {
+        .title = {},
+        .headers = {"Metric", "Count"},
         .rows = std::move(rows),
     });
     return section;
@@ -600,7 +678,7 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
     FrontendStatisticsReportData report {
         .title = "PcapFlowLab Statistics Report",
     };
-    report.sections.reserve(18U);
+    report.sections.reserve(22U);
 
     {
         const auto& metadata = input.metadata;
@@ -619,6 +697,7 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
     }
 
     report.sections.push_back(make_input_section(overview.input_metadata));
+    report.sections.push_back(make_capture_import_settings_section(input.capture_import_settings));
 
     {
         FrontendStatisticsReportSection section {
@@ -670,6 +749,18 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
 
     report.sections.push_back(make_packet_size_distribution_section(input.packet_size_statistics));
     report.sections.push_back(make_flow_packet_count_histogram_section(input.flow_packet_count_histogram));
+    report.sections.push_back(make_flow_histogram_section(
+        "Flows by Duration",
+        "Duration",
+        "Flow Duration Buckets",
+        input.flow_duration_histogram
+    ));
+    report.sections.push_back(make_flow_histogram_section(
+        "Flows by Data Size",
+        "Original Flow Size",
+        "Flow Data Size Buckets (Original Bytes)",
+        input.flow_original_byte_size_histogram
+    ));
     report.sections.push_back(make_protocol_hints_section(input.protocol_hint_statistics));
 
     {
@@ -699,6 +790,7 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
         add_field(section, "Service recognized", characteristics.service_recognized_flows_text);
         report.sections.push_back(std::move(section));
     }
+    report.sections.push_back(make_ip_fragmentation_section(input.ip_fragmentation_statistics));
 
     report.sections.push_back(make_direction_distribution_section(
         overview.packet_direction_distribution,

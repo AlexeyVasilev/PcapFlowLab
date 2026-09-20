@@ -3256,6 +3256,22 @@ FlowPacketCountHistogram CaptureSession::flow_packet_count_histogram() const {
     return general_statistics().flow_packet_count_histogram;
 }
 
+FlowDurationHistogram CaptureSession::flow_duration_histogram() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().flow_duration_histogram;
+}
+
+FlowOriginalByteSizeHistogram CaptureSession::flow_original_byte_size_histogram() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().flow_original_byte_size_histogram;
+}
+
 CaptureFlowCharacteristicsStatistics CaptureSession::flow_characteristics_statistics() const {
     if (!has_capture()) {
         return {};

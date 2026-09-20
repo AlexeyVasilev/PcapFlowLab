@@ -432,8 +432,8 @@ Revision 18 remains rebuild-required for full payload load.
 
 ## Report Contract
 
-Statistics reports should add new sections without duplicating calculation
-logic in individual frontends.
+The shared HTML/Markdown Statistics report implements these sections without
+duplicating calculation logic in individual frontends.
 
 Recommended report order:
 
@@ -467,6 +467,10 @@ Known bool values render as `Yes` / `No`. Unknown future entries render stored
 ## UI Contract
 
 Qt and Tauri must consume shared C++ Statistics data.
+
+The shared report/presentation projection for revision 19 is implemented.
+Final live Qt/Tauri Statistics view exposure for these sections remains a
+separate rollout step.
 
 Do not recompute histogram assignment or fragmentation counters in QML or
 JavaScript.

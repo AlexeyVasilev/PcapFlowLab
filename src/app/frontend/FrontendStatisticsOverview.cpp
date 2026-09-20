@@ -92,6 +92,96 @@ std::string group_integer_part(std::string text) {
     return integer_part + fraction;
 }
 
+std::uint64_t checked_add_or_max(const std::uint64_t left, const std::uint64_t right) noexcept {
+    return right > std::numeric_limits<std::uint64_t>::max() - left
+        ? std::numeric_limits<std::uint64_t>::max()
+        : left + right;
+}
+
+bool is_known_bool_capture_import_setting(const std::string_view stable_key) noexcept {
+    return stable_key == kCaptureImportSettingHttpUsePathAsServiceHint ||
+        stable_key == kCaptureImportSettingIgnoreVlanAndMplsLayersWhenGroupingFlows ||
+        stable_key == kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows;
+}
+
+std::string display_capture_import_setting_value(const CaptureImportSettingRecord& record) {
+    if (!is_known_bool_capture_import_setting(record.stable_key)) {
+        return record.value_text;
+    }
+    if (record.value_text == "true") {
+        return "Yes";
+    }
+    if (record.value_text == "false") {
+        return "No";
+    }
+    return record.value_text;
+}
+
+std::string flow_duration_histogram_label(const std::string_view stable_id) {
+    if (stable_id == "duration_zero") {
+        return "0";
+    }
+    if (stable_id == "duration_gt0_lt1ms") {
+        return ">0 - <1 ms";
+    }
+    if (stable_id == "duration_1_10ms") {
+        return "1-10 ms";
+    }
+    if (stable_id == "duration_10_100ms") {
+        return "10-100 ms";
+    }
+    if (stable_id == "duration_100ms_1s") {
+        return "100 ms-1 s";
+    }
+    if (stable_id == "duration_1_10s") {
+        return "1-10 s";
+    }
+    if (stable_id == "duration_10_60s") {
+        return "10-60 s";
+    }
+    if (stable_id == "duration_1_10min") {
+        return "1-10 min";
+    }
+    if (stable_id == "duration_10min_plus") {
+        return "10 min+";
+    }
+    return std::string {stable_id};
+}
+
+std::string flow_original_byte_size_histogram_label(const std::string_view stable_id) {
+    if (stable_id == "original_bytes_0_255") {
+        return "0-255 B";
+    }
+    if (stable_id == "original_bytes_256_1023") {
+        return "256-1023 B";
+    }
+    if (stable_id == "original_bytes_1_4kib") {
+        return "1-4 KiB";
+    }
+    if (stable_id == "original_bytes_4_16kib") {
+        return "4-16 KiB";
+    }
+    if (stable_id == "original_bytes_16_64kib") {
+        return "16-64 KiB";
+    }
+    if (stable_id == "original_bytes_64_256kib") {
+        return "64-256 KiB";
+    }
+    if (stable_id == "original_bytes_256kib_1mib") {
+        return "256 KiB-1 MiB";
+    }
+    if (stable_id == "original_bytes_1_10mib") {
+        return "1-10 MiB";
+    }
+    if (stable_id == "original_bytes_10_100mib") {
+        return "10-100 MiB";
+    }
+    if (stable_id == "original_bytes_100mib_plus") {
+        return "100 MiB+";
+    }
+    return std::string {stable_id};
+}
+
 double clamp_unit_fraction(double value) noexcept {
     if (!std::isfinite(value)) {
         return 0.0;
@@ -531,8 +621,13 @@ FrontendFlowCharacteristicsDto build_frontend_flow_characteristics(
     dto.total_flow_count = flow_characteristics.total_flow_count;
     dto.only_a_to_b_flow_count = flow_characteristics.only_a_to_b_flow_count;
     dto.service_recognized_flow_count = flow_characteristics.service_recognized_flow_count;
+    dto.flows_containing_fragments_count = flow_characteristics.flows_containing_fragments_count;
     dto.only_a_to_b_flow_fraction = safe_fraction(dto.only_a_to_b_flow_count, dto.total_flow_count);
     dto.service_recognized_flow_fraction = safe_fraction(dto.service_recognized_flow_count, dto.total_flow_count);
+    dto.flows_containing_fragments_fraction = safe_fraction(
+        dto.flows_containing_fragments_count,
+        dto.total_flow_count
+    );
     dto.only_a_to_b_flows_text = session_detail::format_statistics_count_with_percent_text(
         dto.only_a_to_b_flow_count,
         percent_from_fraction(dto.only_a_to_b_flow_fraction)
@@ -540,6 +635,10 @@ FrontendFlowCharacteristicsDto build_frontend_flow_characteristics(
     dto.service_recognized_flows_text = session_detail::format_statistics_count_with_percent_text(
         dto.service_recognized_flow_count,
         percent_from_fraction(dto.service_recognized_flow_fraction)
+    );
+    dto.flows_containing_fragments_text = session_detail::format_statistics_count_with_percent_text(
+        dto.flows_containing_fragments_count,
+        percent_from_fraction(dto.flows_containing_fragments_fraction)
     );
     return dto;
 }
@@ -747,6 +846,146 @@ FrontendFlowPacketCountHistogramDto build_frontend_flow_packet_count_histogram(
     }
 
     return dto;
+}
+
+template <typename Histogram, typename LabelForBucket>
+FrontendFlowHistogramDto build_frontend_flow_histogram(
+    const Histogram& histogram,
+    LabelForBucket label_for_bucket
+) {
+    FrontendFlowHistogramDto dto {};
+    dto.has_capture = true;
+    dto.total_flow_count = histogram.total_flow_count;
+    dto.total_captured_byte_count = histogram.total_captured_byte_count;
+    dto.total_original_byte_count = histogram.total_original_byte_count;
+    dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
+    dto.maximum_bucket_captured_byte_count = histogram.maximum_bucket_captured_byte_count;
+    dto.maximum_bucket_original_byte_count = histogram.maximum_bucket_original_byte_count;
+    dto.buckets.reserve(histogram.buckets.size());
+
+    for (const auto& bucket : histogram.buckets) {
+        dto.buckets.push_back(FrontendFlowHistogramBucketDto {
+            .bucket_id = bucket.stable_id,
+            .label = label_for_bucket(bucket.stable_id),
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .flow_count = bucket.flow_count,
+            .flow_count_with_total_percent_text = session_detail::format_statistics_count_with_percent_text(
+                bucket.flow_count,
+                safe_percent(bucket.flow_count, histogram.total_flow_count)
+            ),
+            .captured_byte_count = bucket.captured_byte_count,
+            .captured_byte_count_text = session_detail::format_statistics_size_value(bucket.captured_byte_count),
+            .captured_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.captured_byte_count,
+                safe_percent(bucket.captured_byte_count, histogram.total_captured_byte_count)
+            ),
+            .original_byte_count = bucket.original_byte_count,
+            .original_byte_count_text = session_detail::format_statistics_size_value(bucket.original_byte_count),
+            .original_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.original_byte_count,
+                safe_percent(bucket.original_byte_count, histogram.total_original_byte_count)
+            ),
+            .total_flow_fraction = safe_fraction(bucket.flow_count, histogram.total_flow_count),
+            .total_captured_byte_fraction = safe_fraction(
+                bucket.captured_byte_count,
+                histogram.total_captured_byte_count
+            ),
+            .total_original_byte_fraction = safe_fraction(
+                bucket.original_byte_count,
+                histogram.total_original_byte_count
+            ),
+            .normalized_flow_fraction = safe_fraction(bucket.flow_count, histogram.maximum_bucket_flow_count),
+            .normalized_captured_byte_fraction = safe_fraction(
+                bucket.captured_byte_count,
+                histogram.maximum_bucket_captured_byte_count
+            ),
+            .normalized_original_byte_fraction = safe_fraction(
+                bucket.original_byte_count,
+                histogram.maximum_bucket_original_byte_count
+            ),
+        });
+    }
+
+    return dto;
+}
+
+FrontendFlowHistogramDto build_frontend_flow_duration_histogram(
+    const FlowDurationHistogram& histogram
+) {
+    return build_frontend_flow_histogram(histogram, flow_duration_histogram_label);
+}
+
+FrontendFlowHistogramDto build_frontend_flow_original_byte_size_histogram(
+    const FlowOriginalByteSizeHistogram& histogram
+) {
+    return build_frontend_flow_histogram(histogram, flow_original_byte_size_histogram_label);
+}
+
+FrontendIpFragmentationStatisticsDto build_frontend_ip_fragmentation_statistics(
+    const CaptureIpFragmentationStatistics& statistics,
+    const std::uint64_t total_flow_count,
+    const std::uint64_t flows_containing_fragments_count
+) {
+    const auto effective_ip_packet_count = checked_add_or_max(
+        statistics.effective_ipv4_packet_count,
+        statistics.effective_ipv6_packet_count
+    );
+    const auto fragmented_ip_packet_count = checked_add_or_max(
+        statistics.ipv4_fragmented_packet_count,
+        statistics.ipv6_fragmented_packet_count
+    );
+
+    auto make_row = [](
+        std::string stable_id,
+        std::string label,
+        const std::uint64_t count,
+        const std::uint64_t denominator
+    ) {
+        return FrontendIpFragmentationStatisticsRowDto {
+            .stable_id = std::move(stable_id),
+            .label = std::move(label),
+            .count = count,
+            .fraction = safe_fraction(count, denominator),
+            .count_with_percent_text = session_detail::format_statistics_count_with_percent_text(
+                count,
+                safe_percent(count, denominator)
+            ),
+        };
+    };
+
+    FrontendIpFragmentationStatisticsDto dto {};
+    dto.has_capture = true;
+    dto.effective_ip_packet_count = effective_ip_packet_count;
+    dto.fragmented_ip_packet_count = fragmented_ip_packet_count;
+    dto.total_flow_count = total_flow_count;
+    dto.help_text =
+        "Fragmented packet percentages use effective IP/family totals; initial and non-initial percentages use all fragmented IP packets; flow percentage uses all Flows.";
+    dto.rows = {
+        make_row("fragmented_ip_packets", "Fragmented IP packets", fragmented_ip_packet_count, effective_ip_packet_count),
+        make_row("ipv4_fragmented_packets", "IPv4 fragmented packets", statistics.ipv4_fragmented_packet_count, statistics.effective_ipv4_packet_count),
+        make_row("ipv6_fragmented_packets", "IPv6 fragmented packets", statistics.ipv6_fragmented_packet_count, statistics.effective_ipv6_packet_count),
+        make_row("initial_fragments", "Initial fragments", statistics.initial_fragment_packet_count, fragmented_ip_packet_count),
+        make_row("non_initial_fragments", "Non-initial fragments", statistics.non_initial_fragment_packet_count, fragmented_ip_packet_count),
+        make_row("ipv6_atomic_fragments", "IPv6 atomic fragments", statistics.ipv6_atomic_fragment_packet_count, statistics.effective_ipv6_packet_count),
+        make_row("flows_containing_fragments", "Flows containing fragments", flows_containing_fragments_count, total_flow_count),
+    };
+    return dto;
+}
+
+std::vector<FrontendCaptureImportSettingDto> build_frontend_capture_import_settings(
+    const CaptureImportSettingsSnapshot& snapshot
+) {
+    std::vector<FrontendCaptureImportSettingDto> rows {};
+    rows.reserve(snapshot.records.size());
+    for (const auto& record : snapshot.records) {
+        rows.push_back(FrontendCaptureImportSettingDto {
+            .stable_key = record.stable_key,
+            .display_name = record.display_name,
+            .display_value = display_capture_import_setting_value(record),
+        });
+    }
+    return rows;
 }
 
 FrontendProtocolHintStatisticsDto build_frontend_protocol_hint_statistics(

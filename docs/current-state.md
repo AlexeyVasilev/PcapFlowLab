@@ -156,8 +156,13 @@ Statistics is whole-capture / whole-index oriented.
 
 The current product exposes whole-session overview data plus structured
 whole-capture statistics such as transport/family summaries, packet-size
-distribution, flow-count histograms, protocol-path trees, detected-protocol
-hints, QUIC/TLS summary views, and top endpoint/port summaries.
+distribution, flow-count/duration/original-size histograms, IP fragmentation,
+protocol-path trees, detected-protocol hints, QUIC/TLS summary views, and top
+endpoint/port summaries.
+
+The shared HTML/Markdown Statistics report and CLI extended output also present
+revision-19 capture import settings provenance. That provenance section is not
+currently a live Qt/Tauri Statistics workspace section.
 
 Optional heavier Statistics sections are loaded lazily and reuse cached results
 for the current session.

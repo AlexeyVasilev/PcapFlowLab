@@ -232,6 +232,34 @@ Packets / Flow     Flows  Original Bytes
 ```
 
 ```text
+Flows by Duration
+
+Duration     Flows  Captured Bytes  Original Bytes
+0            12 (21%)    8 KB (1%)       8 KB (1%)
+1-10 ms       4 (7%)    12 KB (2%)      12 KB (2%)
+...
+```
+
+```text
+Flows by Data Size
+
+Original Flow Size     Flows  Captured Bytes  Original Bytes
+0-255 B              20 (34%)    5 KB (1%)       5 KB (1%)
+1-4 KiB               8 (14%)   24 KB (4%)      24 KB (4%)
+...
+```
+
+```text
+IP Fragmentation
+
+Metric                         Count
+Fragmented IP packets          3 (0.19%)
+Initial fragments              2 (67%)
+Non-initial fragments          1 (33%)
+Flows containing fragments      1 (2%)
+```
+
+```text
 Detected Protocol Hints
 
 Protocol Hint      Flows     Packets  Captured Bytes  Original Bytes
@@ -271,6 +299,11 @@ These sections help you notice different kinds of structure:
   packets and some much larger packet-size buckets.
 - `Flows by Packet Count` shows that many flows are one-packet flows, while a
   small number of larger flows contribute most of the bytes.
+- `Flows by Duration` and `Flows by Data Size` show where flow count and byte
+  volume concentrate across time-span and original-size buckets.
+- `IP Fragmentation` shows capture-wide fragmentation counts. Fragmented packet
+  percentages use effective IP/family totals; initial and non-initial
+  percentages use all fragmented IP packets; flow percentage uses all Flows.
 - `Detected Protocol Hints` shows that TLS is a major detected-protocol
   component in this showcase.
 - `Top Endpoints` and `Top Ports` quickly show the most active participants and
