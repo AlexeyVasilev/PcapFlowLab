@@ -1451,6 +1451,78 @@ void expect_capture_ip_fragmentation_statistics_treat_ipv6_atomic_as_non_real_fr
     expect_capture_packet_statistics_invariants(state.packet_statistics);
 }
 
+void expect_capture_ip_fragmentation_statistics_count_only_actual_ip_headers() {
+    {
+        const auto path = write_temp_capture_file(
+            "pfl_statistics_arp_ipv4_addresses_not_effective_ipv4.pcap",
+            make_classic_pcap({{100U, make_ethernet_arp_packet(ipv4(10, 72, 0, 2), ipv4(10, 72, 0, 1), 1U)}})
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto arp_key = std::get<ConnectionKeyV4>(rows.front().key);
+        PFL_EXPECT(arp_key.protocol == ProtocolId::arp);
+
+        const auto& statistics = session.packet_statistics().ip_fragmentation;
+        PFL_EXPECT(statistics.effective_ipv4_packet_count == 0U);
+        PFL_EXPECT(statistics.effective_ipv6_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv4_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.non_initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_atomic_fragment_packet_count == 0U);
+        expect_capture_packet_statistics_invariants(session.packet_statistics());
+    }
+
+    {
+        const auto path = write_temp_capture_file(
+            "pfl_statistics_non_fragmented_ipv4_effective_ipv4.pcap",
+            make_classic_pcap({{100U, make_ethernet_ipv4_udp_packet(ipv4(10, 72, 1, 1), ipv4(10, 72, 1, 2), 53001, 53)}})
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+
+        const auto& statistics = session.packet_statistics().ip_fragmentation;
+        PFL_EXPECT(statistics.effective_ipv4_packet_count == 1U);
+        PFL_EXPECT(statistics.effective_ipv6_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv4_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.non_initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_atomic_fragment_packet_count == 0U);
+        expect_capture_packet_statistics_invariants(session.packet_statistics());
+    }
+
+    {
+        const auto path = write_temp_capture_file(
+            "pfl_statistics_non_fragmented_ipv6_effective_ipv6.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv6_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                    17U,
+                    make_ipv6_udp_segment(53002U, 53U)
+                )
+            }})
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+
+        const auto& statistics = session.packet_statistics().ip_fragmentation;
+        PFL_EXPECT(statistics.effective_ipv4_packet_count == 0U);
+        PFL_EXPECT(statistics.effective_ipv6_packet_count == 1U);
+        PFL_EXPECT(statistics.ipv4_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_fragmented_packet_count == 0U);
+        PFL_EXPECT(statistics.initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.non_initial_fragment_packet_count == 0U);
+        PFL_EXPECT(statistics.ipv6_atomic_fragment_packet_count == 0U);
+        expect_capture_packet_statistics_invariants(session.packet_statistics());
+    }
+}
+
 void expect_connection_fragmentation_counts_only_real_fragments() {
     ConnectionV6 connection {};
     const FlowKeyV6 key {
@@ -3860,6 +3932,7 @@ void run_statistics_section_tests() {
     expect_capture_ip_fragmentation_statistics_count_final_unrecognized_packet_once();
     expect_capture_ip_fragmentation_statistics_use_effective_nested_classification();
     expect_capture_ip_fragmentation_statistics_treat_ipv6_atomic_as_non_real_fragment();
+    expect_capture_ip_fragmentation_statistics_count_only_actual_ip_headers();
     expect_connection_fragmentation_counts_only_real_fragments();
     expect_revision_19_statistics_survive_session_index_roundtrip();
     expect_capture_packet_statistics_track_single_recognized_packet();

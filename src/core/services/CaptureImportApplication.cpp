@@ -123,8 +123,8 @@ void observe_final_import_result_ip_statistics(
 ) noexcept {
     observe_effective_ip_fragmentation_statistics(
         statistics.ip_fragmentation,
-        facts.family == dissection::DissectionAddressFamily::ipv4,
-        facts.family == dissection::DissectionAddressFamily::ipv6,
+        facts.family == dissection::DissectionAddressFamily::ipv4 && facts.has_ipv4_fragmentation,
+        facts.family == dissection::DissectionAddressFamily::ipv6 && facts.has_ipv6_fragmentation,
         effective_ip_fragmentation_kind(facts)
     );
 }
