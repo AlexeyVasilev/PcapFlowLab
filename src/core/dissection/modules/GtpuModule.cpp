@@ -52,7 +52,7 @@ DissectionStep make_gtpu_fallback_step(const PacketSlice& slice, const ParseStat
             std::min<std::size_t>(detail::kGtpuBaseHeaderSize, direct::slice_declared_length(slice))
         ),
         .facts = std::monostate {},
-        .terminal_disposition = TerminalDisposition::none,
+        .terminal_disposition = TerminalDisposition::flow_candidate,
         .status = status,
         .stop_reason = StopReason::terminal_protocol,
     };

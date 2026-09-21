@@ -24,43 +24,6 @@ struct FixturePacketExpectation {
     std::optional<StopReason> expected_stop_reason {};
 };
 
-constexpr std::array<std::string_view, 34> kGeneveFixtures {{
-    "parsing/geneve/01_geneve_inner_ipv4_tcp.pcap",
-    "parsing/geneve/02_geneve_inner_ipv4_udp.pcap",
-    "parsing/geneve/03_geneve_inner_ipv6_tcp.pcap",
-    "parsing/geneve/04_geneve_inner_ipv6_udp.pcap",
-    "parsing/geneve/05_geneve_truncated_base_header.pcap",
-    "parsing/geneve/06_geneve_invalid_version.pcap",
-    "parsing/geneve/07_geneve_options_length_truncated.pcap",
-    "parsing/geneve/08_geneve_truncated_inner_ethernet.pcap",
-    "parsing/geneve/09_geneve_truncated_inner_ipv4.pcap",
-    "parsing/geneve/10_geneve_unsupported_protocol_type.pcap",
-    "parsing/geneve/11_geneve_inner_ipv4_tcp_bidirectional.pcap",
-    "parsing/geneve/12_geneve_same_outer_tuple_different_inner_flows.pcap",
-    "parsing/geneve/13_geneve_inner_vlan_ipv4_tcp.pcap",
-    "parsing/geneve/14_geneve_outer_ipv6_inner_ipv4_tcp.pcap",
-    "parsing/geneve/15_geneve_wrong_udp_port_valid_geneve_payload.pcap",
-    "parsing/geneve/16_geneve_vni_boundary_values.pcap",
-    "parsing/geneve/17_geneve_with_options_inner_ipv4_tcp.pcap",
-    "parsing/geneve/18_geneve_udp_port_direction_matrix.pcap",
-    "parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap",
-    "parsing/geneve/20_geneve_outer_tagged_contexts.pcap",
-    "parsing/geneve/21_geneve_identity_outer_carrier_variation_same_flow.pcap",
-    "parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap",
-    "parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap",
-    "parsing/geneve/24_geneve_outer_ipv6_fragmentation.pcap",
-    "parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap",
-    "parsing/geneve/26_geneve_inner_supported_and_visible_matrix.pcap",
-    "parsing/geneve/27_geneve_unsupported_and_nested_matrix.pcap",
-    "parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap",
-    "parsing/geneve/29_geneve_capture_truncation_matrix.pcap",
-    "parsing/geneve/30_geneve_vni_byte_order_distinct_values.pcap",
-    "parsing/geneve/31_geneve_linux_cooked_contexts.pcap",
-    "parsing/geneve/32_geneve_linux_cooked_v2_contexts.pcap",
-    "parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap",
-    "parsing/geneve/34_geneve_nested_gtpu_no_recursion.pcap",
-}};
-
 std::vector<std::uint8_t> make_geneve_bytes(
     const std::uint32_t vni,
     const std::vector<std::uint8_t>& inner_frame,
@@ -423,14 +386,87 @@ void expect_geneve_fixture_packet_contract() {
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
 
-    for (const auto fixture : kGeneveFixtures) {
-        const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
-        for (std::size_t packet_index = 0U; packet_index < packets.size(); ++packet_index) {
-            expect_packet_shadow_contract(registry, FixturePacketExpectation {
-                .fixture = fixture,
-                .packet_index = packet_index,
-            });
-        }
+    constexpr std::string_view ipv4_tcp = "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP";
+    constexpr std::string_view ipv4_udp = "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> UDP";
+    constexpr std::string_view ipv6_tcp = "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv6 -> TCP";
+    constexpr std::string_view ipv6_udp = "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv6 -> UDP";
+    constexpr std::string_view outer_udp = "EthernetII -> IPv4 -> UDP";
+
+    const std::array expectations {
+        FixturePacketExpectation {"parsing/geneve/01_geneve_inner_ipv4_tcp.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/02_geneve_inner_ipv4_udp.pcap", 0U, ipv4_udp},
+        FixturePacketExpectation {"parsing/geneve/03_geneve_inner_ipv6_tcp.pcap", 0U, ipv6_tcp},
+        FixturePacketExpectation {"parsing/geneve/04_geneve_inner_ipv6_udp.pcap", 0U, ipv6_udp},
+        FixturePacketExpectation {"parsing/geneve/05_geneve_truncated_base_header.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/06_geneve_invalid_version.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/07_geneve_options_length_truncated.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/08_geneve_truncated_inner_ethernet.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/09_geneve_truncated_inner_ipv4.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/10_geneve_unsupported_protocol_type.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/11_geneve_inner_ipv4_tcp_bidirectional.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/11_geneve_inner_ipv4_tcp_bidirectional.pcap", 1U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/12_geneve_same_outer_tuple_different_inner_flows.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/12_geneve_same_outer_tuple_different_inner_flows.pcap", 1U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/13_geneve_inner_vlan_ipv4_tcp.pcap", 0U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> VLAN(vid=150) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/14_geneve_outer_ipv6_inner_ipv4_tcp.pcap", 0U, "EthernetII -> IPv6 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/15_geneve_wrong_udp_port_valid_geneve_payload.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/16_geneve_vni_boundary_values.pcap", 0U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=0) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/16_geneve_vni_boundary_values.pcap", 1U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=16777215) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/17_geneve_with_options_inner_ipv4_tcp.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/18_geneve_udp_port_direction_matrix.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/18_geneve_udp_port_direction_matrix.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/18_geneve_udp_port_direction_matrix.pcap", 2U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=101) -> EthernetII -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap", 1U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=200) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/20_geneve_outer_tagged_contexts.pcap", 0U, "EthernetII -> VLAN(vid=297) -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/20_geneve_outer_tagged_contexts.pcap", 1U, "EthernetII -> VLAN(vid=551) -> VLAN(vid=552) -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv6 -> UDP"},
+        FixturePacketExpectation {"parsing/geneve/20_geneve_outer_tagged_contexts.pcap", 2U, "EthernetII -> VLAN(vid=413) -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/geneve/21_geneve_identity_outer_carrier_variation_same_flow.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/21_geneve_identity_outer_carrier_variation_same_flow.pcap", 1U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap", 1U, "EthernetII -> VLAN(vid=201) -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/22_geneve_identity_outer_and_inner_vlan_splits.pcap", 2U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> VLAN(vid=150) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap", 0U, "EthernetII -> IPv4", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap", 1U, "EthernetII -> IPv4", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/23_geneve_outer_ipv4_fragmentation.pcap", 2U, "EthernetII -> IPv4", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/24_geneve_outer_ipv6_fragmentation.pcap", 0U, "EthernetII -> IPv6", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/24_geneve_outer_ipv6_fragmentation.pcap", 1U, "EthernetII -> IPv6", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/24_geneve_outer_ipv6_fragmentation.pcap", 2U, "EthernetII -> IPv6", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap", 0U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap", 1U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap", 2U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap", 3U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/25_geneve_option_and_flag_tolerance_matrix.pcap", 4U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/26_geneve_inner_supported_and_visible_matrix.pcap", 0U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> VLAN(vid=150) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/26_geneve_inner_supported_and_visible_matrix.pcap", 1U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/geneve/26_geneve_inner_supported_and_visible_matrix.pcap", 2U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/27_geneve_unsupported_and_nested_matrix.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/27_geneve_unsupported_and_nested_matrix.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/27_geneve_unsupported_and_nested_matrix.pcap", 2U, ipv4_udp},
+        FixturePacketExpectation {"parsing/geneve/27_geneve_unsupported_and_nested_matrix.pcap", 3U, ipv4_udp},
+        FixturePacketExpectation {"parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap", 2U, std::nullopt, StopReason::malformed},
+        FixturePacketExpectation {"parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap", 3U, ipv4_tcp},
+        FixturePacketExpectation {"parsing/geneve/29_geneve_capture_truncation_matrix.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/29_geneve_capture_truncation_matrix.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/29_geneve_capture_truncation_matrix.pcap", 2U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/29_geneve_capture_truncation_matrix.pcap", 3U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/30_geneve_vni_byte_order_distinct_values.pcap", 0U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=66051) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/30_geneve_vni_byte_order_distinct_values.pcap", 1U, "EthernetII -> IPv4 -> UDP -> Geneve(vni=197121) -> EthernetII -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/31_geneve_linux_cooked_contexts.pcap", 0U, "LinuxSll -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/geneve/32_geneve_linux_cooked_v2_contexts.pcap", 0U, "LinuxSll2 -> IPv6 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv6 -> TCP"},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 2U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 3U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 4U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/33_geneve_inner_unsupported_ethernet_payloads.pcap", 5U, outer_udp},
+        FixturePacketExpectation {"parsing/geneve/34_geneve_nested_gtpu_no_recursion.pcap", 0U, ipv4_udp},
+    };
+
+    for (const auto& expectation : expectations) {
+        expect_packet_shadow_contract(registry, expectation);
     }
 }
 

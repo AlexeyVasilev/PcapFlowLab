@@ -24,40 +24,6 @@ struct FixturePacketExpectation {
     std::optional<StopReason> expected_stop_reason {};
 };
 
-constexpr std::array<std::string_view, 31> kGtpuFixtures {{
-    "parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/02_gtpu_inner_ipv4_udp.pcap",
-    "parsing/gtpu/03_gtpu_inner_ipv6_tcp.pcap",
-    "parsing/gtpu/04_gtpu_inner_ipv6_udp.pcap",
-    "parsing/gtpu/05_gtpu_truncated_base_header.pcap",
-    "parsing/gtpu/06_gtpu_invalid_version.pcap",
-    "parsing/gtpu/07_gtpu_unsupported_message_type.pcap",
-    "parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap",
-    "parsing/gtpu/09_gtpu_truncated_inner_ipv6.pcap",
-    "parsing/gtpu/10_gtpu_unknown_inner_payload.pcap",
-    "parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap",
-    "parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap",
-    "parsing/gtpu/13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap",
-    "parsing/gtpu/15_gtpu_teid_boundary_values.pcap",
-    "parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/17_gtpu_with_npdu_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/18_gtpu_with_extension_header_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/19_gtpu_truncated_optional_header.pcap",
-    "parsing/gtpu/20_gtpu_truncated_extension_header.pcap",
-    "parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap",
-    "parsing/gtpu/22_gtpu_udp_port_direction_matrix.pcap",
-    "parsing/gtpu/23_gtpu_control_message_matrix.pcap",
-    "parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap",
-    "parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap",
-    "parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap",
-    "parsing/gtpu/27_gtpu_linux_sll_inner_ipv4_udp.pcap",
-    "parsing/gtpu/28_gtpu_linux_sll2_inner_ipv6_tcp.pcap",
-    "parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap",
-    "parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap",
-    "parsing/gtpu/31_gtpu_outer_ipv6_fragmentation.pcap",
-}};
-
 constexpr std::array<FixturePacketExpectation, 10> kSelectedExpectations {{
     {"parsing/gtpu/05_gtpu_truncated_base_header.pcap", 0U, "EthernetII -> IPv4 -> UDP", StopReason::terminal_protocol},
     {"parsing/gtpu/06_gtpu_invalid_version.pcap", 0U, "EthernetII -> IPv4 -> UDP", StopReason::terminal_protocol},
@@ -359,17 +325,69 @@ void expect_all_gtpu_fixture_packets_shadow_contract() {
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
 
-    for (const auto fixture : kGtpuFixtures) {
-        const auto packets = require_raw_fixture_packets(std::filesystem::path {std::string(fixture)});
-        for (std::size_t packet_index = 0U; packet_index < packets.size(); ++packet_index) {
-            expect_packet_shadow_contract(
-                registry,
-                FixturePacketExpectation {
-                    .fixture = fixture,
-                    .packet_index = packet_index,
-                }
-            );
-        }
+    constexpr std::string_view teid_default_tcp =
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP";
+    constexpr std::string_view teid_default_udp =
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> UDP";
+    constexpr std::string_view outer_udp = "EthernetII -> IPv4 -> UDP";
+
+    const std::array expectations {
+        FixturePacketExpectation {"parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/02_gtpu_inner_ipv4_udp.pcap", 0U, teid_default_udp},
+        FixturePacketExpectation {"parsing/gtpu/03_gtpu_inner_ipv6_tcp.pcap", 0U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv6 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/04_gtpu_inner_ipv6_udp.pcap", 0U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv6 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/05_gtpu_truncated_base_header.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/06_gtpu_invalid_version.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/07_gtpu_unsupported_message_type.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/09_gtpu_truncated_inner_ipv6.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/10_gtpu_unknown_inner_payload.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap", 1U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap", 1U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap", 0U, "EthernetII -> IPv6 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/15_gtpu_teid_boundary_values.pcap", 0U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x00000000) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/15_gtpu_teid_boundary_values.pcap", 1U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0xffffffff) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/17_gtpu_with_npdu_inner_ipv4_tcp.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/18_gtpu_with_extension_header_inner_ipv4_tcp.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/19_gtpu_truncated_optional_header.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/20_gtpu_truncated_extension_header.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap", 0U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap", 1U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/22_gtpu_udp_port_direction_matrix.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/22_gtpu_udp_port_direction_matrix.pcap", 1U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 1U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 2U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 3U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 4U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/23_gtpu_control_message_matrix.pcap", 5U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 0U, outer_udp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 1U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 2U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 3U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 4U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap", 5U, teid_default_tcp},
+        FixturePacketExpectation {"parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap", 0U, "EthernetII -> VLAN(vid=201) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap", 1U, "EthernetII -> VLAN(vid=551) -> VLAN(vid=552) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap", 2U, "EthernetII -> VLAN(vid=701) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap", 0U, "EthernetII -> IPv6 -> UDP -> GTP-U(teid=0x01020324) -> IPv6 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/27_gtpu_linux_sll_inner_ipv4_udp.pcap", 0U, "LinuxSll -> IPv4 -> UDP -> GTP-U(teid=0x01020354) -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/28_gtpu_linux_sll2_inner_ipv6_tcp.pcap", 0U, "LinuxSll2 -> IPv6 -> UDP -> GTP-U(teid=0x01020364) -> IPv6 -> TCP"},
+        FixturePacketExpectation {"parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap", 0U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020374) -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap", 1U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020375) -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap", 2U, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020376) -> IPv4 -> UDP"},
+        FixturePacketExpectation {"parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap", 0U, "EthernetII -> IPv4", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap", 1U, "EthernetII -> IPv4", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/gtpu/31_gtpu_outer_ipv6_fragmentation.pcap", 0U, "EthernetII -> IPv6", StopReason::needs_reassembly},
+        FixturePacketExpectation {"parsing/gtpu/31_gtpu_outer_ipv6_fragmentation.pcap", 1U, "EthernetII -> IPv6", StopReason::needs_reassembly},
+    };
+
+    for (const auto& expectation : expectations) {
+        expect_packet_shadow_contract(registry, expectation);
     }
 }
 
