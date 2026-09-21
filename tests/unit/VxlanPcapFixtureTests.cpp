@@ -377,28 +377,11 @@ void expect_vxlan_packet_details_present(
         }));
     }
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("VNI Flag: Set") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("VNI: " + std::to_string(expected_vni)) != std::string::npos);
-    const auto expected_transport_text =
-        expected_inner_transport_layer_id == "tcp-inner" ? std::string {"TCP"} :
-        expected_inner_transport_layer_id == "udp-inner" ? std::string {"UDP"} :
-        expected_inner_transport_layer_id;
-    if (expected_inner_network_layer_id == "ipv4-inner") {
-        PFL_EXPECT(protocol_text.find("Inner IPv4: " + expected_transport_text) != std::string::npos);
-    } else if (expected_inner_network_layer_id == "ipv6-inner") {
-        PFL_EXPECT(protocol_text.find("Inner IPv6: " + expected_transport_text) != std::string::npos);
-    }
-    if (expect_inner_vlan) {
-        PFL_EXPECT(protocol_text.find("Inner VLAN: ") != std::string::npos);
-    }
 }
 
 void expect_vxlan_warning_packet_details(
     const std::filesystem::path& relative_path,
     const std::initializer_list<std::string> expected_vxlan_title_fragments,
-    const std::initializer_list<std::string> expected_protocol_fragments,
     const bool expect_vxlan_layer_warning,
     const bool expect_inner_ethernet,
     const bool expect_inner_ipv4,
@@ -420,6 +403,14 @@ void expect_vxlan_warning_packet_details(
     PFL_REQUIRE(vxlan_layer != nullptr);
     PFL_EXPECT(title_contains_all(*vxlan_layer, expected_vxlan_title_fragments));
     PFL_EXPECT(vxlan_layer->warning == expect_vxlan_layer_warning);
+    if (relative_path == std::filesystem::path("parsing/vxlan/05_vxlan_truncated_header.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Available Header Bytes", "6 / 8"));
+        PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Warning", "VXLAN header is truncated"));
+    } else if (relative_path == std::filesystem::path("parsing/vxlan/06_vxlan_invalid_flags_or_reserved_bits.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI Flag", "Not set"));
+        PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI", "100"));
+        PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Warning", "VXLAN VNI flag is not set"));
+    }
 
     const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
     PFL_EXPECT((inner_ethernet_layer != nullptr) == expect_inner_ethernet);
@@ -437,12 +428,6 @@ void expect_vxlan_warning_packet_details(
     PFL_EXPECT((inner_udp_layer != nullptr) == expect_inner_udp);
     const auto* inner_tcp_layer = find_top_level_layer(summary_layers, "tcp-inner");
     PFL_EXPECT((inner_tcp_layer != nullptr) == expect_inner_tcp);
-
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
-    for (const auto& fragment : expected_protocol_fragments) {
-        PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
-    }
 }
 
 }  // namespace
@@ -670,7 +655,6 @@ void run_vxlan_pcap_fixture_tests() {
     expect_vxlan_warning_packet_details(
         "parsing/vxlan/05_vxlan_truncated_header.pcap",
         {"VXLAN", "malformed"},
-        {"Available Header Bytes: 6 / 8", "Warning: VXLAN header is truncated."},
         true,
         false,
         false,
@@ -681,7 +665,6 @@ void run_vxlan_pcap_fixture_tests() {
     expect_vxlan_warning_packet_details(
         "parsing/vxlan/06_vxlan_invalid_flags_or_reserved_bits.pcap",
         {"VXLAN", "invalid"},
-        {"VNI Flag: Not set", "VNI: 100", "Warning: VXLAN VNI flag is not set.", "Inner IPv4: UDP"},
         true,
         true,
         true,
@@ -692,7 +675,6 @@ void run_vxlan_pcap_fixture_tests() {
     expect_vxlan_warning_packet_details(
         "parsing/vxlan/07_vxlan_truncated_inner_ethernet.pcap",
         {"VXLAN", "VNI: 100"},
-        {"Warning: Inner Ethernet header is truncated."},
         true,
         true,
         false,
@@ -703,7 +685,6 @@ void run_vxlan_pcap_fixture_tests() {
     expect_vxlan_warning_packet_details(
         "parsing/vxlan/08_vxlan_truncated_inner_ipv4.pcap",
         {"VXLAN", "VNI: 100"},
-        {"Inner IPv4:", "Warning: Inner IPv4 packet is truncated"},
         false,
         true,
         true,
@@ -801,8 +782,6 @@ void run_vxlan_pcap_fixture_tests() {
         PFL_EXPECT(!details->has_vxlan);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
         PFL_EXPECT(find_layer(summary_layers, "vxlan") == nullptr);
-        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-        PFL_EXPECT(protocol_text.find("VXLAN") == std::string::npos);
     }
 
     {

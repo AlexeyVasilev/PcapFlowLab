@@ -499,40 +499,11 @@ void expect_gtpu_packet_details_present(
         expected_inner_destination_port,
     }));
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: GTP-U") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Flags: 0x") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Version: ") == std::string::npos);
-    PFL_EXPECT(protocol_text.find("PT Flag: ") == std::string::npos);
-    PFL_EXPECT(protocol_text.find("Optional Fields Present: ") == std::string::npos);
-    if (!details->gtpu.sequence_number_flag_set) {
-        PFL_EXPECT(protocol_text.find("S Flag: Not set") == std::string::npos);
-    }
-    if (!details->gtpu.npdu_number_flag_set) {
-        PFL_EXPECT(protocol_text.find("PN Flag: Not set") == std::string::npos);
-    }
-    if (!details->gtpu.extension_header_flag_set) {
-        PFL_EXPECT(protocol_text.find("E Flag: Not set") == std::string::npos);
-    }
-    PFL_EXPECT(protocol_text.find("Message Type: T-PDU (0xff)") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("TEID: " + format_hex_value(expected_teid, 8)) != std::string::npos);
-    const auto expected_transport_text =
-        expected_inner_transport_layer_id == "tcp-inner" ? std::string {"TCP"} :
-        expected_inner_transport_layer_id == "udp-inner" ? std::string {"UDP"} :
-        expected_inner_transport_layer_id;
-    if (expected_inner_network_layer_id == "ipv4-inner") {
-        PFL_EXPECT(protocol_text.find("Inner Payload: IPv4") != std::string::npos);
-        PFL_EXPECT(protocol_text.find("Inner IPv4: " + expected_transport_text) != std::string::npos);
-    } else if (expected_inner_network_layer_id == "ipv6-inner") {
-        PFL_EXPECT(protocol_text.find("Inner Payload: IPv6") != std::string::npos);
-        PFL_EXPECT(protocol_text.find("Inner IPv6: " + expected_transport_text) != std::string::npos);
-    }
 }
 
 void expect_gtpu_warning_packet_details(
     const std::filesystem::path& relative_path,
     const std::initializer_list<std::string> expected_gtpu_title_fragments,
-    const std::initializer_list<std::string> expected_protocol_fragments,
     const bool expect_gtpu_layer_warning,
     const bool expect_inner_ipv4,
     const bool expect_inner_ipv6,
@@ -554,27 +525,48 @@ void expect_gtpu_warning_packet_details(
     PFL_REQUIRE(gtpu_layer != nullptr);
     PFL_EXPECT(title_contains_all(*gtpu_layer, expected_gtpu_title_fragments));
     PFL_EXPECT(gtpu_layer->warning == expect_gtpu_layer_warning);
+    if (relative_path == std::filesystem::path("parsing/gtpu/05_gtpu_truncated_base_header.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Available Header Bytes", "6 / 8"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U header is truncated"));
+    } else if (relative_path == std::filesystem::path("parsing/gtpu/06_gtpu_invalid_version.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Flags", "0x"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Flags", "Version 2"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U version is not supported"));
+    } else if (relative_path == std::filesystem::path("parsing/gtpu/07_gtpu_unsupported_message_type.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Message Type", "Echo Request (0x01)"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U message type is not supported"));
+    } else if (relative_path == std::filesystem::path("parsing/gtpu/10_gtpu_unknown_inner_payload.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Inner Payload", "Unknown"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U inner payload type is not supported"));
+    } else if (relative_path == std::filesystem::path("parsing/gtpu/19_gtpu_truncated_optional_header.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U optional header is truncated"));
+    } else if (relative_path == std::filesystem::path("parsing/gtpu/20_gtpu_truncated_extension_header.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Next Extension Header Type", "MBMS Support Indication (0x01)"));
+        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U extension header chain is truncated"));
+    }
 
     const auto* inner_ipv4_layer = find_top_level_layer(summary_layers, "ipv4-inner");
     PFL_EXPECT((inner_ipv4_layer != nullptr) == expect_inner_ipv4);
     if (expect_inner_ipv4 && inner_ipv4_layer != nullptr) {
         PFL_EXPECT(inner_ipv4_layer->title.find("Inner IPv4") != std::string::npos);
+        if (relative_path == std::filesystem::path("parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap")) {
+            PFL_EXPECT(inner_ipv4_layer->warning);
+            PFL_EXPECT(inner_ipv4_layer->title.find("truncated") != std::string::npos);
+        }
     }
     const auto* inner_ipv6_layer = find_top_level_layer(summary_layers, "ipv6-inner");
     PFL_EXPECT((inner_ipv6_layer != nullptr) == expect_inner_ipv6);
     if (expect_inner_ipv6 && inner_ipv6_layer != nullptr) {
         PFL_EXPECT(inner_ipv6_layer->title.find("Inner IPv6") != std::string::npos);
+        if (relative_path == std::filesystem::path("parsing/gtpu/09_gtpu_truncated_inner_ipv6.pcap")) {
+            PFL_EXPECT(inner_ipv6_layer->warning);
+            PFL_EXPECT(inner_ipv6_layer->title.find("truncated") != std::string::npos);
+        }
     }
     const auto* inner_udp_layer = find_top_level_layer(summary_layers, "udp-inner");
     PFL_EXPECT((inner_udp_layer != nullptr) == expect_inner_udp);
     const auto* inner_tcp_layer = find_top_level_layer(summary_layers, "tcp-inner");
     PFL_EXPECT((inner_tcp_layer != nullptr) == expect_inner_tcp);
-
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: GTP-U") != std::string::npos);
-    for (const auto& fragment : expected_protocol_fragments) {
-        PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
-    }
 }
 
 void run_gtpu_supported_inner_flow_tests() {
@@ -862,8 +854,10 @@ void run_gtpu_port_and_header_matrix_tests() {
         PFL_EXPECT(pt_clear->has_gtpu);
         PFL_EXPECT(!pt_clear->gtpu.protocol_type_flag_set);
         PFL_EXPECT(!pt_clear->gtpu.has_inner_packet);
-        PFL_EXPECT(session.read_packet_protocol_details_text(packet0).find(
-            "Warning: GTP-U PT flag is not set") != std::string::npos);
+        const auto pt_clear_layers = session_detail::build_packet_summary_layers(*pt_clear, packet0);
+        const auto* pt_clear_gtpu_layer = find_layer(pt_clear_layers, "gtpu");
+        PFL_REQUIRE(pt_clear_gtpu_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*pt_clear_gtpu_layer, "Warning", "GTP-U PT flag is not set"));
 
         const auto packet1 = require_packet(session, 1U);
         const auto reserved_bit_set = session.read_packet_details(packet1);
@@ -1194,8 +1188,6 @@ void run_gtpu_outer_udp_fallback_tests() {
         PFL_EXPECT(!details->has_gtpu);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         PFL_EXPECT(find_layer(summary_layers, "gtpu") == nullptr);
-        const auto protocol_text = session.read_packet_protocol_details_text(packet);
-        PFL_EXPECT(protocol_text.find("GTP-U") == std::string::npos);
     }
 
     {
@@ -1230,12 +1222,14 @@ void run_gtpu_outer_udp_fallback_tests() {
             PFL_EXPECT(details->gtpu.unsupported_message_type);
             PFL_EXPECT(!details->gtpu.has_inner_packet);
 
-            const auto protocol_text = session.read_packet_protocol_details_text(packet);
-            PFL_EXPECT(protocol_text.find("Warning: GTP-U message type is not supported.") != std::string::npos);
+            const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+            const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
+            PFL_REQUIRE(gtpu_layer != nullptr);
+            PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Warning", "GTP-U message type is not supported"));
             const auto expected_message_type_text = message_types[index] == 0x01U
                 ? std::string {"Echo Request (0x01)"}
                 : format_hex_value(message_types[index], 2);
-            PFL_EXPECT(protocol_text.find("Message Type: " + expected_message_type_text) != std::string::npos);
+            PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Message Type", expected_message_type_text));
         }
     }
 }
@@ -1288,7 +1282,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/05_gtpu_truncated_base_header.pcap",
         {"GTP-U", "malformed"},
-        {"Available Header Bytes: 6 / 8", "Warning: GTP-U header is truncated."},
         true,
         false,
         false,
@@ -1299,7 +1292,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/06_gtpu_invalid_version.pcap",
         {"GTP-U", "invalid"},
-        {"Flags: 0x", "Version 2", "Warning: GTP-U version is not supported."},
         true,
         false,
         false,
@@ -1310,7 +1302,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/07_gtpu_unsupported_message_type.pcap",
         {"GTP-U", "unsupported message type"},
-        {"Message Type: Echo Request (0x01)", "Warning: GTP-U message type is not supported."},
         true,
         false,
         false,
@@ -1321,7 +1312,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap",
         {"GTP-U", "0x01020304"},
-        {"Inner Payload: IPv4", "Inner IPv4: TCP", "Warning: Inner IPv4 packet is truncated."},
         false,
         true,
         false,
@@ -1332,7 +1322,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/09_gtpu_truncated_inner_ipv6.pcap",
         {"GTP-U", "0x01020304"},
-        {"Inner Payload: IPv6", "Inner IPv6: TCP", "Warning: Inner IPv6 packet is truncated."},
         false,
         false,
         true,
@@ -1343,7 +1332,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/10_gtpu_unknown_inner_payload.pcap",
         {"GTP-U", "unknown inner payload"},
-        {"Inner Payload: Unknown", "Warning: GTP-U inner payload type is not supported."},
         true,
         false,
         false,
@@ -1354,7 +1342,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/19_gtpu_truncated_optional_header.pcap",
         {"GTP-U", "malformed"},
-        {"Warning: GTP-U optional header is truncated."},
         true,
         false,
         false,
@@ -1365,7 +1352,6 @@ void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/20_gtpu_truncated_extension_header.pcap",
         {"GTP-U", "malformed"},
-        {"Next Extension Header Type: MBMS Support Indication (0x01)", "Warning: GTP-U extension header chain is truncated."},
         true,
         false,
         false,

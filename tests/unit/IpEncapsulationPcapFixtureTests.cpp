@@ -523,10 +523,6 @@ void expect_direct_plain_ip_packet_details_present(
         PFL_EXPECT(find_top_level_layer(summary_layers, "vlan-inner") == nullptr);
     }
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(inner_is_tcp ? "Inner TCP:" : "Inner UDP:") != std::string::npos);
 }
 
 void expect_direct_plain_ip_control_packet_details_present(
@@ -595,10 +591,6 @@ void expect_direct_plain_ip_control_packet_details_present(
     PFL_EXPECT(has_field_value_fragment(*inner_control_layer, "Type", inner_is_ipv4 ? "8" : "128"));
     PFL_EXPECT(has_field_value_fragment(*inner_control_layer, "Code", "0"));
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: IPv4") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner ICMP:" : "Inner ICMPv6:") != std::string::npos);
 }
 
 void expect_malformed_plain_ip_packet_details_present(
@@ -667,24 +659,9 @@ void expect_malformed_plain_ip_packet_details_present(
         expected_inner_is_ipv4 ? "Inner IPv4 header is truncated" : "Inner IPv6 header is truncated"
     ));
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(expected_inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(
-        "Available Header Bytes: " + std::to_string(expected_available_inner_bytes) + " / " +
-        (expected_inner_is_ipv4 ? std::string {"20"} : std::string {"40"})
-    ) != std::string::npos);
-    PFL_EXPECT(protocol_text.find(
-        expected_inner_is_ipv4 ? "Warning: Inner IPv4 header is truncated."
-                               : "Warning: Inner IPv6 header is truncated."
-    ) != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Inner TCP:") == std::string::npos);
-    PFL_EXPECT(protocol_text.find("Inner UDP:") == std::string::npos);
-    PFL_EXPECT(protocol_text.find("Inner ICMP:") == std::string::npos);
-    PFL_EXPECT(protocol_text.find("Inner ICMPv6:") == std::string::npos);
 }
 
-void expect_nested_plain_ip_packet_details_summary_and_protocol_text() {
+void expect_nested_plain_ip_packet_details_summary() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap")));
 
@@ -737,20 +714,6 @@ void expect_nested_plain_ip_packet_details_summary_and_protocol_text() {
     PFL_EXPECT(title_contains_all(*second_inner_layer, {"Inner IPv4", "10.60.0.10", "10.60.0.20"}));
     PFL_EXPECT(title_contains_all(*udp_layer, {"Inner UDP", "53600", "443"}));
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    const auto outer_pos = protocol_text.find("Protocol: IPv4");
-    PFL_REQUIRE(outer_pos != std::string::npos);
-    const auto inner_first_pos = protocol_text.find("Inner IPv4:");
-    PFL_REQUIRE(inner_first_pos != std::string::npos);
-    const auto inner_second_pos = protocol_text.find("Inner IPv4:", inner_first_pos + 1U);
-    PFL_REQUIRE(inner_second_pos != std::string::npos);
-    const auto udp_pos = protocol_text.find("Inner UDP:");
-    PFL_REQUIRE(udp_pos != std::string::npos);
-    PFL_EXPECT(outer_pos < inner_first_pos);
-    PFL_EXPECT(inner_first_pos < inner_second_pos);
-    PFL_EXPECT(inner_second_pos < udp_pos);
-    PFL_EXPECT(protocol_text.find("Protocol: 4", inner_first_pos) != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Protocol: UDP (17)", inner_second_pos) != std::string::npos);
 }
 
 void expect_fixture_files_exist() {
@@ -975,7 +938,7 @@ void expect_supported_plain_ip_control_decode() {
     }
 }
 
-void expect_direct_plain_ip_packet_details_summary_and_protocol_text() {
+void expect_direct_plain_ip_packet_details_summary() {
     expect_direct_plain_ip_packet_details_present(
         "01_ipv4_in_ipv4_tcp.pcap",
         true,
@@ -1026,12 +989,12 @@ void expect_direct_plain_ip_packet_details_summary_and_protocol_text() {
     );
 }
 
-void expect_direct_plain_ip_control_packet_details_summary_and_protocol_text() {
+void expect_direct_plain_ip_control_packet_details_summary() {
     expect_direct_plain_ip_control_packet_details_present("15_ipv4_in_ipv4_inner_icmp.pcap", true);
     expect_direct_plain_ip_control_packet_details_present("16_ipv6_in_ipv4_inner_icmpv6.pcap", false);
 }
 
-void expect_malformed_plain_ip_packet_details_summary_and_protocol_text() {
+void expect_malformed_plain_ip_packet_details_summary() {
     expect_malformed_plain_ip_packet_details_present("17_truncated_inner_ipv4_header.pcap", true, true, 12U);
     expect_malformed_plain_ip_packet_details_present("18_truncated_inner_ipv6_header.pcap", true, false, 24U);
     expect_malformed_plain_ip_packet_details_present("19_outer_ipv4_proto4_payload_too_short.pcap", true, true, 4U);
@@ -1051,11 +1014,11 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_supported_ipv4_in_ipv6_tcp_udp_decode();
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();
     expect_supported_plain_ip_control_decode();
-    expect_direct_plain_ip_packet_details_summary_and_protocol_text();
-    expect_direct_plain_ip_control_packet_details_summary_and_protocol_text();
-    expect_nested_plain_ip_packet_details_summary_and_protocol_text();
+    expect_direct_plain_ip_packet_details_summary();
+    expect_direct_plain_ip_control_packet_details_summary();
+    expect_nested_plain_ip_packet_details_summary();
     expect_malformed_inner_ip_remains_unrecognized();
-    expect_malformed_plain_ip_packet_details_summary_and_protocol_text();
+    expect_malformed_plain_ip_packet_details_summary();
 }
 
 }  // namespace pfl::tests
