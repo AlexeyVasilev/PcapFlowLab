@@ -78,6 +78,7 @@ add_library(
     src/core/dissection/modules/TransportModules.cpp
     src/core/dissection/modules/VxlanModule.cpp
     src/core/io/PcapReader.cpp
+    src/core/io/ErfRecord.cpp
     src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp
     src/core/io/FileByteSource.cpp

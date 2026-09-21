@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 
+#include "core/io/ErfRecord.h"
 #include "core/io/LinkType.h"
 
 namespace pfl {
@@ -16,6 +17,7 @@ constexpr std::array<std::uint8_t, 4> kLittleEndianByteOrderMagicBytes {0x4dU, 0
 constexpr std::array<std::uint8_t, 4> kBigEndianByteOrderMagicBytes {0x1aU, 0x2bU, 0x3cU, 0x4dU};
 constexpr std::uint32_t kInterfaceDescriptionBlockType = 0x00000001U;
 constexpr std::uint32_t kEnhancedPacketBlockType = 0x00000006U;
+constexpr std::uint64_t kEnhancedPacketBlockPacketDataOffset = 28U;
 constexpr std::uint16_t kEndOfOptionsCode = 0U;
 constexpr std::uint16_t kIfTsResolOptionCode = 9U;
 
@@ -85,6 +87,66 @@ std::pair<std::uint32_t, std::uint32_t> normalize_timestamp(
     return {
         static_cast<std::uint32_t>(seconds),
         static_cast<std::uint32_t>(usec),
+    };
+}
+
+std::optional<std::uint64_t> checked_add(const std::uint64_t left, const std::uint64_t right) noexcept {
+    if (left > std::numeric_limits<std::uint64_t>::max() - right) {
+        return std::nullopt;
+    }
+
+    return left + right;
+}
+
+std::optional<RawPcapPacket> make_normalized_erf_type_eth_packet(
+    const std::span<const std::uint8_t> erf_record_bytes,
+    const std::uint64_t block_start,
+    const std::uint64_t packet_index,
+    const std::uint32_t ts_sec,
+    const std::uint32_t ts_usec
+) {
+    if (erf_record_bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
+        return std::nullopt;
+    }
+
+    const auto view = erf::parse_type_eth_view(
+        erf_record_bytes,
+        static_cast<std::uint32_t>(erf_record_bytes.size())
+    );
+    if (view.status != erf::TypeEthParseStatus::ok) {
+        return std::nullopt;
+    }
+
+    if (view.network_offset > erf_record_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto packet_data_offset = checked_add(block_start, kEnhancedPacketBlockPacketDataOffset);
+    if (!packet_data_offset.has_value()) {
+        return std::nullopt;
+    }
+    const auto network_data_offset = checked_add(
+        *packet_data_offset,
+        static_cast<std::uint64_t>(view.network_offset)
+    );
+    if (!network_data_offset.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto network_bytes = erf_record_bytes.subspan(
+        view.network_offset,
+        static_cast<std::size_t>(view.captured_network_length)
+    );
+    return RawPcapPacket {
+        .packet_index = packet_index,
+        .ts_sec = ts_sec,
+        .ts_usec = ts_usec,
+        .captured_length = view.captured_network_length,
+        .original_length = view.original_network_length,
+        .record_file_offset = block_start,
+        .data_offset = *network_data_offset,
+        .data_link_type = kLinkTypeEthernet,
+        .bytes = {network_bytes.begin(), network_bytes.end()},
     };
 }
 
@@ -263,16 +325,32 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         }
 
         const auto& interface_info = interfaces_[interface_id];
+        const auto timestamp = (static_cast<std::uint64_t>(read_u32(body, 4, little_endian_)) << 32U) |
+                               static_cast<std::uint64_t>(read_u32(body, 8, little_endian_));
+        const auto [ts_sec, ts_usec] = normalize_timestamp(timestamp, interface_info.timestamp_resolution);
+        const auto captured_packet_bytes = body.subspan(20U, static_cast<std::size_t>(captured_length));
+
+        if (interface_info.linktype == kLinkTypeErf) {
+            if (auto packet = make_normalized_erf_type_eth_packet(
+                    captured_packet_bytes,
+                    block_start,
+                    next_packet_index_,
+                    ts_sec,
+                    ts_usec
+                );
+                packet.has_value()) {
+                ++next_packet_index_;
+                return packet;
+            }
+            continue;
+        }
+
         if (!is_supported_capture_link_type(interface_info.linktype)) {
             continue;
         }
 
-        const auto timestamp = (static_cast<std::uint64_t>(read_u32(body, 4, little_endian_)) << 32U) |
-                               static_cast<std::uint64_t>(read_u32(body, 8, little_endian_));
-        const auto [ts_sec, ts_usec] = normalize_timestamp(timestamp, interface_info.timestamp_resolution);
-
         std::vector<std::uint8_t> bytes(captured_length);
-        std::copy_n(body.begin() + 20, static_cast<std::ptrdiff_t>(captured_length), bytes.begin());
+        std::copy_n(captured_packet_bytes.begin(), static_cast<std::ptrdiff_t>(captured_length), bytes.begin());
 
         RawPcapPacket packet {
             .packet_index = next_packet_index_,
@@ -281,7 +359,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
             .captured_length = captured_length,
             .original_length = original_length,
             .record_file_offset = block_start,
-            .data_offset = block_start + 28U,
+            .data_offset = block_start + kEnhancedPacketBlockPacketDataOffset,
             .data_link_type = interface_info.linktype,
             .bytes = std::move(bytes),
         };

@@ -85,6 +85,7 @@ private:
 
     void clear_prefix_packet_state() noexcept;
     [[nodiscard]] bool is_current_prefix_packet(const RawPcapPacket& packet) const noexcept;
+    bool trim_erf_prefix_overread(RawPcapPacket& packet, std::size_t requested_network_prefix_bytes);
     void clear_error();
     void set_error(std::uint64_t file_offset, const char* reason, bool include_packet_index = false);
     void set_error(std::uint64_t file_offset, const char* reason, std::uint64_t packet_index);

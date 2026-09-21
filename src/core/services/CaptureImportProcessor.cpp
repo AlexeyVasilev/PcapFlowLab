@@ -244,7 +244,7 @@ void CaptureImportProcessor::finalize_import(CaptureState& state) const {
 }
 
 CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
-    if (!is_supported_capture_link_type(reader.data_link_type())) {
+    if (!is_supported_classic_pcap_link_type(reader.data_link_type())) {
         if (ctx != nullptr) {
             OpenFailureInfo failure {};
             failure.reason = "unsupported capture link type";

@@ -1,3 +1,5 @@
+#include <csignal>
+#include <cstdio>
 #include <exception>
 #include <functional>
 #include <iostream>
@@ -16,6 +18,16 @@ std::vector<RecordedTestFailure>& failure_storage() {
     return failures;
 }
 
+const char*& last_suite_name() {
+    static const char* value = "<none>";
+    return value;
+}
+
+std::string& last_checkpoint_text() {
+    static std::string value {"<none>"};
+    return value;
+}
+
 std::vector<std::string>& context_storage() {
     static std::vector<std::string> contexts {};
     return contexts;
@@ -29,6 +41,55 @@ std::string format_failure_message(const char* file, int line, const char* kind,
     }
     builder << file << ':' << line << ' ' << kind << ": " << expression;
     return builder.str();
+}
+
+void emit_termination_diagnostics_and_abort(const char* reason) {
+    std::fputs("Core test runner terminated unexpectedly: ", stderr);
+    std::fputs(reason, stderr);
+    std::fputs("\nLast suite: ", stderr);
+    std::fputs(last_suite_name(), stderr);
+    std::fputs("\nLast checkpoint: ", stderr);
+    std::fputs(last_checkpoint_text().c_str(), stderr);
+    std::fputc('\n', stderr);
+    std::fflush(stderr);
+
+    std::signal(SIGABRT, SIG_DFL);
+    std::signal(SIGSEGV, SIG_DFL);
+    std::signal(SIGILL, SIG_DFL);
+    std::signal(SIGFPE, SIG_DFL);
+    std::abort();
+}
+
+void core_test_signal_handler(const int signal_number) {
+    switch (signal_number) {
+    case SIGABRT:
+        emit_termination_diagnostics_and_abort("SIGABRT");
+        break;
+    case SIGSEGV:
+        emit_termination_diagnostics_and_abort("SIGSEGV");
+        break;
+    case SIGILL:
+        emit_termination_diagnostics_and_abort("SIGILL");
+        break;
+    case SIGFPE:
+        emit_termination_diagnostics_and_abort("SIGFPE");
+        break;
+    default:
+        emit_termination_diagnostics_and_abort("signal");
+        break;
+    }
+}
+
+void core_test_terminate_handler() {
+    std::fputs("Core test runner terminated unexpectedly: std::terminate\nLast suite: ", stderr);
+    std::fputs(last_suite_name(), stderr);
+    std::fputs("\nLast checkpoint: ", stderr);
+    std::fputs(last_checkpoint_text().c_str(), stderr);
+    std::fputc('\n', stderr);
+    std::fflush(stderr);
+
+    std::signal(SIGABRT, SIG_DFL);
+    std::abort();
 }
 
 }  // namespace
@@ -181,6 +242,16 @@ std::string current_test_context() {
     return builder.str();
 }
 
+void set_last_checkpoint(const char* file, const int line, const char* expression) {
+    std::ostringstream builder {};
+    const auto context = current_test_context();
+    if (!context.empty()) {
+        builder << '[' << context << "] ";
+    }
+    builder << file << ':' << line << " checkpoint: " << expression;
+    last_checkpoint_text() = builder.str();
+}
+
 ScopedTestContext::ScopedTestContext(std::string context) {
     push_test_context(std::move(context));
 }
@@ -194,6 +265,12 @@ ScopedTestContext::~ScopedTestContext() {
 }  // namespace pfl::tests
 
 int main() {
+    std::set_terminate(pfl::tests::core_test_terminate_handler);
+    std::signal(SIGABRT, pfl::tests::core_test_signal_handler);
+    std::signal(SIGSEGV, pfl::tests::core_test_signal_handler);
+    std::signal(SIGILL, pfl::tests::core_test_signal_handler);
+    std::signal(SIGFPE, pfl::tests::core_test_signal_handler);
+
     pfl::tests::clear_recorded_failures();
 
     struct TestSuiteEntry {
@@ -293,6 +370,7 @@ int main() {
 
     for (const auto& suite : suites) {
         try {
+            pfl::tests::last_suite_name() = suite.name.data();
             const auto suite_context = std::string {"suite="} + std::string {suite.name};
             pfl::tests::ScopedTestContext scoped_suite_context {suite_context};
             std::cout << "Entering core suite: " << suite.name << '\n';

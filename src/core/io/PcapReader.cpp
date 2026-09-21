@@ -2,12 +2,67 @@
 
 #include <algorithm>
 
+#include "core/io/ErfRecord.h"
+
 namespace pfl {
 
 namespace {
 
 constexpr std::uint32_t kClassicPcapLittleEndianMagic = 0xa1b2c3d4U;
 constexpr std::uint64_t kPcapGlobalHeaderSize = sizeof(PcapGlobalHeader);
+
+[[nodiscard]] std::size_t bounded_erf_prefix_read_size(
+    const std::size_t requested_network_prefix_bytes,
+    const std::uint32_t captured_record_length
+) noexcept {
+    const auto captured_bytes = static_cast<std::size_t>(captured_record_length);
+    if (requested_network_prefix_bytes >= captured_bytes) {
+        return captured_bytes;
+    }
+
+    const auto remaining_bytes = captured_bytes - requested_network_prefix_bytes;
+    return requested_network_prefix_bytes + std::min(remaining_bytes, erf::kMaxSupportedEnvelopeBytes);
+}
+
+[[nodiscard]] std::size_t physical_prefix_read_size(
+    const std::uint32_t link_type,
+    const std::size_t requested_prefix_bytes,
+    const std::uint32_t captured_record_length
+) noexcept {
+    if (link_type == kLinkTypeErf) {
+        return bounded_erf_prefix_read_size(requested_prefix_bytes, captured_record_length);
+    }
+
+    return std::min<std::size_t>(requested_prefix_bytes, captured_record_length);
+}
+
+void normalize_erf_type_eth_packet(RawPcapPacket& packet) {
+    if (packet.data_link_type != kLinkTypeErf) {
+        return;
+    }
+
+    const auto view = erf::parse_type_eth_view(
+        std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size()),
+        packet.captured_length
+    );
+    if (view.status != erf::TypeEthParseStatus::ok) {
+        return;
+    }
+
+    const auto network_offset = view.network_offset;
+    if (network_offset > packet.bytes.size()) {
+        return;
+    }
+
+    packet.bytes.erase(
+        packet.bytes.begin(),
+        packet.bytes.begin() + static_cast<std::ptrdiff_t>(network_offset)
+    );
+    packet.data_offset += static_cast<std::uint64_t>(network_offset);
+    packet.data_link_type = kLinkTypeEthernet;
+    packet.captured_length = view.captured_network_length;
+    packet.original_length = view.original_network_length;
+}
 
 }  // namespace
 
@@ -20,6 +75,26 @@ bool PcapReader::is_current_prefix_packet(const RawPcapPacket& packet) const noe
         prefix_packet_state_.packet_index == packet.packet_index &&
         prefix_packet_state_.data_offset == packet.data_offset &&
         prefix_packet_state_.captured_length == packet.captured_length;
+}
+
+bool PcapReader::trim_erf_prefix_overread(RawPcapPacket& packet, const std::size_t requested_network_prefix_bytes) {
+    if (global_header_.network != kLinkTypeErf ||
+        packet.data_link_type != kLinkTypeEthernet ||
+        requested_network_prefix_bytes >= packet.captured_length ||
+        packet.bytes.size() <= requested_network_prefix_bytes) {
+        return true;
+    }
+
+    const auto overread_bytes = packet.bytes.size() - requested_network_prefix_bytes;
+    stream_.seekg(-static_cast<std::streamoff>(overread_bytes), std::ios::cur);
+    if (!stream_) {
+        set_error(next_input_offset_, "seek failed", packet.packet_index);
+        return false;
+    }
+
+    next_input_offset_ -= static_cast<std::uint64_t>(overread_bytes);
+    packet.bytes.resize(requested_network_prefix_bytes);
+    return true;
 }
 
 void PcapReader::clear_error() {
@@ -201,6 +276,7 @@ std::optional<RawPcapPacket> PcapReader::read_next() {
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
     };
+    normalize_erf_type_eth_packet(packet);
     ++next_packet_index_;
     return packet;
 }
@@ -229,7 +305,8 @@ std::optional<RawPcapPacket> PcapReader::read_next_prefix(const std::size_t pref
     }
 
     const auto data_offset = packet_header_offset + sizeof(packet_header);
-    const auto available_prefix_bytes = std::min<std::size_t>(prefix_bytes, packet_header.included_length);
+    const auto available_prefix_bytes =
+        physical_prefix_read_size(global_header_.network, prefix_bytes, packet_header.included_length);
     std::vector<std::uint8_t> bytes(available_prefix_bytes);
     if (!bytes.empty()) {
         stream_.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -239,20 +316,8 @@ std::optional<RawPcapPacket> PcapReader::read_next_prefix(const std::size_t pref
         }
     }
 
-    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
     const auto next_record_offset = data_offset + packet_header.included_length;
-    if (available_prefix_bytes < packet_header.included_length) {
-        prefix_packet_state_ = PrefixPacketState {
-            .active = true,
-            .packet_index = next_packet_index_,
-            .data_offset = data_offset,
-            .next_record_offset = next_record_offset,
-            .captured_length = packet_header.included_length,
-        };
-    } else {
-        clear_prefix_packet_state();
-        next_input_offset_ = next_record_offset;
-    }
+    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
 
     RawPcapPacket packet {
         .packet_index = next_packet_index_,
@@ -265,6 +330,24 @@ std::optional<RawPcapPacket> PcapReader::read_next_prefix(const std::size_t pref
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
     };
+    normalize_erf_type_eth_packet(packet);
+    if (!trim_erf_prefix_overread(packet, prefix_bytes)) {
+        return std::nullopt;
+    }
+
+    if (next_input_offset_ < next_record_offset) {
+        prefix_packet_state_ = PrefixPacketState {
+            .active = true,
+            .packet_index = next_packet_index_,
+            .data_offset = packet.data_offset,
+            .next_record_offset = next_record_offset,
+            .captured_length = packet.captured_length,
+        };
+    } else {
+        clear_prefix_packet_state();
+        next_input_offset_ = next_record_offset;
+    }
+
     ++next_packet_index_;
     return packet;
 }
@@ -320,11 +403,13 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
             .data_link_type = global_header_.network,
             .bytes = std::move(bytes),
         };
+        normalize_erf_type_eth_packet(packet);
         ++next_packet_index_;
         return packet;
     }
 
-    const auto available_prefix_bytes = std::min<std::size_t>(prefix_bytes, packet_header.included_length);
+    const auto available_prefix_bytes =
+        physical_prefix_read_size(global_header_.network, prefix_bytes, packet_header.included_length);
     std::vector<std::uint8_t> bytes(available_prefix_bytes);
     if (!bytes.empty()) {
         stream_.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -334,20 +419,8 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
         }
     }
 
-    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
     const auto next_record_offset = data_offset + packet_header.included_length;
-    if (available_prefix_bytes < packet_header.included_length) {
-        prefix_packet_state_ = PrefixPacketState {
-            .active = true,
-            .packet_index = next_packet_index_,
-            .data_offset = data_offset,
-            .next_record_offset = next_record_offset,
-            .captured_length = packet_header.included_length,
-        };
-    } else {
-        clear_prefix_packet_state();
-        next_input_offset_ = next_record_offset;
-    }
+    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
 
     RawPcapPacket packet {
         .packet_index = next_packet_index_,
@@ -360,6 +433,24 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
     };
+    normalize_erf_type_eth_packet(packet);
+    if (!trim_erf_prefix_overread(packet, prefix_bytes)) {
+        return std::nullopt;
+    }
+
+    if (next_input_offset_ < next_record_offset) {
+        prefix_packet_state_ = PrefixPacketState {
+            .active = true,
+            .packet_index = next_packet_index_,
+            .data_offset = packet.data_offset,
+            .next_record_offset = next_record_offset,
+            .captured_length = packet.captured_length,
+        };
+    } else {
+        clear_prefix_packet_state();
+        next_input_offset_ = next_record_offset;
+    }
+
     ++next_packet_index_;
     return packet;
 }
@@ -416,12 +507,14 @@ bool PcapReader::read_next_import_packet_into(
         packet.record_file_offset = packet_header_offset;
         packet.data_offset = data_offset;
         packet.data_link_type = global_header_.network;
+        normalize_erf_type_eth_packet(packet);
 
         ++next_packet_index_;
         return true;
     }
 
-    const auto available_prefix_bytes = std::min<std::size_t>(prefix_bytes, packet_header.included_length);
+    const auto available_prefix_bytes =
+        physical_prefix_read_size(global_header_.network, prefix_bytes, packet_header.included_length);
     packet.bytes.resize(available_prefix_bytes);
     if (!packet.bytes.empty()) {
         stream_.read(
@@ -434,20 +527,8 @@ bool PcapReader::read_next_import_packet_into(
         }
     }
 
-    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
     const auto next_record_offset = data_offset + packet_header.included_length;
-    if (available_prefix_bytes < packet_header.included_length) {
-        prefix_packet_state_ = PrefixPacketState {
-            .active = true,
-            .packet_index = next_packet_index_,
-            .data_offset = data_offset,
-            .next_record_offset = next_record_offset,
-            .captured_length = packet_header.included_length,
-        };
-    } else {
-        clear_prefix_packet_state();
-        next_input_offset_ = next_record_offset;
-    }
+    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
 
     packet.packet_index = next_packet_index_;
     packet.ts_sec = packet_header.ts_sec;
@@ -457,6 +538,23 @@ bool PcapReader::read_next_import_packet_into(
     packet.record_file_offset = packet_header_offset;
     packet.data_offset = data_offset;
     packet.data_link_type = global_header_.network;
+    normalize_erf_type_eth_packet(packet);
+    if (!trim_erf_prefix_overread(packet, prefix_bytes)) {
+        return false;
+    }
+
+    if (next_input_offset_ < next_record_offset) {
+        prefix_packet_state_ = PrefixPacketState {
+            .active = true,
+            .packet_index = next_packet_index_,
+            .data_offset = packet.data_offset,
+            .next_record_offset = next_record_offset,
+            .captured_length = packet.captured_length,
+        };
+    } else {
+        clear_prefix_packet_state();
+        next_input_offset_ = next_record_offset;
+    }
 
     ++next_packet_index_;
     return true;

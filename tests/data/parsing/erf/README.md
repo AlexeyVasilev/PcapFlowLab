@@ -2,26 +2,27 @@
 
 This directory defines the deterministic fixture contract for the first
 PcapFlowLab ERF Ethernet capture-support pass. The committed generated `.pcap`
-files are the authoritative permanent fixture contract.
+and `.pcapng` files are the authoritative permanent fixture contract; none of
+the listed fixtures are optional.
 
 ## Target First ERF Support
 
 The first intended ERF support is deliberately narrow:
 
-- classic PCAP only;
+- classic PCAP and PCAPNG source containers;
 - `LINKTYPE_ERF` / `DLT_ERF` `197`;
 - ERF `TYPE_ETH` only;
-- explicit selected-packet ERF Packet Summary layer;
 - continuation into the existing Ethernet parser;
 - no ERF Protocol Path layer;
 - no ERF Service hint;
 - no ERF-specific Stream semantics;
 - network-oriented `PacketRef` semantics;
-- lazy/source-backed ERF details for selected-packet inspection;
+- no selected-packet ERF Packet Summary or byte-view layer in the first
+  production pass;
 - no index revision expected;
-- PCAPNG `LINKTYPE_ERF` and native `.erf` files are out of scope.
+- native `.erf` files are out of scope.
 
-An ERF Ethernet packet is expected to inspect as:
+Future selected-packet ERF presentation may inspect as:
 
 ```text
 Frame
@@ -66,7 +67,7 @@ to the desired output directory and run the local helper without `--output-dir`.
 
 The local generator creates the output directory when necessary, refuses to
 overwrite existing fixture files unless `--force` is supplied, writes only the
-ten files listed below, and prints the generated paths. It performs no network
+eleven files listed below, and prints the generated paths. It performs no network
 access and does not depend on Scapy or libpcap.
 
 Do not edit generated packet bytes by hand. If a fixture needs to change,
@@ -74,8 +75,8 @@ adjust the local generator and regenerate the PCAPs.
 
 ## ERF Layout Used by Fixtures
 
-All ERF fixtures are classic little-endian PCAP savefiles whose global link type
-is `197`.
+Fixtures `01` through `09` are classic little-endian PCAP savefiles whose global
+link type is `197`. Fixture `10` is PCAPNG with a `LINKTYPE_ERF` interface.
 
 Each valid ERF record uses the 16-byte generic ERF header:
 
@@ -83,7 +84,7 @@ Each valid ERF record uses the 16-byte generic ERF header:
 | --- | --- | --- |
 | `0..7` | ERF timestamp | little-endian 64-bit 32.32 fixed-point UNIX timestamp |
 | `8` | type | low 7 bits are ERF type; bit 7 indicates extension headers |
-| `9` | flags | deterministic `0x00` in these fixtures |
+| `9` | flags | deterministic `0x00` in classic fixtures, `0x06` in fixture `10` |
 | `10..11` | `rlen` | big-endian physical ERF record length |
 | `12..13` | `lctr` / color | big-endian, deterministic `0x0000` |
 | `14..15` | `wlen` | big-endian original network packet length |
@@ -98,13 +99,26 @@ zero or more 8-byte extension headers
 Ethernet frame bytes
 ```
 
-Normal fixtures use:
+Classic positive fixtures use:
 
 - type low 7 bits: `2` (`TYPE_ETH`);
 - Offset: `0`;
 - Pad: `0`;
 - no storage padding;
 - no Ethernet FCS.
+
+Fixture `10_pcapng_erf_eth_ipv4_tcp_real_style.pcapng` intentionally uses
+nonzero real-target-style TYPE_ETH metadata bytes:
+
+```text
+Offset byte: 0x48
+Pad byte:    0x21
+```
+
+For this first support pass those two byte values are opaque capture metadata.
+The Ethernet frame begins immediately after the fixed two-byte TYPE_ETH
+subheader. In particular, byte value `0x48` must not be treated as an
+additional 72-byte network displacement.
 
 Fixture `05_erf_eth_extension_header_ipv4_tcp.pcap` uses one extension header:
 
@@ -218,8 +232,9 @@ seconds/microseconds.
 - Ethernet start: byte `18` of the ERF record (`16` generic + `2` TYPE_ETH)
 - Purpose: primary positive ERF Ethernet baseline
 - Expected future PFL behavior: same network Flow identity, Protocol Path,
-  network lengths, payload semantics, Statistics, and Analysis as fixture `00`;
-  selected-packet Summary additionally exposes ERF
+  network lengths, payload semantics, Statistics, and Analysis as fixture `00`.
+  Selected-packet ERF envelope presentation is deferred beyond the first
+  production pass.
 
 ### `02_erf_eth_ipv6_udp.pcap`
 
@@ -321,11 +336,33 @@ seconds/microseconds.
 - Expected future PFL behavior: no crash, no fabricated Ethernet, conservative
   malformed/unrecognized handling
 
+### `10_pcapng_erf_eth_ipv4_tcp_real_style.pcapng`
+
+- Packets: `1`
+- Container: PCAPNG
+- Interface link type: `LINKTYPE_ERF` `197`
+- Structure: Enhanced Packet Block / ERF `TYPE_ETH` / Ethernet II / IPv4 / TCP
+- Generic flags byte: `0x06`
+- TYPE_ETH metadata bytes: `0x48 0x21`
+- ERF `rlen`: `138`
+- ERF `wlen`: `120`
+- Stored Ethernet bytes: `120`
+- Ethernet start: immediately after the 16-byte ERF generic header and fixed
+  two-byte TYPE_ETH subheader
+- Purpose: real-target-style PCAPNG ERF parity fixture; protects against
+  the real regression where `PcapNgReader` silently skipped PCAPNG ERF
+  interfaces, and against interpreting metadata byte `0x48` as an additional
+  Ethernet offset
+- Expected PFL behavior: same network Flow identity, Protocol Path, network
+  lengths, payload semantics, Statistics, Analysis, and normalized export as
+  fixtures `00` and `01`
+
 ## Ethernet-vs-ERF Parity Contract
 
-Fixtures `00_reference_ethernet_ipv4_tcp.pcap` and
-`01_erf_eth_ipv4_tcp.pcap` contain byte-for-byte identical Ethernet network
-bytes.
+Fixtures `00_reference_ethernet_ipv4_tcp.pcap`,
+`01_erf_eth_ipv4_tcp.pcap`, and
+`10_pcapng_erf_eth_ipv4_tcp_real_style.pcapng` contain byte-for-byte identical
+Ethernet network bytes.
 
 Future PFL behavior should be identical for network semantics:
 
@@ -349,7 +386,7 @@ The only expected difference is capture-envelope inspection:
 
 ```text
 00: Frame -> Ethernet II -> IPv4 -> TCP
-01: Frame -> Extensible Record Format -> Ethernet II -> IPv4 -> TCP
+01/10: Frame -> Extensible Record Format -> Ethernet II -> IPv4 -> TCP
 ```
 
 ## Manual Wireshark Guidance
@@ -367,6 +404,9 @@ After generation, useful manual wire checks include:
   support scope.
 - `08`/`09`: truncation is visible and safely bounded.
 - `04`: the TLS ClientHello carries SNI `erf.example.test`.
+- `10`: PCAPNG interface link type is `LINKTYPE_ERF`, ERF flags are `0x06`,
+  TYPE_ETH metadata bytes are `48 21`, and Ethernet starts immediately after
+  those two metadata bytes.
 
 Wireshark is useful for wire verification; it is not the authority for
 PcapFlowLab product semantics.
@@ -388,7 +428,6 @@ Later small unit tests can cover:
 This first fixture contract does not cover:
 
 - non-Ethernet ERF decoding;
-- PCAPNG ERF;
 - native `.erf` files;
 - ERF metadata/provenance records;
 - broad extension-header semantic interpretation;
