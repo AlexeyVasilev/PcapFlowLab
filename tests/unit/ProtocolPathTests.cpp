@@ -3035,6 +3035,8 @@ void expect_combined_setting_merges_vlan_and_stacked_mpls_fixture() {
     const auto& enabled_state = enabled_session.state();
     const auto connections = enabled_state.ipv4_connections.list();
     PFL_REQUIRE(connections.size() == 1U);
+    PFL_REQUIRE(!connections.front()->flow_a.packets.empty());
+    PFL_REQUIRE(!connections.front()->flow_b.packets.empty());
     const auto first_details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
     const auto second_details = enabled_session.read_packet_details(connections.front()->flow_b.packets.front());
     PFL_REQUIRE(first_details.has_value());

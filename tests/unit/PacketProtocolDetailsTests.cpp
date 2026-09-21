@@ -44,7 +44,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -1206,12 +1206,12 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
 
         const auto client_context = session.derive_quic_protocol_details_for_packet(0, 0);
-        PFL_EXPECT(client_context.has_value());
+        PFL_REQUIRE(client_context.has_value());
         PFL_EXPECT(client_context->find("TLS Handshake Type: ClientHello") != std::string::npos);
         PFL_EXPECT(client_context->find("ServerHello") == std::string::npos);
 
         const auto server_context = session.derive_quic_protocol_details_for_packet(0, 1);
-        PFL_EXPECT(server_context.has_value());
+        PFL_REQUIRE(server_context.has_value());
         PFL_EXPECT(server_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
         PFL_EXPECT(server_context->find("ClientHello") == std::string::npos);
         PFL_EXPECT(server_context->find("SNI:") == std::string::npos);
@@ -1251,7 +1251,7 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
 
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 2);
-        PFL_EXPECT(server_tail_context.has_value());
+        PFL_REQUIRE(server_tail_context.has_value());
         PFL_EXPECT(server_tail_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
         PFL_EXPECT(server_tail_context->find("Selected TLS Version:") != std::string::npos);
         PFL_EXPECT(server_tail_context->find("Selected Cipher Suite:") != std::string::npos);
@@ -1286,7 +1286,7 @@ void run_packet_protocol_details_tests() {
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 1);
         PFL_EXPECT(!server_tail_context.has_value());
         const auto server_tail_protocol_text = session.derive_quic_protocol_text_for_packet(0, 1);
-        PFL_EXPECT(server_tail_protocol_text.has_value());
+        PFL_REQUIRE(server_tail_protocol_text.has_value());
         PFL_EXPECT(server_tail_protocol_text->find("TLS Handshake Type: ServerHello") == std::string::npos);
         PFL_EXPECT(server_tail_protocol_text->find("ClientHello") == std::string::npos);
     }
@@ -1383,9 +1383,9 @@ void run_packet_protocol_details_tests() {
         };
 
         const auto details = details_service.decode(truncated_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto text = session_detail::build_basic_protocol_details_text(*details);
-        PFL_EXPECT(text.has_value());
+        PFL_REQUIRE(text.has_value());
         const auto& protocol_text = *text;
         PFL_EXPECT(protocol_text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Target Protocol Address: c0 (truncated)") != std::string::npos);
@@ -1412,9 +1412,9 @@ void run_packet_protocol_details_tests() {
         };
 
         const auto details = details_service.decode(unknown_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto text = session_detail::build_basic_protocol_details_text(*details);
-        PFL_EXPECT(text.has_value());
+        PFL_REQUIRE(text.has_value());
         const auto& protocol_text = *text;
         PFL_EXPECT(protocol_text.find("Hardware Type: Unknown (99)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Protocol Type: 0x88b5") != std::string::npos);
