@@ -440,9 +440,9 @@ void expect_erf_ipv6_udp_fixture_opens() {
     PFL_REQUIRE(rows.size() == 1U);
     const auto& row = rows.front();
     PFL_EXPECT(row.family == FlowAddressFamily::ipv6);
-    PFL_EXPECT(row.address_a == "2001:db8:50::10");
+    PFL_EXPECT(row.address_a == "2001:0db8:0050:0000:0000:0000:0000:0010");
     PFL_EXPECT(row.port_a == 50124U);
-    PFL_EXPECT(row.address_b == "2001:db8:50::20");
+    PFL_EXPECT(row.address_b == "2001:0db8:0050:0000:0000:0000:0000:0020");
     PFL_EXPECT(row.port_b == 4443U);
     PFL_EXPECT(flow_protocol_id(row) == ProtocolId::udp);
     PFL_EXPECT(row.packet_count == 1U);
