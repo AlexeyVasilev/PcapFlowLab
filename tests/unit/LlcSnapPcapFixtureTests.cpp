@@ -8,6 +8,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
@@ -22,6 +23,17 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     const auto packet = session.find_packet(packet_index);
     PFL_REQUIRE(packet.has_value());
     return *packet;
+}
+
+std::vector<PacketRow> require_enriched_packet_rows(CaptureSession& session, const std::size_t flow_index) {
+    auto rows = session.list_flow_packets(flow_index);
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
+    return rows;
+}
+
+void expect_derived_payload_length(const PacketRow& row, const std::uint32_t expected_payload_length) {
+    PFL_REQUIRE(row.derived_payload_length.has_value());
+    PFL_EXPECT(*row.derived_payload_length == expected_payload_length);
 }
 
 const session_detail::PacketSummaryLayer* find_layer(
@@ -133,9 +145,9 @@ void expect_supported_llc_snap_ip_fixture(
     PFL_REQUIRE(flow_rows.size() == 1U);
     PFL_EXPECT(require_flow_protocol_path_text(session, flow_rows[0]) == expected_protocol_path);
 
-    const auto packet_rows = session.list_flow_packets(0U);
+    const auto packet_rows = require_enriched_packet_rows(session, 0U);
     PFL_REQUIRE(packet_rows.size() == 1U);
-    PFL_EXPECT(packet_rows[0].payload_length == expected_transport_payload_length);
+    expect_derived_payload_length(packet_rows[0], expected_transport_payload_length);
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
@@ -527,9 +539,9 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP");
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
-        const auto packet_rows = session.list_flow_packets(0U);
+        const auto packet_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(packet_rows.size() == 1U);
-        PFL_EXPECT(packet_rows[0].payload_length == 10U);
+        expect_derived_payload_length(packet_rows[0], 10U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -731,9 +743,9 @@ void run_llc_snap_pcap_fixture_tests() {
             rows[0].port_b == 54050U;
         PFL_EXPECT(forward_match || reverse_match);
 
-        const auto packet_rows = session.list_flow_packets(0U);
+        const auto packet_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(packet_rows.size() == 1U);
-        PFL_EXPECT(packet_rows[0].payload_length == 9U);
+        expect_derived_payload_length(packet_rows[0], 9U);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
@@ -826,9 +838,9 @@ void run_llc_snap_pcap_fixture_tests() {
             rows[0].port_b == 54053U;
         PFL_EXPECT(forward_match || reverse_match);
 
-        const auto packet_rows = session.list_flow_packets(0U);
+        const auto packet_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(packet_rows.size() == 1U);
-        PFL_EXPECT(packet_rows[0].payload_length == 9U);
+        expect_derived_payload_length(packet_rows[0], 9U);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);

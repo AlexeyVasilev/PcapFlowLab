@@ -2,10 +2,12 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 
 #include "../../core/open_context.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/FlowRows.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/domain/CaptureState.h"
 #include "core/io/PcapReader.h"
@@ -13,6 +15,21 @@
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
+
+namespace {
+
+std::vector<PacketRow> require_enriched_packet_rows(CaptureSession& session, const std::size_t flow_index) {
+    auto rows = session.list_flow_packets(flow_index);
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
+    return rows;
+}
+
+void expect_derived_payload_length(const PacketRow& row, const std::uint32_t expected_payload_length) {
+    PFL_REQUIRE(row.derived_payload_length.has_value());
+    PFL_EXPECT(*row.derived_payload_length == expected_payload_length);
+}
+
+}
 
 void run_import_tests() {
     constexpr std::size_t kMinCapturedLengthForStagedImportBytes = 16U * 1024U;
@@ -299,9 +316,9 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().packet_count == 11U);
         PFL_EXPECT(session.summary().flow_count == 1U);
 
-        const auto flow_packets = session.list_flow_packets(0);
+        const auto flow_packets = require_enriched_packet_rows(session, 0U);
         PFL_EXPECT(flow_packets.size() == 11U);
-        PFL_EXPECT(flow_packets.back().payload_length == 512U);
+        expect_derived_payload_length(flow_packets.back(), 512U);
 
         const auto packet = session.find_packet(10U);
         PFL_REQUIRE(packet.has_value());
@@ -329,11 +346,13 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().packet_count == 1U);
         PFL_EXPECT(session.summary().flow_count == 1U);
 
-        const auto rows = session.list_flow_packets(0);
+        const auto rows = require_enriched_packet_rows(session, 0U);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows.front().captured_length == large_import_packet.size());
-        PFL_EXPECT(rows.front().payload_length ==
-                   static_cast<std::uint32_t>(large_import_packet.size() - 14U - 20U - 20U));
+        expect_derived_payload_length(
+            rows.front(),
+            static_cast<std::uint32_t>(large_import_packet.size() - 14U - 20U - 20U)
+        );
     }
 
     {
@@ -383,9 +402,9 @@ void run_import_tests() {
             session_detail::derive_transient_packet_metadata(session, *packet).captured_transport_payload_length == 32U
         );
 
-        const auto rows = session.list_flow_packets(0);
+        const auto rows = require_enriched_packet_rows(session, 0U);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows.front().payload_length == 32U);
+        PFL_EXPECT(rows.front().derived_payload_length.has_value());
     }
 
     {

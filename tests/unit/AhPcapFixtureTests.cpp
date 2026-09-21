@@ -188,6 +188,17 @@ std::optional<std::string> protocol_path_text_for_row(
     return format_protocol_path(*path);
 }
 
+std::vector<PacketRow> require_enriched_packet_rows(CaptureSession& session, const std::size_t flow_index) {
+    auto rows = session.list_flow_packets(flow_index);
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
+    return rows;
+}
+
+void expect_derived_payload_length(const PacketRow& row, const std::uint32_t expected_payload_length) {
+    PFL_REQUIRE(row.derived_payload_length.has_value());
+    PFL_EXPECT(*row.derived_payload_length == expected_payload_length);
+}
+
 bool row_protocol_path_contains_all(
     const CaptureSession& session,
     const FlowRow& row,
@@ -658,17 +669,13 @@ void expect_ah_effective_packet_payload_lengths_follow_terminal_transport() {
         PFL_REQUIRE(original_payload_length.has_value());
         PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
-        const auto raw_rows = session.list_flow_packets(0U);
-        PFL_REQUIRE(raw_rows.size() == 1U);
-        PFL_EXPECT(raw_rows[0].payload_length == test_case.expected_payload_length);
-
-        auto enriched_rows = raw_rows;
-        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        const auto enriched_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(enriched_rows.size() == 1U);
-        PFL_EXPECT(enriched_rows[0].payload_length == test_case.expected_payload_length);
+        expect_derived_payload_length(enriched_rows[0], test_case.expected_payload_length);
 
         if (test_case.expect_syn_flag) {
-            PFL_EXPECT(enriched_rows[0].tcp_flags_text.find("SYN") != std::string::npos);
+            PFL_REQUIRE(enriched_rows[0].derived_tcp_flags_text.has_value());
+            PFL_EXPECT(enriched_rows[0].derived_tcp_flags_text->find("SYN") != std::string::npos);
         }
     }
 }
@@ -973,14 +980,9 @@ void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
         PFL_EXPECT(*original_payload_length == 12U);
         PFL_EXPECT(*captured_payload_length < *original_payload_length);
 
-        const auto raw_rows = session.list_flow_packets(0U);
-        PFL_REQUIRE(raw_rows.size() == 1U);
-        PFL_EXPECT(raw_rows[0].payload_length == 4U);
-
-        auto enriched_rows = raw_rows;
-        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        const auto enriched_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(enriched_rows.size() == 1U);
-        PFL_EXPECT(enriched_rows[0].payload_length == 12U);
+        expect_derived_payload_length(enriched_rows[0], 12U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
