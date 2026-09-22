@@ -9,7 +9,7 @@ namespace pfl::tests {
 namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
-    return std::filesystem::path("tests/data") / relative_path;
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
 
 std::vector<std::uint8_t> make_http_request_without_host_payload() {
