@@ -64,6 +64,7 @@ using session_detail::AdvancedFlowFilterServicePredicate;
 using session_detail::AdvancedFlowFilterServicePredicateKind;
 using session_detail::AdvancedFlowFilterSpec;
 using session_detail::AdvancedFlowFilterStringCaseSensitivity;
+using session_detail::AdvancedFlowQueryStatus;
 using session_detail::CompiledAdvancedFlowFilter;
 
 struct FlowFilterFixture {
@@ -641,12 +642,11 @@ void expect_parse_status(
 
 std::vector<std::size_t> evaluate_matching_indices_for_session(
     CaptureSession& session,
-    const AdvancedFlowFilterSpec& spec,
-    const AnalysisSettings& settings
+    const AdvancedFlowFilterSpec& spec
 ) {
-    const auto connections = session_detail::list_connections(session.state());
-    const auto filter = require_compiled_filter(spec, session.state().protocol_path_registry, settings);
-    return evaluate_matching_indices(connections, filter);
+    const auto result = session.query_advanced_flows(spec);
+    PFL_REQUIRE(result.status == AdvancedFlowQueryStatus::ok);
+    return result.ordered_flow_indices;
 }
 
 void expect_round_trip_stable(const AdvancedFlowFilterSpec& spec) {
@@ -2655,14 +2655,14 @@ void run_index_roundtrip_tests() {
             },
         };
 
-        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
+        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec);
         PFL_EXPECT(!raw_matches.empty());
         PFL_REQUIRE(raw_session.save_index(index_path));
 
         CaptureSession loaded_session {};
         PFL_REQUIRE(loaded_session.load_index(index_path));
         expect_indices_equal(
-            evaluate_matching_indices_for_session(loaded_session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(loaded_session, spec),
             raw_matches
         );
     }
@@ -2676,14 +2676,14 @@ void run_index_roundtrip_tests() {
 
         AdvancedFlowFilterSpec spec {};
         spec.tls_version.include = {TlsVersionHint::tls12};
-        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
+        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec);
         PFL_EXPECT(!raw_matches.empty());
         PFL_REQUIRE(raw_session.save_index(index_path));
 
         CaptureSession loaded_session {};
         PFL_REQUIRE(loaded_session.load_index(index_path));
         expect_indices_equal(
-            evaluate_matching_indices_for_session(loaded_session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(loaded_session, spec),
             raw_matches
         );
     }
@@ -2697,14 +2697,14 @@ void run_index_roundtrip_tests() {
 
         AdvancedFlowFilterSpec spec {};
         spec.quic_version.include = {QuicVersionHint::v1};
-        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
+        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec);
         PFL_EXPECT(!raw_matches.empty());
         PFL_REQUIRE(raw_session.save_index(index_path));
 
         CaptureSession loaded_session {};
         PFL_REQUIRE(loaded_session.load_index(index_path));
         expect_indices_equal(
-            evaluate_matching_indices_for_session(loaded_session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(loaded_session, spec),
             raw_matches
         );
     }
@@ -2728,14 +2728,14 @@ void run_index_roundtrip_tests() {
         spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
         spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
 
-        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
+        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec);
         PFL_EXPECT(!raw_matches.empty());
         PFL_REQUIRE(raw_session.save_index(index_path));
 
         CaptureSession loaded_session {};
         PFL_REQUIRE(loaded_session.load_index(index_path));
         expect_indices_equal(
-            evaluate_matching_indices_for_session(loaded_session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(loaded_session, spec),
             raw_matches
         );
     }
@@ -3843,7 +3843,7 @@ void run_metadata_only_evaluation_tests() {
         AdvancedFlowFilterSpec spec {};
         spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 0U};
         expect_indices_equal(
-            evaluate_matching_indices_for_session(session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(session, spec),
             {0U}
         );
     }
@@ -3897,7 +3897,7 @@ void run_metadata_only_evaluation_tests() {
         spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U, .max = 1000U};
         spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5000U, .max = 5000U};
         expect_indices_equal(
-            evaluate_matching_indices_for_session(session, spec, AnalysisSettings {}),
+            evaluate_matching_indices_for_session(session, spec),
             {0U}
         );
     }
