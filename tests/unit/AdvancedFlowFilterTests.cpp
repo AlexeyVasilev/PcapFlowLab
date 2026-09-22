@@ -2,8 +2,10 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -72,6 +74,17 @@ struct FlowFilterFixture {
     ProtocolPathId ipv6_udp_path_id {kInvalidProtocolPathId};
     ProtocolPathId vxlan_tcp_path_id {kInvalidProtocolPathId};
     ProtocolPathId gtpu_tcp_path_id {kInvalidProtocolPathId};
+};
+
+enum class FixtureFlow {
+    tls,
+    vxlan_http,
+    tcp_unknown_443,
+    dns,
+    udp_unknown_443,
+    gtpu_tls,
+    ipv6_udp,
+    quic,
 };
 
 FlowKeyV4 reverse_flow_key(const FlowKeyV4& key) {
@@ -429,6 +442,134 @@ std::vector<session_detail::ListedConnectionRef> listed_connections_for_fixture(
     return session_detail::list_connections(fixture.session.state());
 }
 
+FlowKeyV4 fixture_ipv4_flow_key(const FixtureFlow flow) {
+    switch (flow) {
+    case FixtureFlow::tls:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 10),
+            .dst_addr = ipv4(10, 0, 0, 20),
+            .src_port = 41000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+    case FixtureFlow::vxlan_http:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 30),
+            .dst_addr = ipv4(10, 0, 0, 40),
+            .src_port = 41001,
+            .dst_port = 80,
+            .protocol = ProtocolId::tcp,
+        };
+    case FixtureFlow::tcp_unknown_443:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 50),
+            .dst_addr = ipv4(10, 0, 0, 60),
+            .src_port = 42000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+    case FixtureFlow::dns:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 70),
+            .dst_addr = ipv4(10, 0, 0, 71),
+            .src_port = 53000,
+            .dst_port = 53,
+            .protocol = ProtocolId::udp,
+        };
+    case FixtureFlow::udp_unknown_443:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 80),
+            .dst_addr = ipv4(10, 0, 0, 81),
+            .src_port = 55000,
+            .dst_port = 443,
+            .protocol = ProtocolId::udp,
+        };
+    case FixtureFlow::gtpu_tls:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 90),
+            .dst_addr = ipv4(10, 0, 0, 91),
+            .src_port = 2152,
+            .dst_port = 2152,
+            .protocol = ProtocolId::tcp,
+        };
+    case FixtureFlow::quic:
+        return FlowKeyV4 {
+            .src_addr = ipv4(10, 0, 0, 92),
+            .dst_addr = ipv4(10, 0, 0, 93),
+            .src_port = 56000,
+            .dst_port = 443,
+            .protocol = ProtocolId::udp,
+        };
+    case FixtureFlow::ipv6_udp:
+        break;
+    }
+    PFL_REQUIRE(false);
+    return FlowKeyV4 {};
+}
+
+FlowKeyV6 fixture_ipv6_flow_key(const FixtureFlow flow) {
+    PFL_REQUIRE(flow == FixtureFlow::ipv6_udp);
+    return FlowKeyV6 {
+        .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x31}),
+        .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x32}),
+        .src_port = 54000,
+        .dst_port = 54001,
+        .protocol = ProtocolId::udp,
+    };
+}
+
+std::size_t fixture_flow_index(
+    std::span<const session_detail::ListedConnectionRef> connections,
+    const FixtureFlow flow
+) {
+    for (std::size_t index = 0; index < connections.size(); ++index) {
+        const auto& connection = connections[index];
+        if (flow == FixtureFlow::ipv6_udp) {
+            if (connection.family == FlowAddressFamily::ipv6 && connection.ipv6 != nullptr &&
+                connection.ipv6->has_flow_a && connection.ipv6->flow_a.key == fixture_ipv6_flow_key(flow)) {
+                return index;
+            }
+            continue;
+        }
+
+        if (connection.family == FlowAddressFamily::ipv4 && connection.ipv4 != nullptr &&
+            connection.ipv4->has_flow_a && connection.ipv4->flow_a.key == fixture_ipv4_flow_key(flow)) {
+            return index;
+        }
+    }
+
+    PFL_REQUIRE(false);
+    return connections.size();
+}
+
+std::vector<std::size_t> fixture_scope_indices(
+    std::span<const session_detail::ListedConnectionRef> connections,
+    std::initializer_list<FixtureFlow> flows
+) {
+    std::vector<std::size_t> indices {};
+    indices.reserve(flows.size());
+    for (const auto flow : flows) {
+        indices.push_back(fixture_flow_index(connections, flow));
+    }
+    return indices;
+}
+
+std::vector<std::size_t> fixture_expected_indices(
+    std::span<const session_detail::ListedConnectionRef> connections,
+    std::initializer_list<FixtureFlow> flows
+) {
+    auto indices = fixture_scope_indices(connections, flows);
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    return indices;
+}
+
+std::vector<std::size_t> all_fixture_indices(std::span<const session_detail::ListedConnectionRef> connections) {
+    std::vector<std::size_t> indices(connections.size());
+    std::iota(indices.begin(), indices.end(), 0U);
+    return indices;
+}
+
 CompiledAdvancedFlowFilter require_compiled_filter(
     const AdvancedFlowFilterSpec& spec,
     const ProtocolPathRegistry& registry,
@@ -579,20 +720,26 @@ void run_protocol_and_candidate_scope_tests() {
     {
         const AdvancedFlowFilterSpec spec {};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
     }
 
     {
         const AdvancedFlowFilterSpec spec {};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        const std::vector<std::size_t> candidate_scope {4U, 1U, 4U, 0U};
+        const auto candidate_scope = fixture_scope_indices(
+            connections,
+            {FixtureFlow::udp_unknown_443, FixtureFlow::vxlan_http, FixtureFlow::udp_unknown_443, FixtureFlow::tls}
+        );
         const auto result = session_detail::evaluate_advanced_flow_filter(
             connections,
             filter,
             std::span<const std::size_t>(candidate_scope)
         );
         PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
-        expect_indices_equal(result.matching_flow_indices, {0U, 1U, 4U});
+        expect_indices_equal(
+            result.matching_flow_indices,
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::udp_unknown_443})
+        );
     }
 
     {
@@ -625,57 +772,84 @@ void run_protocol_and_candidate_scope_tests() {
         AdvancedFlowFilterSpec spec {};
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        const std::vector<std::size_t> candidate_scope {7U};
+        const auto candidate_scope = fixture_scope_indices(connections, {FixtureFlow::quic});
         const auto result = session_detail::evaluate_advanced_flow_filter(
             connections,
             filter,
             std::span<const std::size_t>(candidate_scope)
         );
         PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
-        expect_indices_equal(result.matching_flow_indices, {7U});
+        expect_indices_equal(result.matching_flow_indices, fixture_expected_indices(connections, {FixtureFlow::quic}));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        const std::vector<std::size_t> candidate_scope {6U, 3U, 6U, 7U, 4U};
+        const auto candidate_scope = fixture_scope_indices(
+            connections,
+            {FixtureFlow::ipv6_udp, FixtureFlow::dns, FixtureFlow::ipv6_udp, FixtureFlow::quic, FixtureFlow::udp_unknown_443}
+        );
         const auto result = session_detail::evaluate_advanced_flow_filter(
             connections,
             filter,
             std::span<const std::size_t>(candidate_scope)
         );
         PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
-        expect_indices_equal(result.matching_flow_indices, {3U, 4U, 6U, 7U});
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 6U, 7U});
+        expect_indices_equal(
+            result.matching_flow_indices,
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::ipv6_udp, FixtureFlow::quic}
+            )
+        );
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::ipv6_udp, FixtureFlow::quic}
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.flow_protocol.include = {ProtocolId::tcp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::tcp_unknown_443, FixtureFlow::gtpu_tls}
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.flow_protocol.exclude = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::tcp_unknown_443, FixtureFlow::gtpu_tls}
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.flow_protocol.include = {ProtocolId::tcp, ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.detected_protocol.include = {FlowProtocolHint::dns};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::dns}));
     }
 
     {
@@ -846,7 +1020,10 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::quic})
+        );
     }
 
     {
@@ -860,7 +1037,13 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U, 3U, 4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::vxlan_http, FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls, FixtureFlow::quic}
+            )
+        );
     }
 
     {
@@ -872,7 +1055,10 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::vxlan_http})
+        );
     }
 
     {
@@ -887,7 +1073,10 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::gtpu_tls})
+        );
     }
 
     {
@@ -922,7 +1111,10 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::quic})
+        );
     }
 
     {
@@ -982,7 +1174,10 @@ void run_protocol_path_tests() {
             }},
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::vxlan_http})
+        );
     }
 
     {
@@ -1010,7 +1205,13 @@ void run_port_and_aggregate_tests() {
             {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 443U, .last = 443U}},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 2U, 4U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::tls, FixtureFlow::tcp_unknown_443, FixtureFlow::udp_unknown_443, FixtureFlow::quic}
+            )
+        );
     }
 
     {
@@ -1019,7 +1220,10 @@ void run_port_and_aggregate_tests() {
             {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 52000U, .last = 55000U}},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::ipv6_udp})
+        );
     }
 
     {
@@ -1028,7 +1232,7 @@ void run_port_and_aggregate_tests() {
             {.scope = AdvancedFlowFilterPortScope::endpoint_a, .range = {.first = 53000U, .last = 53000U}},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::dns}));
     }
 
     {
@@ -1037,7 +1241,7 @@ void run_port_and_aggregate_tests() {
             {.scope = AdvancedFlowFilterPortScope::endpoint_b, .range = {.first = 53U, .last = 53U}},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::dns}));
     }
 
     {
@@ -1049,7 +1253,10 @@ void run_port_and_aggregate_tests() {
             {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 1U, .last = 1023U}},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {5U, 6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::gtpu_tls, FixtureFlow::ipv6_udp})
+        );
     }
 
     {
@@ -1066,77 +1273,107 @@ void run_port_and_aggregate_tests() {
         spec.aggregate.max_original_packet_length = AdvancedFlowFilterInclusiveRange<std::uint32_t> {.min = 200U, .max = 1600U};
         spec.aggregate.max_captured_packet_length = AdvancedFlowFilterInclusiveRange<std::uint32_t> {.min = 150U, .max = 1500U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 2U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::tcp_unknown_443})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 3000000U, .max = 4500000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {2U, 3U, 4U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tcp_unknown_443, FixtureFlow::dns, FixtureFlow::udp_unknown_443})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls, FixtureFlow::quic})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 2000000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::ipv6_udp})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U, .max = 5100000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U, 4U, 5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::vxlan_http, FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 6000000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 200000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::ipv6_udp})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4550000U, .max = 5000000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 4U, 5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5100000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::gtpu_tls, FixtureFlow::quic})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 2000000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::ipv6_udp})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U, .max = 4500000U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 4U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::udp_unknown_443})
+        );
     }
 
     {
@@ -1144,7 +1381,7 @@ void run_port_and_aggregate_tests() {
         spec.aggregate.fragmented_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2U, .max = 2U};
         spec.aggregate.truncated_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::dns}));
     }
 
     {
@@ -1180,35 +1417,63 @@ void run_directionality_and_service_tests() {
     {
         AdvancedFlowFilterSpec spec {};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.directionality.include = {AdvancedFlowFilterDirectionality::bidirectional};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.directionality.include = {AdvancedFlowFilterDirectionality::unidirectional};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::ipv6_udp,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.directionality.exclude = {AdvancedFlowFilterDirectionality::bidirectional};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::ipv6_udp,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.directionality.exclude = {AdvancedFlowFilterDirectionality::unidirectional};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
@@ -1216,7 +1481,13 @@ void run_directionality_and_service_tests() {
         spec.directionality.include = {AdvancedFlowFilterDirectionality::unidirectional};
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 6U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::ipv6_udp, FixtureFlow::quic}
+            )
+        );
     }
 
     {
@@ -1247,7 +1518,13 @@ void run_directionality_and_service_tests() {
             {.kind = AdvancedFlowFilterServicePredicateKind::known},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 3U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::dns, FixtureFlow::gtpu_tls, FixtureFlow::quic}
+            )
+        );
     }
 
     {
@@ -1256,7 +1533,13 @@ void run_directionality_and_service_tests() {
             {.kind = AdvancedFlowFilterServicePredicateKind::unknown},
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {2U, 4U, 6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {FixtureFlow::tcp_unknown_443, FixtureFlow::udp_unknown_443, FixtureFlow::ipv6_udp}
+            )
+        );
     }
 
     {
@@ -1284,7 +1567,10 @@ void run_directionality_and_service_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::vxlan_http})
+        );
     }
 
     {
@@ -1302,7 +1588,10 @@ void run_directionality_and_service_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 3U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::dns})
+        );
     }
 
     {
@@ -1317,7 +1606,7 @@ void run_directionality_and_service_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::quic}));
     }
 
     {
@@ -1331,7 +1620,10 @@ void run_directionality_and_service_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 3U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::dns, FixtureFlow::gtpu_tls, FixtureFlow::quic})
+        );
     }
 
     {
@@ -1356,7 +1648,10 @@ void run_directionality_and_service_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 3U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::dns})
+        );
     }
 
     {
@@ -1375,7 +1670,7 @@ void run_directionality_and_service_tests() {
         spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 100U, .max = std::nullopt};
         spec.aggregate.fragmented_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 0U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
@@ -1419,42 +1714,82 @@ void run_directional_traffic_tests() {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(fixture_connections, {FixtureFlow::tls})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_a_to_b};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(
+                fixture_connections,
+                {
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::ipv6_udp,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.packet_distribution.exclude = {DirectionDistribution::mostly_a_to_b};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(fixture_connections, {FixtureFlow::tls})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 20U, .max = 20U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(fixture_connections, {FixtureFlow::vxlan_http})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 0U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(
+                fixture_connections,
+                {
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::ipv6_udp,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 50U, .max = 50U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(fixture_connections, {FixtureFlow::tls})
+        );
     }
 
     {
@@ -1462,7 +1797,13 @@ void run_directional_traffic_tests() {
         spec.aggregate.a_to_b_original_bytes =
             AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 700U, .max = 800U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(
+                fixture_connections,
+                {FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls, FixtureFlow::quic}
+            )
+        );
     }
 
     {
@@ -1470,7 +1811,10 @@ void run_directional_traffic_tests() {
         spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U};
         spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 1U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U});
+        expect_indices_equal(
+            evaluate_matching_indices(fixture_connections, filter),
+            fixture_expected_indices(fixture_connections, {FixtureFlow::vxlan_http, FixtureFlow::tcp_unknown_443, FixtureFlow::dns})
+        );
     }
 
     {
@@ -1589,13 +1933,59 @@ void run_directional_traffic_tests() {
 
     const auto distribution_connections = session_detail::list_connections(distribution_session.state());
     PFL_REQUIRE(distribution_connections.size() == 3U);
+    const auto distribution_flow_index = [&](const FlowKeyV4& key) {
+        for (std::size_t index = 0; index < distribution_connections.size(); ++index) {
+            const auto& connection = distribution_connections[index];
+            if (connection.family == FlowAddressFamily::ipv4 && connection.ipv4 != nullptr &&
+                connection.ipv4->has_flow_a && connection.ipv4->flow_a.key == key) {
+                return index;
+            }
+        }
+
+        PFL_REQUIRE(false);
+        return distribution_connections.size();
+    };
+    const auto distribution_expected_indices = [&](std::initializer_list<FlowKeyV4> flows) {
+        std::vector<std::size_t> indices {};
+        indices.reserve(flows.size());
+        for (const auto& flow : flows) {
+            indices.push_back(distribution_flow_index(flow));
+        }
+        std::sort(indices.begin(), indices.end());
+        indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+        return indices;
+    };
+    const FlowKeyV4 balanced_flow_ab {
+        .src_addr = ipv4(192, 0, 2, 10),
+        .dst_addr = ipv4(198, 51, 100, 10),
+        .src_port = 41000,
+        .dst_port = 443,
+        .protocol = ProtocolId::tcp,
+    };
+    const FlowKeyV4 balanced_packets_byte_skew_ab {
+        .src_addr = ipv4(192, 0, 2, 11),
+        .dst_addr = ipv4(198, 51, 100, 11),
+        .src_port = 41001,
+        .dst_port = 443,
+        .protocol = ProtocolId::tcp,
+    };
+    const FlowKeyV4 b_dominant_flow_ab {
+        .src_addr = ipv4(192, 0, 2, 12),
+        .dst_addr = ipv4(198, 51, 100, 12),
+        .src_port = 41002,
+        .dst_port = 443,
+        .protocol = ProtocolId::tcp,
+    };
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_b_to_a};
         const auto filter =
             require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
-        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {2U});
+        expect_indices_equal(
+            evaluate_matching_indices(distribution_connections, filter),
+            distribution_expected_indices({b_dominant_flow_ab})
+        );
     }
 
     {
@@ -1604,7 +1994,10 @@ void run_directional_traffic_tests() {
         spec.aggregate.data_distribution.include = {DirectionDistribution::mostly_b_to_a};
         const auto filter =
             require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
-        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {1U});
+        expect_indices_equal(
+            evaluate_matching_indices(distribution_connections, filter),
+            distribution_expected_indices({balanced_packets_byte_skew_ab})
+        );
     }
 
     {
@@ -1612,7 +2005,10 @@ void run_directional_traffic_tests() {
         spec.aggregate.data_distribution.include = {DirectionDistribution::mostly_b_to_a};
         const auto filter =
             require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
-        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {1U, 2U});
+        expect_indices_equal(
+            evaluate_matching_indices(distribution_connections, filter),
+            distribution_expected_indices({balanced_packets_byte_skew_ab, b_dominant_flow_ab})
+        );
     }
 
     {
@@ -1623,7 +2019,10 @@ void run_directional_traffic_tests() {
         };
         const auto filter =
             require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
-        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {0U, 1U, 2U});
+        expect_indices_equal(
+            evaluate_matching_indices(distribution_connections, filter),
+            distribution_expected_indices({balanced_flow_ab, balanced_packets_byte_skew_ab, b_dominant_flow_ab})
+        );
     }
 
     {
@@ -1632,7 +2031,10 @@ void run_directional_traffic_tests() {
         spec.aggregate.b_to_a_original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U * 1024U * 1024U};
         const auto filter =
             require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
-        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {2U});
+        expect_indices_equal(
+            evaluate_matching_indices(distribution_connections, filter),
+            distribution_expected_indices({b_dominant_flow_ab})
+        );
     }
 }
 
@@ -1644,42 +2046,76 @@ void run_address_family_tests() {
     {
         AdvancedFlowFilterSpec spec {};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.include = {FlowAddressFamily::ipv4};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::tls,
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.include = {FlowAddressFamily::ipv6};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::ipv6_udp})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.include = {FlowAddressFamily::ipv4, FlowAddressFamily::ipv6};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.exclude = {FlowAddressFamily::ipv6};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::tls,
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.exclude = {FlowAddressFamily::ipv4};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::ipv6_udp})
+        );
     }
 
     {
@@ -1687,7 +2123,21 @@ void run_address_family_tests() {
         spec.address_family.include = {FlowAddressFamily::ipv4, FlowAddressFamily::ipv6};
         spec.address_family.exclude = {FlowAddressFamily::ipv6};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::tls,
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
@@ -1703,36 +2153,56 @@ void run_address_family_tests() {
         spec.address_family.include = {FlowAddressFamily::ipv4};
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 7U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::quic})
+        );
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.include = {FlowAddressFamily::ipv4};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        const std::vector<std::size_t> candidate_scope {6U, 7U};
+        const auto candidate_scope = fixture_scope_indices(connections, {FixtureFlow::ipv6_udp, FixtureFlow::quic});
         const auto result = session_detail::evaluate_advanced_flow_filter(
             connections,
             filter,
             std::span<const std::size_t>(candidate_scope)
         );
         PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
-        expect_indices_equal(result.matching_flow_indices, {7U});
+        expect_indices_equal(result.matching_flow_indices, fixture_expected_indices(connections, {FixtureFlow::quic}));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.address_family.include = {FlowAddressFamily::ipv4};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        const std::vector<std::size_t> candidate_scope {0U, 6U, 7U};
+        const auto candidate_scope = fixture_scope_indices(connections, {FixtureFlow::tls, FixtureFlow::ipv6_udp, FixtureFlow::quic});
         const auto scoped_result = session_detail::evaluate_advanced_flow_filter(
             connections,
             filter,
             std::span<const std::size_t>(candidate_scope)
         );
         PFL_REQUIRE(scoped_result.status == AdvancedFlowFilterEvaluationStatus::ok);
-        expect_indices_equal(scoped_result.matching_flow_indices, {0U, 7U});
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+        expect_indices_equal(
+            scoped_result.matching_flow_indices,
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::quic})
+        );
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(
+                connections,
+                {
+                    FixtureFlow::tls,
+                    FixtureFlow::vxlan_http,
+                    FixtureFlow::tcp_unknown_443,
+                    FixtureFlow::dns,
+                    FixtureFlow::udp_unknown_443,
+                    FixtureFlow::gtpu_tls,
+                    FixtureFlow::quic,
+                }
+            )
+        );
     }
 
     {
@@ -1774,7 +2244,7 @@ void run_address_and_version_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
@@ -1788,7 +2258,10 @@ void run_address_and_version_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::vxlan_http, FixtureFlow::tcp_unknown_443})
+        );
     }
 
     {
@@ -1810,7 +2283,10 @@ void run_address_and_version_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 5U});
+        expect_indices_equal(
+            evaluate_matching_indices(connections, filter),
+            fixture_expected_indices(connections, {FixtureFlow::dns, FixtureFlow::udp_unknown_443, FixtureFlow::gtpu_tls})
+        );
     }
 
     {
@@ -1824,7 +2300,7 @@ void run_address_and_version_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::ipv6_udp}));
     }
 
     {
@@ -1839,7 +2315,7 @@ void run_address_and_version_tests() {
         };
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::ipv6_udp}));
     }
 
     {
@@ -1876,7 +2352,7 @@ void run_address_and_version_tests() {
         AdvancedFlowFilterSpec spec {};
         spec.tls_version.include = {TlsVersionHint::tls13};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
     }
 
     {
@@ -1884,14 +2360,14 @@ void run_address_and_version_tests() {
         spec.detected_protocol.include = {FlowProtocolHint::tls};
         spec.tls_version.exclude = {TlsVersionHint::tls13};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {5U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::gtpu_tls}));
     }
 
     {
         AdvancedFlowFilterSpec spec {};
         spec.quic_version.include = {QuicVersionHint::v1};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::quic}));
     }
 
     {
@@ -1906,7 +2382,7 @@ void run_address_and_version_tests() {
             },
         };
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::quic}));
     }
 }
 
@@ -1914,7 +2390,7 @@ void run_document_model_tests() {
     ScopedTestContext context {"advanced_flow_filter/document_model"};
     auto fixture = build_fixture();
     const auto connections = listed_connections_for_fixture(fixture);
-    const std::vector<std::size_t> all_indices {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
+    const auto all_indices = all_fixture_indices(connections);
 
     {
         const AdvancedFlowFilterDocument document {};
@@ -1937,7 +2413,7 @@ void run_document_model_tests() {
         PFL_EXPECT(effective.address_family.include.front() == FlowAddressFamily::ipv6);
         expect_indices_equal(
             evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
-            {6U}
+            fixture_expected_indices(connections, {FixtureFlow::ipv6_udp})
         );
 
         document.section_states.address_family = false;
@@ -2101,7 +2577,7 @@ void run_document_model_tests() {
         PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
         expect_indices_equal(
             evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
-            {0U, 2U, 5U}
+            fixture_expected_indices(connections, {FixtureFlow::tls, FixtureFlow::tcp_unknown_443})
         );
 
         document.section_states.contains_layer = true;
@@ -2114,7 +2590,7 @@ void run_document_model_tests() {
         PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 2U);
         expect_indices_equal(
             evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
-            {1U}
+            fixture_expected_indices(connections, {FixtureFlow::vxlan_http})
         );
 
         document.section_states.contains_layer = false;
@@ -2250,7 +2726,7 @@ void run_index_roundtrip_tests() {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2U, .max = 2U};
         spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
-        spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_a_to_b};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
 
         const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
         PFL_EXPECT(!raw_matches.empty());
@@ -2277,7 +2753,7 @@ void run_text_format_tests() {
             fixture,
             fixture.default_settings
         );
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), all_fixture_indices(connections));
         PFL_EXPECT(parsed.document.section_states == session_detail::AdvancedFlowFilterDocumentSectionStates {});
         PFL_EXPECT(require_format_success(parsed.document) == std::string("format_version = 3\n"));
     }
@@ -2832,7 +3308,7 @@ void run_text_format_tests() {
             "protocol_path.contains.include = UDP\n"
         );
         const auto& spec = parsed.document.configured_spec;
-        PFL_REQUIRE(spec.protocol_path.include.size() == 20U);
+        PFL_REQUIRE(spec.protocol_path.include.size() == 21U);
         PFL_REQUIRE(spec.protocol_path.exclude.size() == 1U);
         PFL_EXPECT(spec.protocol_path.include[0].match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path);
         PFL_EXPECT(spec.protocol_path.include[1].match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
@@ -2926,7 +3402,7 @@ void run_text_format_tests() {
             fixture,
             fixture.default_settings
         );
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::tls}));
         expect_round_trip_stable(parsed.document.configured_spec);
     }
 
@@ -2949,7 +3425,7 @@ void run_text_format_tests() {
             fixture,
             fixture.default_settings
         );
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), fixture_expected_indices(connections, {FixtureFlow::quic}));
         expect_round_trip_stable(parsed.document.configured_spec);
     }
 
@@ -3045,7 +3521,7 @@ void run_text_format_tests() {
         PFL_EXPECT(first_text.find("format_version = 3\n") == 0U);
         PFL_EXPECT(first_text.find("protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n") != std::string::npos);
         PFL_EXPECT(first_text.find("protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n") != std::string::npos);
-        PFL_EXPECT(first_text.find("address_family.include = ipv4\n") != std::string::npos);
+        PFL_EXPECT(first_text.find("ip.either.include = 10.0.0.0/24\n") != std::string::npos);
         PFL_EXPECT(first_text.find("flow_protocol.include = tcp\nflow_protocol.include = udp\n") != std::string::npos);
         PFL_EXPECT(reparsed.document == document);
     }
@@ -3448,6 +3924,30 @@ void run_frontend_text_query_tests() {
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
 
     const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+    const auto flows = adapter.get_flows();
+    const auto require_frontend_flow_index = [&](const std::string_view endpoint_a, const std::string_view endpoint_b) {
+        const auto flow = std::find_if(flows.begin(), flows.end(), [&](const auto& row) {
+            return row.endpoint_a == endpoint_a && row.endpoint_b == endpoint_b;
+        });
+        PFL_REQUIRE(flow != flows.end());
+        return flow->flow_index;
+    };
+    const auto ordered_frontend_indices = [&](std::initializer_list<std::size_t> indices) {
+        std::vector<std::size_t> ordered {};
+        ordered.reserve(indices.size());
+        for (const auto flow_index : baseline.ordered_flow_indices) {
+            if (std::find(indices.begin(), indices.end(), flow_index) != indices.end()) {
+                ordered.push_back(flow_index);
+            }
+        }
+        return ordered;
+    };
+    const auto tcp_flow_index = require_frontend_flow_index("10.94.0.1:51001", "10.94.0.2:80");
+    const auto udp_flow_index = require_frontend_flow_index("10.94.0.3:53000", "10.94.0.4:53");
+    const auto ipv6_udp_flow_index = require_frontend_flow_index(
+        "[2001:0db8:0094:0000:0000:0000:0000:0001]:54000",
+        "[2001:0db8:0094:0000:0000:0000:0000:0002]:443"
+    );
     const auto empty = adapter.query_advanced_flows_text("format_version = 3\n", std::nullopt, std::nullopt, std::nullopt);
     PFL_EXPECT(empty.status == FrontendAdvancedFlowQueryStatus::ok);
     PFL_EXPECT(empty.parse_status == AdvancedFlowFilterTextParseStatus::ok);
@@ -3471,8 +3971,8 @@ void run_frontend_text_query_tests() {
         PFL_EXPECT(from_text.configured_rule_count == 1U);
         PFL_EXPECT(from_text.active_rule_count == 1U);
         PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
-        expect_indices_equal(from_text.ordered_flow_indices, {1U, 2U});
-        expect_indices_equal(complement_indices(baseline.ordered_flow_indices, from_text.ordered_flow_indices), {0U});
+        expect_indices_equal(from_text.ordered_flow_indices, ordered_frontend_indices({udp_flow_index, ipv6_udp_flow_index}));
+        expect_indices_equal(complement_indices(baseline.ordered_flow_indices, from_text.ordered_flow_indices), {tcp_flow_index});
         expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
     }
 
@@ -3493,13 +3993,13 @@ void run_frontend_text_query_tests() {
             "format_version = 3\n"
             "flow_protocol.include = udp\n";
         const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
-        const std::vector<std::size_t> candidate_flow_indices {0U, 1U};
+        const auto candidate_flow_indices = ordered_frontend_indices({tcp_flow_index, udp_flow_index});
         const auto direct = adapter.query_advanced_flows(effective, candidate_flow_indices, std::nullopt, std::nullopt);
         const auto from_text = adapter.query_advanced_flows_text(text, candidate_flow_indices, std::nullopt, std::nullopt);
         PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
         PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
-        expect_indices_equal(from_text.ordered_flow_indices, {1U});
-        expect_indices_equal(complement_indices(candidate_flow_indices, from_text.ordered_flow_indices), {0U});
+        expect_indices_equal(from_text.ordered_flow_indices, ordered_frontend_indices({udp_flow_index}));
+        expect_indices_equal(complement_indices(candidate_flow_indices, from_text.ordered_flow_indices), {tcp_flow_index});
         expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
         PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
     }
@@ -3806,7 +4306,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].address_text == "192.0.2.10");
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].scope_id == "b");
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].subnet_enabled == true);
-        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].address_text == "2001:db8::");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].address_text == "2001:0db8:0000:0000:0000:0000:0000:0000");
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].prefix_text == "32");
     }
 
@@ -4652,7 +5152,7 @@ void run_frontend_structured_document_tests() {
     {
         const std::string text =
             "format_version = 3\n"
-            "aggregate.packet_count.min = 2\n"
+            "packet_count.min = 2\n"
             "service.state.include = known\n";
         const auto updated = adapter.update_advanced_flow_filter_structured_section(
             text,
@@ -4671,7 +5171,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT((reparsed.document.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
             FlowAddressFamily::ipv4
         }));
-        PFL_EXPECT(updated.document->canonical_text.find("aggregate.packet_count.min = 2") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("packet_count.min = 2") != std::string::npos);
         PFL_EXPECT(updated.document->canonical_text.find("service.state.include = known") != std::string::npos);
     }
 
@@ -4720,7 +5220,7 @@ void run_frontend_structured_document_tests() {
         PFL_REQUIRE(updated.document->ip_addresses.exclude.size() == 1U);
         PFL_EXPECT(updated.document->ip_addresses.include[0].prefix_text == "8");
         PFL_EXPECT(updated.document->canonical_text.find("ip.either.include = 10.0.0.0/8") != std::string::npos);
-        PFL_EXPECT(updated.document->canonical_text.find("ip.b.exclude = 2001:db8::/32") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("ip.b.exclude = 2001:0db8:0000:0000:0000:0000:0000:0000/32") != std::string::npos);
     }
 
     {
@@ -4842,7 +5342,7 @@ void run_frontend_structured_document_tests() {
             make_traffic_row("captured_bytes", "KiB", "", ""),
         };
         draft.time.enabled = true;
-        draft.time.duration = make_traffic_row("duration", "bogus", "", "");
+        draft.time.duration = make_traffic_row("duration", "bogus", "1", "");
         const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
         PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
         PFL_REQUIRE(invalid.update_issue.has_value());
@@ -4868,7 +5368,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(custom_workflow.has_unsaved_changes == false);
         PFL_EXPECT(custom_workflow.has_unsaved_configuration == true);
         PFL_EXPECT(custom_workflow.clear_available == true);
-        PFL_EXPECT(custom_workflow.canonical_text.find("flow_protocol.include = TCP") != std::string::npos);
+        PFL_EXPECT(custom_workflow.canonical_text.find("flow_protocol.include = tcp") != std::string::npos);
 
         const auto saved_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
             custom_workflow.canonical_text,
@@ -4890,7 +5390,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(dirty_workflow.has_unsaved_changes == true);
         PFL_EXPECT(dirty_workflow.has_unsaved_configuration == true);
         PFL_EXPECT(dirty_workflow.can_clear_unsaved_changes == true);
-        PFL_EXPECT(dirty_workflow.canonical_text.find("flow_protocol.include = UDP") != std::string::npos);
+        PFL_EXPECT(dirty_workflow.canonical_text.find("flow_protocol.include = udp") != std::string::npos);
 
         const auto reverted_workflow = adapter.clear_advanced_flow_filter_unsaved_changes();
         PFL_EXPECT(reverted_workflow.is_file_backed == true);
