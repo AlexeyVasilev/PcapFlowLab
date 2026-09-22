@@ -1779,7 +1779,8 @@ void expect_frame_length_does_not_split_same_inner_frame_identity() {
 
     const auto first_payload = session.read_selected_flow_transport_payload(rows[0].index, first_packet);
     const auto second_payload = session.read_selected_flow_transport_payload(rows[0].index, second_packet);
-    PFL_EXPECT(first_payload.empty());
+    PFL_EXPECT(first_payload.size() == 4U);
+    PFL_EXPECT(second_payload.size() == 4U);
     PFL_EXPECT(first_payload == second_payload);
 }
 

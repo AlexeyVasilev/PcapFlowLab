@@ -541,8 +541,14 @@ void run_llc_snap_pcap_fixture_tests() {
 
         const auto packet_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(packet_rows.size() == 1U);
-        expect_derived_payload_length(packet_rows[0], 10U);
+        expect_derived_payload_length(packet_rows[0], 17U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+        PFL_REQUIRE(metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(metadata.original_transport_payload_length.has_value());
+        PFL_EXPECT(*metadata.captured_transport_payload_length == 10U);
+        PFL_EXPECT(*metadata.original_transport_payload_length == 17U);
+
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_llc);

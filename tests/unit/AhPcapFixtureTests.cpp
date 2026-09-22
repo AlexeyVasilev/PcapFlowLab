@@ -1016,7 +1016,7 @@ void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
         frontend_packets.packets[0].row_number
     );
     PFL_REQUIRE(frontend_details.details_available);
-    PFL_EXPECT(frontend_details.payload_length == 4U);
+    PFL_EXPECT(frontend_details.payload_length == 12U);
 
     const auto* frontend_udp_layer = find_top_level_layer(frontend_details.summary_layers, "udp");
     PFL_REQUIRE(frontend_udp_layer != nullptr);
