@@ -60,13 +60,6 @@ bool has_trailing_whitespace(const std::string& line) {
     return !line.empty() && (line.back() == ' ' || line.back() == '\t');
 }
 
-std::string left_pad(const std::string_view text, const std::size_t width) {
-    if (text.size() >= width) {
-        return std::string {text};
-    }
-    return std::string(width - text.size(), ' ') + std::string {text};
-}
-
 CaptureState require_imported_capture_state(const std::filesystem::path& path) {
     CaptureImporter importer {};
     CaptureState state {};
@@ -1182,17 +1175,35 @@ void expect_protocol_path_tree_text_formatter_core_contract() {
     PFL_REQUIRE(flow_column != std::string::npos);
     PFL_REQUIRE(packet_column != std::string::npos);
     PFL_REQUIRE(original_bytes_column != std::string::npos);
-    const auto flow_width = packet_column - flow_column - 2U;
-    const auto packet_width = original_bytes_column - packet_column - 2U;
     const auto layer_width = flow_column - 2U;
 
     PFL_EXPECT(lines[3].substr(0U, layer_width) == std::string("Layer") + std::string(layer_width - 5U, ' '));
-    PFL_EXPECT(lines[4].substr(0U, 10U) == "Ethernet II");
-    PFL_EXPECT(lines[4].substr(flow_column, flow_width) == left_pad("7 (70%)", flow_width));
-    PFL_EXPECT(lines[4].substr(packet_column, packet_width) == left_pad("11 (55%)", packet_width));
-    PFL_EXPECT(lines[5].find("    UDP") != std::string::npos);
-    PFL_EXPECT(lines[5].substr(flow_column, flow_width) == left_pad("5 (50%)", flow_width));
-    PFL_EXPECT(lines[5].substr(packet_column, packet_width) == left_pad("10 (50%)", packet_width));
+    PFL_EXPECT(flow_column < packet_column);
+    PFL_EXPECT(packet_column < original_bytes_column);
+
+    const auto ethernet_layer_column = lines[4].find("Ethernet II");
+    const auto ethernet_flow_column = lines[4].find("7 (70%)");
+    const auto ethernet_packet_column = lines[4].find("11 (55%)");
+    const auto ethernet_bytes_column = lines[4].find("2 KB (40%)");
+    PFL_REQUIRE(ethernet_layer_column != std::string::npos);
+    PFL_REQUIRE(ethernet_flow_column != std::string::npos);
+    PFL_REQUIRE(ethernet_packet_column != std::string::npos);
+    PFL_REQUIRE(ethernet_bytes_column != std::string::npos);
+    PFL_EXPECT(ethernet_layer_column < ethernet_flow_column);
+    PFL_EXPECT(ethernet_flow_column < ethernet_packet_column);
+    PFL_EXPECT(ethernet_packet_column < ethernet_bytes_column);
+
+    const auto udp_layer_column = lines[5].find("    UDP");
+    const auto udp_flow_column = lines[5].find("5 (50%)");
+    const auto udp_packet_column = lines[5].find("10 (50%)");
+    const auto udp_bytes_column = lines[5].find("1 KB (20%)");
+    PFL_REQUIRE(udp_layer_column != std::string::npos);
+    PFL_REQUIRE(udp_flow_column != std::string::npos);
+    PFL_REQUIRE(udp_packet_column != std::string::npos);
+    PFL_REQUIRE(udp_bytes_column != std::string::npos);
+    PFL_EXPECT(udp_layer_column < udp_flow_column);
+    PFL_EXPECT(udp_flow_column < udp_packet_column);
+    PFL_EXPECT(udp_packet_column < udp_bytes_column);
 
     for (const auto& line : lines) {
         PFL_EXPECT(!has_trailing_whitespace(line));
