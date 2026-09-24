@@ -624,6 +624,29 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
             make_ethernet_frame_with_payload(
                 detail::kEtherTypeMplsUnicast,
                 make_mpls_payload_with_labels(
+                    {2500U, 2501U},
+                    make_ipv4_payload_packet(
+                        ipv4(10, 20, 31, 1),
+                        ipv4(10, 20, 31, 2),
+                        detail::kIpProtocolTcp,
+                        make_ipv4_tcp_segment(40001U, 443U, 0U, 0x02U)
+                    ),
+                    0U,
+                    64U
+                )
+            ),
+            {{0x8100U, 300U}}
+        )),
+        "EthernetII -> VLAN(vid=300) -> MPLS(label=2500) -> MPLS(label=2501) -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_recognizes_flow(
+        registry,
+        make_raw_packet(add_vlan_tags(
+            make_ethernet_frame_with_payload(
+                detail::kEtherTypeMplsUnicast,
+                make_mpls_payload_with_labels(
                     {16050U},
                     make_ipv6_payload_packet(
                         ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0x11}),
