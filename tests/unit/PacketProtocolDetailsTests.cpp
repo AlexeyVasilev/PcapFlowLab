@@ -1271,9 +1271,22 @@ void run_packet_protocol_details_tests() {
 
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(loaded_session.has_capture());
         PFL_EXPECT(!loaded_session.has_source_capture());
+        PFL_EXPECT(loaded_session.summary().packet_count == 1U);
+        PFL_EXPECT(loaded_session.list_flows().size() == 1U);
+        PFL_EXPECT(!loaded_session.find_packet(0).has_value());
+        const auto missing_source_packet = loaded_session.lookup_source_packet(0U);
+        PFL_EXPECT(missing_source_packet.status == SourcePacketLookupStatus::source_unavailable);
+        PFL_EXPECT(!missing_source_packet.packet.has_value());
+        PFL_EXPECT(!missing_source_packet.source_packet.has_value());
+
+        PFL_EXPECT(loaded_session.attach_source_capture(moved_source_path));
+        PFL_EXPECT(loaded_session.has_source_capture());
         const auto packet = require_packet(loaded_session, 0);
-        PFL_EXPECT(loaded_session.read_packet_protocol_details_text(packet) == kUnavailableProtocolDetailsMessage);
+        const auto text = loaded_session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("TLS") != std::string::npos);
+        PFL_EXPECT(text.find("Handshake Type: ClientHello") != std::string::npos);
     }
 
     {
