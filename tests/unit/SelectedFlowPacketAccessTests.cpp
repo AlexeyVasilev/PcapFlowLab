@@ -37,6 +37,10 @@ PacketRef make_packet_ref(
     };
 }
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
 void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
@@ -333,8 +337,12 @@ public:
         const auto available = static_cast<std::uint64_t>(packets.size()) - local_offset;
         const auto begin = packets.begin() + static_cast<std::ptrdiff_t>(local_offset);
         const auto end = begin + static_cast<std::ptrdiff_t>(std::min(limit, available));
+        std::vector<PacketRef> packet_refs(begin, end);
+        for (const auto& packet : packet_refs) {
+            returned_packet_indices_.push_back(packet.packet_index);
+        }
         return session_detail::SelectedFlowDirectionalPacketReadResult {
-            .packet_refs = std::vector<PacketRef>(begin, end),
+            .packet_refs = std::move(packet_refs),
         };
     }
 
@@ -346,11 +354,16 @@ public:
         return total_requested_packets_;
     }
 
+    [[nodiscard]] const std::vector<std::uint64_t>& returned_packet_indices() const noexcept {
+        return returned_packet_indices_;
+    }
+
 private:
     std::vector<PacketRef> packets_a_ {};
     std::vector<PacketRef> packets_b_ {};
     mutable std::size_t read_call_count_ {0};
     mutable std::uint64_t total_requested_packets_ {0};
+    mutable std::vector<std::uint64_t> returned_packet_indices_ {};
 };
 
 class FailingSelectedFlowPacketAccessSource final : public session_detail::SelectedFlowPacketAccessSource {
@@ -755,6 +768,32 @@ void run_selected_flow_packet_access_tests() {
         PFL_EXPECT(merged.packets[2].packet.packet_index == 12U);
         PFL_EXPECT(source.read_call_count() > 0U);
         PFL_EXPECT(source.total_requested_packets() < 512U);
+    }
+
+    {
+        ScopedTestContext context {"merged_reader_offset_zero_skips_partition_probe"};
+
+        std::vector<PacketRef> packets_a {
+            make_packet_ref(10U, 1'000'000U, 64U, 1000U),
+            make_packet_ref(30U, 1'200'000U, 64U, 3000U),
+        };
+        std::vector<PacketRef> packets_b {
+            make_packet_ref(20U, 1'100'000U, 64U, 2000U),
+        };
+        CountingSelectedFlowPacketAccessSource source(std::move(packets_a), std::move(packets_b));
+
+        const auto merged = session_detail::read_selected_flow_merged_range(source, 0U, 3U);
+        PFL_REQUIRE(static_cast<bool>(merged));
+        PFL_EXPECT(merged.total_packet_count == 3U);
+        PFL_REQUIRE(merged.packets.size() == 3U);
+        PFL_EXPECT(merged.packets[0].packet.packet_index == 10U);
+        PFL_EXPECT(merged.packets[0].direction == Direction::a_to_b);
+        PFL_EXPECT(merged.packets[1].packet.packet_index == 20U);
+        PFL_EXPECT(merged.packets[1].direction == Direction::b_to_a);
+        PFL_EXPECT(merged.packets[2].packet.packet_index == 30U);
+        PFL_EXPECT(merged.packets[2].direction == Direction::a_to_b);
+        PFL_EXPECT(source.read_call_count() == 2U);
+        PFL_EXPECT(source.total_requested_packets() == 3U);
     }
 
     {
@@ -1250,7 +1289,7 @@ void run_selected_flow_packet_access_tests() {
     {
         ScopedTestContext context {"quic_selected_flow_presentation_matches_v16_provider"};
 
-        const auto capture_path = write_quic_directional_context_capture();
+        const auto capture_path = fixture_path("parsing/quic/quic_example_3.pcap");
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(capture_path, CaptureImportOptions {}));
 
@@ -1300,7 +1339,7 @@ void run_selected_flow_packet_access_tests() {
             ipv4_connections.front()->flow_a.key,
             resident_source,
             Direction::a_to_b,
-            std::vector<std::uint64_t> {0U},
+            std::vector<std::uint64_t> {0U, 1U},
             optional_bytes_span(resident_cid),
             0U
         );
@@ -1309,7 +1348,7 @@ void run_selected_flow_packet_access_tests() {
             ipv4_connections.front()->flow_a.key,
             v16_source,
             Direction::a_to_b,
-            std::vector<std::uint64_t> {0U},
+            std::vector<std::uint64_t> {0U, 1U},
             optional_bytes_span(v16_cid),
             0U
         );
@@ -1318,14 +1357,15 @@ void run_selected_flow_packet_access_tests() {
         expect_equal_quic_presentation(*v16_client, *resident_client);
         PFL_REQUIRE(v16_client->tls_handshake.has_value());
         PFL_EXPECT(v16_client->tls_handshake->handshake_type_text == "ClientHello");
-        PFL_EXPECT(v16_client->sni == std::optional<std::string> {"stage1.example"});
+        PFL_EXPECT(v16_client->sni == std::optional<std::string> {"i.ytimg.com"});
+        PFL_EXPECT(v16_client->used_bounded_crypto_assembly);
 
         const auto resident_server = session_detail::build_quic_presentation_for_selected_direction(
             session,
             ipv4_connections.front()->flow_b.key,
             resident_source,
             Direction::b_to_a,
-            std::vector<std::uint64_t> {1U, 2U},
+            std::vector<std::uint64_t> {4U, 6U},
             optional_bytes_span(resident_cid),
             0U
         );
@@ -1334,7 +1374,7 @@ void run_selected_flow_packet_access_tests() {
             ipv4_connections.front()->flow_b.key,
             v16_source,
             Direction::b_to_a,
-            std::vector<std::uint64_t> {1U, 2U},
+            std::vector<std::uint64_t> {4U, 6U},
             optional_bytes_span(v16_cid),
             0U
         );
@@ -1704,6 +1744,17 @@ void run_selected_flow_packet_access_tests() {
             target_connection->flow_a.packets,
             target_connection->flow_b.packets
         );
+        std::vector<std::uint64_t> allowed_packet_indices {};
+        allowed_packet_indices.reserve(
+            target_connection->flow_a.packets.size() + target_connection->flow_b.packets.size()
+        );
+        for (const auto& packet : target_connection->flow_a.packets) {
+            allowed_packet_indices.push_back(packet.packet_index);
+        }
+        for (const auto& packet : target_connection->flow_b.packets) {
+            allowed_packet_indices.push_back(packet.packet_index);
+        }
+        const auto foreign_packet_index = other_connection->flow_a.packets.front().packet_index;
 
         const auto own_presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
@@ -1721,13 +1772,20 @@ void run_selected_flow_packet_access_tests() {
             target_connection->flow_a.key,
             source,
             Direction::a_to_b,
-            std::vector<std::uint64_t> {other_connection->flow_a.packets.front().packet_index},
+            std::vector<std::uint64_t> {foreign_packet_index},
             {},
             0U
         );
         PFL_EXPECT(!foreign_presentation.has_value());
-        PFL_EXPECT(source.total_requested_packets() <=
-            static_cast<std::uint64_t>(target_connection->flow_a.packets.size() + target_connection->flow_b.packets.size()));
+        for (const auto packet_index : source.returned_packet_indices()) {
+            PFL_EXPECT(std::find(allowed_packet_indices.begin(), allowed_packet_indices.end(), packet_index) !=
+                allowed_packet_indices.end());
+        }
+        PFL_EXPECT(std::find(
+            source.returned_packet_indices().begin(),
+            source.returned_packet_indices().end(),
+            foreign_packet_index
+        ) == source.returned_packet_indices().end());
     }
 }
 
