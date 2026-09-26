@@ -1,6 +1,7 @@
 #include "app/session/SelectedPacketBytePresentation.h"
 
 #include <algorithm>
+#include <limits>
 #include <sstream>
 
 #include "core/io/LinkType.h"
@@ -1150,17 +1151,19 @@ std::optional<SelectedPacketByteViewId> append_tcp_segment_view(
     }
 
     std::optional<PacketByteRange> payload_range {};
-    if (parent_range.captured_length > header_length &&
-        (!parent_range.declared_length.has_value() || *parent_range.declared_length > header_length)) {
+    if (parent_range.captured_length >= header_length &&
+        (!parent_range.declared_length.has_value() || *parent_range.declared_length >= header_length) &&
+        parent_range.offset <= std::numeric_limits<std::uint32_t>::max() - header_length) {
+        const auto captured_payload_length = parent_range.captured_length - header_length;
+        const auto declared_payload_length = parent_range.declared_length.has_value()
+            ? std::optional<std::uint32_t> {*parent_range.declared_length - header_length}
+            : std::nullopt;
         payload_range = PacketByteRange {
             .offset = parent_range.offset + header_length,
-            .declared_length = parent_range.declared_length.has_value()
-                ? std::optional<std::uint32_t> {*parent_range.declared_length - header_length}
-                : std::nullopt,
-            .captured_length = parent_range.captured_length - header_length,
+            .declared_length = declared_payload_length,
+            .captured_length = captured_payload_length,
             .truncated = parent_range.truncated ||
-                (parent_range.declared_length.has_value() &&
-                 (parent_range.captured_length - header_length) < (*parent_range.declared_length - header_length)),
+                (declared_payload_length.has_value() && captured_payload_length < *declared_payload_length),
         };
     }
 
