@@ -173,14 +173,18 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - Packet numbers referenced by automated tests: 1.
 - Direction/packet classes:
   - server `Initial`;
-  - `CRYPTO`.
+  - protected server Initial payload.
 - Initial decryption behavior:
-  - bounded `Initial` payload parsing exposes server TLS handshake metadata.
+  - standalone packet does not provide the original client Initial CID context
+    required for authoritative server Initial decryption;
+  - Packet Details should preserve header-oriented QUIC recognition without
+    fabricating decrypted `CRYPTO` or TLS metadata.
 - TLS semantics:
-  - `ServerHello`;
-  - no client `SNI`.
+  - none when inspected in isolation;
+  - positive server `ServerHello` Packet Details coverage belongs to contextual
+    bidirectional fixtures such as `quic_example_3.pcap`.
 - Useful for:
-  - Packet tests;
+  - Packet header/recognition tests;
   - Flow-hint QUIC recognition smoke coverage.
 
 ### `quic_handshake_3.pcap`

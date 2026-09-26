@@ -204,6 +204,16 @@ TransportPayloadDisposition classify_reconstructed_tls_ownership(
         case TlsStreamItemSemanticKind::plaintext_handshake:
         case TlsStreamItemSemanticKind::alert:
         case TlsStreamItemSemanticKind::generic_record:
+            if (tls_summary_payload_is_owned_by_tls(
+                    std::span<const std::uint8_t>(record.captured_bytes.data(), record.captured_bytes.size()),
+                    record.initial_parser_context
+                )) {
+                disposition = strongest_transport_payload_disposition(
+                    disposition,
+                    TransportPayloadDisposition::claimed_by_supported_protocol
+                );
+            }
+            break;
         case TlsStreamItemSemanticKind::partial_record:
         case TlsStreamItemSemanticKind::partial_payload:
         case TlsStreamItemSemanticKind::gap:
