@@ -651,6 +651,11 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
         declared_length = static_cast<std::uint32_t>(
             static_cast<std::size_t>(*effective_payload.declared_payload_length) - trim_prefix_bytes
         );
+    } else if (!effective_payload.payload_truncated &&
+        trim_prefix_bytes <= effective_payload.captured_payload_length &&
+        row.byte_count <= effective_payload.captured_payload_length - trim_prefix_bytes &&
+        row.byte_count <= std::numeric_limits<std::uint32_t>::max()) {
+        declared_length = static_cast<std::uint32_t>(row.byte_count);
     }
     const auto packet_range = make_transport_packet_range(
         session,

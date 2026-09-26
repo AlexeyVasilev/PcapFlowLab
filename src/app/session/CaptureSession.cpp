@@ -5423,6 +5423,14 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
     const std::vector<std::uint64_t>& packet_indices,
     const std::size_t max_packets_to_scan
 ) noexcept {
+    prepare_selected_flow_tcp_payload_suppression(flow_index, packet_indices, max_packets_to_scan);
+}
+
+void CaptureSession::prepare_selected_flow_tcp_payload_suppression(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices,
+    const std::size_t max_packets_to_scan
+) const noexcept {
     const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, max_packets_to_scan);
     if (prefix_resolution.context == nullptr) {
         selected_flow_tcp_payload_suppression_.reset();
@@ -5641,6 +5649,11 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     const auto flow_protocol = protocol_id(*flow_metadata);
     if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp && flow_protocol != ProtocolId::arp) {
         return {};
+    }
+
+    if (flow_protocol == ProtocolId::tcp) {
+        const auto retransmission_packets = suspected_tcp_retransmission_packet_indices(flow_index, bounded_packet_budget);
+        prepare_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_packet_budget);
     }
 
     const auto settings_signature = current_selected_flow_stream_settings_signature();
