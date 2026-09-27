@@ -64,6 +64,7 @@ struct PacketDataPresentation {
     PacketDataRole role {PacketDataRole::none};
     PacketDataTransportKind transport {PacketDataTransportKind::unknown};
     TransportPayloadDisposition disposition {TransportPayloadDisposition::none};
+    TransportPayloadDisposition byte_view_disposition {TransportPayloadDisposition::none};
     PacketDataPlacement placement {PacketDataPlacement::none};
     std::uint32_t declared_length {0U};
     std::uint32_t captured_length {0U};

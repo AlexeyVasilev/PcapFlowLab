@@ -834,6 +834,49 @@ std::vector<TlsHandshakeModel> inspect_tls_handshake_models_from_crypto_prefix(
     );
 }
 
+void populate_quic_plaintext_presentation(
+    ParsedQuicPresentationPacket& packet,
+    std::span<const std::uint8_t> plaintext_payload
+) {
+    if (plaintext_payload.empty()) {
+        return;
+    }
+
+    const auto parsed_frames = parse_quic_plaintext_frames(plaintext_payload);
+    if (!parsed_frames.has_value()) {
+        return;
+    }
+    const bool has_presentable_frame = std::any_of(parsed_frames->begin(), parsed_frames->end(), [](const QuicPresentationFrame& frame) {
+        return frame.type != QuicPresentationFrameType::unknown;
+    });
+    if (!has_presentable_frame) {
+        return;
+    }
+
+    packet.plaintext_payload_candidate.assign(plaintext_payload.begin(), plaintext_payload.end());
+    packet.frames = *parsed_frames;
+    packet.frame_summary = summarize_quic_plaintext_frames(plaintext_payload);
+
+    const bool has_crypto = std::any_of(packet.frames.begin(), packet.frames.end(), [](const QuicPresentationFrame& frame) {
+        return frame.type == QuicPresentationFrameType::crypto;
+    });
+    if (!has_crypto) {
+        return;
+    }
+
+    const std::vector<std::vector<std::uint8_t>> plaintext_payloads {packet.plaintext_payload_candidate};
+    const auto payload_span = std::span<const std::vector<std::uint8_t>>(
+        plaintext_payloads.data(),
+        plaintext_payloads.size()
+    );
+    QuicInitialParser initial_parser {};
+    packet.tls_handshake_models = inspect_tls_handshake_models_from_quic_plaintext_payloads(payload_span);
+    packet.tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(payload_span);
+    if (!packet.sni.has_value()) {
+        packet.sni = initial_parser.extract_client_initial_sni_from_crypto_payloads(payload_span);
+    }
+}
+
 std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::span<const std::uint8_t> udp_payload) {
     if (udp_payload.empty()) {
         return std::nullopt;
@@ -934,25 +977,15 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
     if (packet.is_client_initial) {
         if (const auto plaintext = initial_parser.decrypt_initial_plaintext(udp_payload, false);
             plaintext.has_value()) {
-            packet.plaintext_payload_candidate = *plaintext;
-            if (const auto parsed_frames = parse_quic_plaintext_frames(
-                    std::span<const std::uint8_t>(plaintext->data(), plaintext->size()));
-                parsed_frames.has_value()) {
-                packet.frames = *parsed_frames;
-                packet.frame_summary = summarize_quic_plaintext_frames(
-                    std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
-                );
-            }
-            const std::vector<std::vector<std::uint8_t>> plaintext_payloads {*plaintext};
-            packet.tls_handshake_models = inspect_tls_handshake_models_from_quic_plaintext_payloads(
-                std::span<const std::vector<std::uint8_t>>(plaintext_payloads.data(), plaintext_payloads.size())
-            );
-            packet.tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(
-                std::span<const std::vector<std::uint8_t>>(plaintext_payloads.data(), plaintext_payloads.size())
+            populate_quic_plaintext_presentation(
+                packet,
+                std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
             );
         }
 
-        packet.sni = initial_parser.extract_client_initial_sni(udp_payload);
+        if (const auto sni = initial_parser.extract_client_initial_sni(udp_payload); sni.has_value()) {
+            packet.sni = sni;
+        }
         if (!packet.tls_handshake.has_value()) {
             const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(udp_payload);
             if (crypto_prefix.has_value()) {

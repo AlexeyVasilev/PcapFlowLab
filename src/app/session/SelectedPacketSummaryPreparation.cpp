@@ -311,11 +311,56 @@ TransportPayloadDisposition detect_selected_packet_tls_ownership(
     );
 }
 
+bool dns_payload_has_authoritative_ownership(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const PacketDetails& details,
+    const PacketSummaryOptions& options,
+    const EffectiveTransportPayloadDetails* effective_payload
+) {
+    if (details.has_dns) {
+        return true;
+    }
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (effective_payload != nullptr) {
+        return dns_analyzer.analyze_payload(
+            options.transport_payload_bytes,
+            static_cast<std::size_t>(effective_payload->payload_offset)
+        ).has_value();
+    }
+
+    return dns_analyzer.analyze(packet_bytes, data_link_type).has_value();
+}
+
+bool dns_payload_has_summary_ownership(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const PacketDetails& details,
+    const PacketSummaryOptions& options,
+    const EffectiveTransportPayloadDetails* effective_payload
+) {
+    if (options.dns_summary_presentation_kind.has_value() &&
+        details.dns_message.has_value() &&
+        details.dns_message->status != DnsInspectionStatus::not_enough_header) {
+        return true;
+    }
+
+    return dns_payload_has_authoritative_ownership(
+        packet_bytes,
+        data_link_type,
+        details,
+        options,
+        effective_payload
+    );
+}
+
 TransportPayloadDisposition detect_supported_transport_payload_ownership(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type,
     const PacketDetails& details,
-    const PacketSummaryOptions& options
+    const PacketSummaryOptions& options,
+    const bool use_summary_dns_evidence
 ) {
     if (options.quic_presentation.has_value()) {
         const auto quic_disposition = classify_quic_payload_ownership(*options.quic_presentation);
@@ -332,17 +377,20 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     if (details.effective_transport_payload.has_value()) {
         const auto& effective_payload = *details.effective_transport_payload;
         if (effective_payload.transport == EffectiveTransportKind::udp) {
-            if (options.dns_summary_presentation_kind.has_value() &&
-                details.dns_message.has_value() &&
-                details.dns_message->status != DnsInspectionStatus::not_enough_header) {
-                return TransportPayloadDisposition::claimed_by_supported_protocol;
-            }
-
-            DnsPacketProtocolAnalyzer dns_analyzer {};
-            if (dns_analyzer.analyze_payload(
-                    options.transport_payload_bytes,
-                    static_cast<std::size_t>(effective_payload.payload_offset)
-                ).has_value()) {
+            const auto dns_payload_is_owned = use_summary_dns_evidence
+                ? dns_payload_has_summary_ownership(
+                    packet_bytes,
+                    data_link_type,
+                    details,
+                    options,
+                    &effective_payload)
+                : dns_payload_has_authoritative_ownership(
+                    packet_bytes,
+                    data_link_type,
+                    details,
+                    options,
+                    &effective_payload);
+            if (dns_payload_is_owned) {
                 return TransportPayloadDisposition::claimed_by_supported_protocol;
             }
             return TransportPayloadDisposition::none;
@@ -360,13 +408,10 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     }
 
     if (details.has_udp) {
-        if (options.dns_summary_presentation_kind.has_value() &&
-            details.dns_message.has_value() &&
-            details.dns_message->status != DnsInspectionStatus::not_enough_header) {
-            return TransportPayloadDisposition::claimed_by_supported_protocol;
-        }
-        DnsPacketProtocolAnalyzer dns_analyzer {};
-        if (dns_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
+        const auto dns_payload_is_owned = use_summary_dns_evidence
+            ? dns_payload_has_summary_ownership(packet_bytes, data_link_type, details, options, nullptr)
+            : dns_payload_has_authoritative_ownership(packet_bytes, data_link_type, details, options, nullptr);
+        if (dns_payload_is_owned) {
             return TransportPayloadDisposition::claimed_by_supported_protocol;
         }
     }
@@ -578,7 +623,9 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         };
 
     const auto classify_packet_data_disposition =
-        [&](const PacketDataPresentation& packet_data, const bool transport_truncated) {
+        [&](const PacketDataPresentation& packet_data,
+            const bool transport_truncated,
+            const bool use_summary_dns_evidence) {
             if (packet_data.captured_length == 0U) {
                 return TransportPayloadDisposition::none;
             }
@@ -594,7 +641,8 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
                 packet_bytes,
                 packet.data_link_type,
                 details,
-                preparation.make_options()
+                preparation.make_options(),
+                use_summary_dns_evidence
             );
             return disposition == TransportPayloadDisposition::none
                 ? TransportPayloadDisposition::unclaimed_data
@@ -639,10 +687,17 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
              outer_transport_truncated);
         if (effective_transport_truncated && !packet_data.truncation_reliable) {
             packet_data.disposition = TransportPayloadDisposition::unavailable_or_truncated;
+            packet_data.byte_view_disposition = TransportPayloadDisposition::unavailable_or_truncated;
         } else {
             packet_data.disposition = classify_packet_data_disposition(
                 packet_data,
-                effective_transport_truncated
+                effective_transport_truncated,
+                true
+            );
+            packet_data.byte_view_disposition = classify_packet_data_disposition(
+                packet_data,
+                effective_transport_truncated,
+                false
             );
         }
         preparation.packet_data = packet_data;

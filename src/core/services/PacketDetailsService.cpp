@@ -240,7 +240,8 @@ void populate_application_protocol_details(
 std::optional<PacketByteRange> rebase_packet_byte_range(
     const std::optional<PacketByteRange>& nested_range,
     const std::size_t base_offset,
-    const std::size_t trimmed_prefix
+    const std::size_t trimmed_prefix,
+    const bool inherited_truncated = false
 ) {
     if (!nested_range.has_value() || nested_range->offset < trimmed_prefix) {
         return std::nullopt;
@@ -253,6 +254,7 @@ std::optional<PacketByteRange> rebase_packet_byte_range(
 
     auto rebased = *nested_range;
     rebased.offset = static_cast<std::uint32_t>(rebased_offset);
+    rebased.truncated = rebased.truncated || inherited_truncated;
     return rebased;
 }
 
@@ -1586,7 +1588,8 @@ void populate_vxlan_details(
 std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
     const PacketDetails& details,
     const std::size_t base_offset,
-    const std::size_t trimmed_prefix
+    const std::size_t trimmed_prefix,
+    const bool inherited_truncated
 ) {
     auto inner = std::make_shared<VxlanInnerPacketDetails>();
     if (details.has_ethernet) {
@@ -1595,17 +1598,28 @@ std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
         inner->inner_ethernet.payload_range = rebase_packet_byte_range(
             details.ethernet.payload_range,
             base_offset,
-            trimmed_prefix
+            trimmed_prefix,
+            inherited_truncated
         );
     }
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
     inner->llc = details.llc;
-    inner->llc.unit_range = rebase_packet_byte_range(details.llc.unit_range, base_offset, trimmed_prefix);
+    inner->llc.unit_range = rebase_packet_byte_range(
+        details.llc.unit_range,
+        base_offset,
+        trimmed_prefix,
+        inherited_truncated
+    );
     inner->has_snap = details.has_snap;
     inner->snap = details.snap;
-    inner->snap.unit_range = rebase_packet_byte_range(details.snap.unit_range, base_offset, trimmed_prefix);
+    inner->snap.unit_range = rebase_packet_byte_range(
+        details.snap.unit_range,
+        base_offset,
+        trimmed_prefix,
+        inherited_truncated
+    );
     inner->has_ipv4 = details.has_ipv4;
     inner->ipv4 = details.ipv4;
     inner->has_ipv6 = details.has_ipv6;
@@ -1617,13 +1631,28 @@ std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
     inner->has_sctp = details.has_sctp;
     inner->sctp = details.sctp;
     if (inner->has_ipv4) {
-        inner->ipv4.payload_range = rebase_packet_byte_range(details.ipv4.payload_range, base_offset, trimmed_prefix);
+        inner->ipv4.payload_range = rebase_packet_byte_range(
+            details.ipv4.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     if (inner->has_ipv6) {
-        inner->ipv6.payload_range = rebase_packet_byte_range(details.ipv6.payload_range, base_offset, trimmed_prefix);
+        inner->ipv6.payload_range = rebase_packet_byte_range(
+            details.ipv6.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     if (inner->has_sctp) {
-        inner->sctp.payload_range = rebase_packet_byte_range(details.sctp.payload_range, base_offset, trimmed_prefix);
+        inner->sctp.payload_range = rebase_packet_byte_range(
+            details.sctp.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     return inner;
 }
@@ -1677,7 +1706,15 @@ void populate_vxlan_inner_packet_details(
         0U
     );
     details.vxlan.has_inner_packet = true;
-    details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner, vxlan.inner_ethernet_offset, 0U);
+    const bool inherited_truncated =
+        packet_ref.captured_length < packet_ref.original_length ||
+        (details.vxlan.payload_range.has_value() && details.vxlan.payload_range->truncated);
+    details.vxlan.inner_packet = make_vxlan_inner_packet_details(
+        *decoded_inner,
+        vxlan.inner_ethernet_offset,
+        0U,
+        inherited_truncated
+    );
 }
 
 void populate_lenient_vxlan_details(
@@ -1833,7 +1870,8 @@ void populate_geneve_details(
 std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
     const PacketDetails& details,
     const std::size_t base_offset,
-    const std::size_t trimmed_prefix
+    const std::size_t trimmed_prefix,
+    const bool inherited_truncated
 ) {
     auto inner = std::make_shared<GeneveInnerPacketDetails>();
     if (details.has_ethernet) {
@@ -1842,17 +1880,28 @@ std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
         inner->inner_ethernet.payload_range = rebase_packet_byte_range(
             details.ethernet.payload_range,
             base_offset,
-            trimmed_prefix
+            trimmed_prefix,
+            inherited_truncated
         );
     }
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
     inner->llc = details.llc;
-    inner->llc.unit_range = rebase_packet_byte_range(details.llc.unit_range, base_offset, trimmed_prefix);
+    inner->llc.unit_range = rebase_packet_byte_range(
+        details.llc.unit_range,
+        base_offset,
+        trimmed_prefix,
+        inherited_truncated
+    );
     inner->has_snap = details.has_snap;
     inner->snap = details.snap;
-    inner->snap.unit_range = rebase_packet_byte_range(details.snap.unit_range, base_offset, trimmed_prefix);
+    inner->snap.unit_range = rebase_packet_byte_range(
+        details.snap.unit_range,
+        base_offset,
+        trimmed_prefix,
+        inherited_truncated
+    );
     inner->has_ipv4 = details.has_ipv4;
     inner->ipv4 = details.ipv4;
     inner->has_ipv6 = details.has_ipv6;
@@ -1864,13 +1913,28 @@ std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
     inner->has_sctp = details.has_sctp;
     inner->sctp = details.sctp;
     if (inner->has_ipv4) {
-        inner->ipv4.payload_range = rebase_packet_byte_range(details.ipv4.payload_range, base_offset, trimmed_prefix);
+        inner->ipv4.payload_range = rebase_packet_byte_range(
+            details.ipv4.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     if (inner->has_ipv6) {
-        inner->ipv6.payload_range = rebase_packet_byte_range(details.ipv6.payload_range, base_offset, trimmed_prefix);
+        inner->ipv6.payload_range = rebase_packet_byte_range(
+            details.ipv6.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     if (inner->has_sctp) {
-        inner->sctp.payload_range = rebase_packet_byte_range(details.sctp.payload_range, base_offset, trimmed_prefix);
+        inner->sctp.payload_range = rebase_packet_byte_range(
+            details.sctp.payload_range,
+            base_offset,
+            trimmed_prefix,
+            inherited_truncated
+        );
     }
     return inner;
 }
@@ -1924,7 +1988,15 @@ void populate_geneve_inner_packet_details(
         0U
     );
     details.geneve.has_inner_packet = true;
-    details.geneve.inner_packet = make_geneve_inner_packet_details(*decoded_inner, geneve.inner_ethernet_offset, 0U);
+    const bool inherited_truncated =
+        packet_ref.captured_length < packet_ref.original_length ||
+        (details.geneve.payload_range.has_value() && details.geneve.payload_range->truncated);
+    details.geneve.inner_packet = make_geneve_inner_packet_details(
+        *decoded_inner,
+        geneve.inner_ethernet_offset,
+        0U,
+        inherited_truncated
+    );
 }
 
 void populate_lenient_geneve_details(
