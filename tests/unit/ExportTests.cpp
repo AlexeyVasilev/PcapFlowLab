@@ -1098,7 +1098,7 @@ void run_export_tests() {
         PFL_EXPECT(second_row[0] == std::to_string(*alpha_index + 1U));
         PFL_EXPECT(first_row[4] == "beta.example");
         PFL_EXPECT(second_row[4] == "alpha,\"quoted\",example");
-        PFL_EXPECT(first_row[15] == "EthernetII->IPv4->UDP->GTP-U(teid=16909060)->IPv4->TCP");
+        PFL_EXPECT(first_row[15] == "EthernetII->IPv4->UDP->GTP-U(teid=0x01020304)->IPv4->TCP");
         PFL_EXPECT(second_row[15] == "EthernetII->IPv4->UDP->VXLAN(vni=100)->EthernetII->IPv4->TCP");
     }
 
