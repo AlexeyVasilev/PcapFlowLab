@@ -55,6 +55,7 @@
 #include "core/services/PacketPayloadService.h"
 #include "core/services/PerfOpenLogger.h"
 #include "core/services/QuicPacketProtocolAnalyzer.h"
+#include "core/services/TlsInspectionParser.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -842,6 +843,23 @@ void merge_directional_policy(
     );
 }
 
+void refresh_tls_summary_records_with_context(StreamItemRow& row) {
+    if (row.tls_semantic_kind == TlsStreamItemSemanticKind::none ||
+        row.summary_payload_bytes.empty() ||
+        row.tls_summary_records.empty()) {
+        return;
+    }
+
+    TlsInspectionParser parser {};
+    const auto payload_span = std::span<const std::uint8_t>(
+        row.summary_payload_bytes.data(),
+        row.summary_payload_bytes.size()
+    );
+    auto inspection = parser.inspect(payload_span, row.tls_initial_parser_context);
+    row.tls_summary_records = std::move(inspection.records);
+    row.tls_final_parser_context = inspection.final_context;
+}
+
 void propagate_tls_negotiated_context(std::vector<BuiltStreamRow>& rows) {
     std::optional<std::uint16_t> negotiated_cipher_suite {};
     std::optional<std::uint16_t> negotiated_version {};
@@ -852,11 +870,17 @@ void propagate_tls_negotiated_context(std::vector<BuiltStreamRow>& rows) {
             continue;
         }
 
+        bool parser_context_changed = false;
         if (!row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
             row.tls_initial_parser_context.negotiated_cipher_suite = negotiated_cipher_suite;
+            parser_context_changed = negotiated_cipher_suite.has_value();
         }
         if (!row.tls_initial_parser_context.negotiated_version.has_value()) {
             row.tls_initial_parser_context.negotiated_version = negotiated_version;
+            parser_context_changed = parser_context_changed || negotiated_version.has_value();
+        }
+        if (parser_context_changed) {
+            refresh_tls_summary_records_with_context(row);
         }
         if (!row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
             row.tls_final_parser_context.negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
