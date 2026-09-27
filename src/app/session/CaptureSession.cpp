@@ -4459,7 +4459,7 @@ session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_select
     }
     const auto flow_protocol = protocol_id(*flow_metadata);
 
-    static_cast<void>(list_flow_stream_items_for_packet_prefix(flow_index, max_packets_to_scan, limit));
+    const auto current_rows = list_flow_stream_items_for_packet_prefix(flow_index, max_packets_to_scan, limit);
 
     if (!selected_flow_stream_context_.has_value() || !selected_flow_stream_context_->valid) {
         return make_unavailable(
@@ -4478,22 +4478,32 @@ session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_select
         );
     }
 
-    const auto row_it = std::find_if(context.rows.begin(), context.rows.end(), [&](const StreamItemRow& row) {
+    const auto current_row_it = std::find_if(current_rows.begin(), current_rows.end(), [&](const StreamItemRow& row) {
         return row.stream_item_index == stream_item_index;
     });
-    if (row_it == context.rows.end()) {
+    if (current_row_it == current_rows.end()) {
         return make_unavailable(
             session_detail::StreamItemDataState::unavailable,
             "The selected stream item is stale or outside the requested bounded stream window."
         );
     }
 
-    const auto row_index = static_cast<std::size_t>(std::distance(context.rows.begin(), row_it));
+    const auto context_row_it = std::find_if(context.rows.begin(), context.rows.end(), [&](const StreamItemRow& row) {
+        return row.stream_item_index == stream_item_index;
+    });
+    if (context_row_it == context.rows.end()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The bounded selected-flow stream context is incompatible with this request."
+        );
+    }
+
+    const auto row_index = static_cast<std::size_t>(std::distance(context.rows.begin(), context_row_it));
     return session_detail::derive_selected_stream_item_data_presentation(
         *this,
         flow_index,
         flow_protocol,
-        *row_it,
+        *current_row_it,
         decode_stream_stability(context.stability_codes[row_index]),
         context.intra_packet_ordinals[row_index],
         context.materialized_packet_window_count
