@@ -186,9 +186,14 @@ std::string render_table(
         if (index > 0U) {
             out << "  ";
         }
-        out << (columns[index].right_align
-            ? pad_left(columns[index].header, widths[index])
-            : pad_right(columns[index].header, widths[index]));
+        const bool final_column = index + 1U == columns.size();
+        if (final_column) {
+            out << columns[index].header;
+        } else {
+            out << (columns[index].right_align
+                ? pad_left(columns[index].header, widths[index])
+                : pad_right(columns[index].header, widths[index]));
+        }
     }
     out << '\n';
 
@@ -198,7 +203,12 @@ std::string render_table(
                 out << "  ";
             }
             const std::string_view cell = index < row.size() ? std::string_view {row[index]} : std::string_view {};
-            out << (columns[index].right_align ? pad_left(cell, widths[index]) : pad_right(cell, widths[index]));
+            const bool final_column = index + 1U == columns.size();
+            if (final_column) {
+                out << cell;
+            } else {
+                out << (columns[index].right_align ? pad_left(cell, widths[index]) : pad_right(cell, widths[index]));
+            }
         }
         out << '\n';
     }
