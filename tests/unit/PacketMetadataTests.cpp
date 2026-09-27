@@ -310,7 +310,7 @@ void run_packet_metadata_tests() {
         PFL_REQUIRE(cached_metadata.has_value());
         PFL_EXPECT(!cached_metadata->captured_transport_payload_length.has_value());
         PFL_EXPECT(!cached_metadata->original_transport_payload_length.has_value());
-        PFL_EXPECT(cached_metadata->tcp_flags == 0x12U);
+        PFL_EXPECT(!cached_metadata->tcp_flags.has_value());
         PFL_EXPECT(cached_metadata->is_ip_fragmented == true);
         PFL_EXPECT(!session.selected_flow_cached_packet_metadata(0U, packet_ref->packet_index + 1U).has_value());
         const auto fragmented_cache_info = session.selected_flow_packet_cache_info();
@@ -325,8 +325,7 @@ void run_packet_metadata_tests() {
         PFL_REQUIRE(rows.size() == 1U);
         session_detail::populate_transient_packet_row_metadata(session, 0U, rows);
         PFL_EXPECT(!rows.front().derived_payload_length.has_value());
-        PFL_REQUIRE(rows.front().derived_tcp_flags_text.has_value());
-        PFL_EXPECT(*rows.front().derived_tcp_flags_text == "ACK|SYN");
+        PFL_EXPECT(!rows.front().derived_tcp_flags_text.has_value());
         PFL_REQUIRE(rows.front().derived_is_ip_fragmented.has_value());
         PFL_EXPECT(*rows.front().derived_is_ip_fragmented);
     }
@@ -448,7 +447,13 @@ void run_packet_metadata_tests() {
         PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows.front().captured_length == 74U);
         PFL_EXPECT(rows.front().original_length == 332U);
-        PFL_EXPECT(rows.front().payload_length == 32U);
+        PFL_EXPECT(rows.front().payload_length == 0U);
+
+        auto transient_rows = rows;
+        session_detail::populate_transient_packet_row_metadata(session, 0U, transient_rows);
+        PFL_REQUIRE(transient_rows.size() == 1U);
+        PFL_REQUIRE(transient_rows.front().derived_payload_length.has_value());
+        PFL_EXPECT(*transient_rows.front().derived_payload_length == 290U);
 
         auto enriched_rows = rows;
         session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
