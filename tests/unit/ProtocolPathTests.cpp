@@ -60,6 +60,13 @@ bool has_trailing_whitespace(const std::string& line) {
     return !line.empty() && (line.back() == ' ' || line.back() == '\t');
 }
 
+std::string left_pad(const std::string_view text, const std::size_t width) {
+    if (text.size() >= width) {
+        return std::string {text};
+    }
+    return std::string(width - text.size(), ' ') + std::string {text};
+}
+
 CaptureState require_imported_capture_state(const std::filesystem::path& path) {
     CaptureImporter importer {};
     CaptureState state {};
@@ -1175,9 +1182,27 @@ void expect_protocol_path_tree_text_formatter_core_contract() {
     PFL_REQUIRE(flow_column != std::string::npos);
     PFL_REQUIRE(packet_column != std::string::npos);
     PFL_REQUIRE(original_bytes_column != std::string::npos);
-    const auto layer_width = flow_column - 2U;
+    const auto layer_width = std::max(
+        std::max(std::string_view {"Layer"}.size(), summary.rows[0].layer_text.size()),
+        (summary.rows[1].depth * 2U) + summary.rows[1].layer_text.size()
+    );
+    const auto flow_width = std::max(
+        std::max(std::string_view {"Flows"}.size(), summary.rows[0].flow_count_text.size()),
+        summary.rows[1].flow_count_text.size()
+    );
+    const auto packet_width = std::max(
+        std::max(std::string_view {"Packets"}.size(), summary.rows[0].packet_count_text.size()),
+        summary.rows[1].packet_count_text.size()
+    );
+    PFL_REQUIRE(original_bytes_column >= packet_width + 2U);
+    const auto flow_value_column = layer_width + 2U;
+    const auto packet_value_column = original_bytes_column - packet_width - 2U;
+    PFL_REQUIRE(flow_value_column >= 2U);
+    const auto original_bytes_width = lines[3].size() - original_bytes_column;
 
     PFL_EXPECT(lines[3].substr(0U, layer_width) == std::string("Layer") + std::string(layer_width - 5U, ' '));
+    PFL_EXPECT(lines[3].substr(flow_value_column, flow_width) == left_pad("Flows", flow_width));
+    PFL_EXPECT(lines[3].substr(packet_value_column, packet_width) == left_pad("Packets", packet_width));
     PFL_EXPECT(flow_column < packet_column);
     PFL_EXPECT(packet_column < original_bytes_column);
 
@@ -1192,6 +1217,12 @@ void expect_protocol_path_tree_text_formatter_core_contract() {
     PFL_EXPECT(ethernet_layer_column < ethernet_flow_column);
     PFL_EXPECT(ethernet_flow_column < ethernet_packet_column);
     PFL_EXPECT(ethernet_packet_column < ethernet_bytes_column);
+    PFL_EXPECT(lines[4].substr(0U, layer_width) == std::string("Ethernet II") + std::string(layer_width - 11U, ' '));
+    PFL_EXPECT(lines[4].substr(flow_value_column, flow_width) == left_pad("7 (70%)", flow_width));
+    PFL_EXPECT(lines[4].substr(packet_value_column, packet_width) == left_pad("11 (55%)", packet_width));
+    PFL_EXPECT(lines[4].substr(original_bytes_column, original_bytes_width)
+        == left_pad("2 KB (40%)", original_bytes_width));
+    PFL_EXPECT(lines[4].size() == lines[3].size());
 
     const auto udp_layer_column = lines[5].find("    UDP");
     const auto udp_flow_column = lines[5].find("5 (50%)");
@@ -1204,6 +1235,12 @@ void expect_protocol_path_tree_text_formatter_core_contract() {
     PFL_EXPECT(udp_layer_column < udp_flow_column);
     PFL_EXPECT(udp_flow_column < udp_packet_column);
     PFL_EXPECT(udp_packet_column < udp_bytes_column);
+    PFL_EXPECT(lines[5].substr(0U, layer_width) == std::string("    UDP") + std::string(layer_width - 7U, ' '));
+    PFL_EXPECT(lines[5].substr(flow_value_column, flow_width) == left_pad("5 (50%)", flow_width));
+    PFL_EXPECT(lines[5].substr(packet_value_column, packet_width) == left_pad("10 (50%)", packet_width));
+    PFL_EXPECT(lines[5].substr(original_bytes_column, original_bytes_width)
+        == left_pad("1 KB (20%)", original_bytes_width));
+    PFL_EXPECT(lines[5].size() == lines[3].size());
 
     for (const auto& line : lines) {
         PFL_EXPECT(!has_trailing_whitespace(line));

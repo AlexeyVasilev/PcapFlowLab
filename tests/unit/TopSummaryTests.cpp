@@ -396,10 +396,13 @@ void run_top_summary_tests() {
     PFL_EXPECT(top_flow_ranking_session.open_capture(top_flow_ranking_capture_path));
     const auto top_flow_ranking_summary = top_flow_ranking_session.top_summary(5U);
     PFL_REQUIRE(top_flow_ranking_summary.flows_by_original_bytes.size() >= 4U);
+    PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[0].flow_index == 0U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[0].total_bytes == 210U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[0].packet_count == 5U);
+    PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[1].flow_index == 1U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[1].total_bytes == 210U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[1].packet_count == 3U);
+    PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[2].flow_index == 2U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[2].total_bytes == 200U);
     PFL_EXPECT(top_flow_ranking_summary.flows_by_original_bytes[2].captured_bytes
         < top_flow_ranking_summary.flows_by_original_bytes[3].captured_bytes);
