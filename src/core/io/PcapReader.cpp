@@ -77,15 +77,14 @@ bool PcapReader::is_current_prefix_packet(const RawPcapPacket& packet) const noe
         prefix_packet_state_.captured_length == packet.captured_length;
 }
 
-bool PcapReader::trim_erf_prefix_overread(RawPcapPacket& packet, const std::size_t requested_network_prefix_bytes) {
+bool PcapReader::trim_erf_prefix_overread(RawPcapPacket& packet, const std::size_t requested_prefix_bytes) {
     if (global_header_.network != kLinkTypeErf ||
-        packet.data_link_type != kLinkTypeEthernet ||
-        requested_network_prefix_bytes >= packet.captured_length ||
-        packet.bytes.size() <= requested_network_prefix_bytes) {
+        requested_prefix_bytes >= packet.captured_length ||
+        packet.bytes.size() <= requested_prefix_bytes) {
         return true;
     }
 
-    const auto overread_bytes = packet.bytes.size() - requested_network_prefix_bytes;
+    const auto overread_bytes = packet.bytes.size() - requested_prefix_bytes;
     stream_.seekg(-static_cast<std::streamoff>(overread_bytes), std::ios::cur);
     if (!stream_) {
         set_error(next_input_offset_, "seek failed", packet.packet_index);
@@ -93,7 +92,7 @@ bool PcapReader::trim_erf_prefix_overread(RawPcapPacket& packet, const std::size
     }
 
     next_input_offset_ -= static_cast<std::uint64_t>(overread_bytes);
-    packet.bytes.resize(requested_network_prefix_bytes);
+    packet.bytes.resize(requested_prefix_bytes);
     return true;
 }
 

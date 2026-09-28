@@ -114,6 +114,56 @@ bool has_no_tabs_or_trailing_spaces(const std::string_view text) {
     return true;
 }
 
+std::vector<std::string_view> non_empty_section_lines(
+    const std::string_view haystack,
+    const std::string_view section_heading,
+    const std::string_view next_section_heading
+) {
+    const auto section_begin = haystack.find(section_heading);
+    if (section_begin == std::string_view::npos) {
+        return {};
+    }
+
+    const auto content_begin = section_begin + section_heading.size();
+    const auto section_end = haystack.find(next_section_heading, content_begin);
+    const auto content_end = section_end == std::string_view::npos ? haystack.size() : section_end;
+    const auto content = haystack.substr(content_begin, content_end - content_begin);
+
+    std::vector<std::string_view> lines {};
+    std::size_t line_start = 0U;
+    while (line_start < content.size()) {
+        const auto line_end = content.find('\n', line_start);
+        auto line = content.substr(
+            line_start,
+            line_end == std::string_view::npos ? content.size() - line_start : line_end - line_start
+        );
+        if (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1U);
+        }
+        if (!line.empty()) {
+            lines.push_back(line);
+        }
+        if (line_end == std::string_view::npos) {
+            break;
+        }
+        line_start = line_end + 1U;
+    }
+    return lines;
+}
+
+void expect_ip_fragmentation_count_column_right_aligned(const std::string_view stdout_text) {
+    const auto lines = non_empty_section_lines(stdout_text, "IP Fragmentation", "Detected Protocol Hints");
+    PFL_REQUIRE(lines.size() >= 2U);
+
+    const auto header_line = lines[0];
+    const auto first_data_line = lines[1];
+    PFL_REQUIRE(header_line.find("Metric") != std::string_view::npos);
+    PFL_REQUIRE(header_line.find("Count") != std::string_view::npos);
+    PFL_EXPECT(header_line.size() == first_data_line.size());
+    PFL_EXPECT(header_line.back() == 't');
+    PFL_EXPECT(first_data_line.back() != ' ');
+}
+
 bool has_no_ansi_escape_sequences(const std::string_view text) {
     return text.find('\x1b') == std::string_view::npos;
 }
@@ -1024,6 +1074,7 @@ void expect_extended_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Data Size"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Flow Size"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "IP Fragmentation"));
+    expect_ip_fragmentation_count_column_right_aligned(execution_result.stdout_text);
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Detected Protocol Hints"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "QUIC and TLS"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Recognized Initial"));

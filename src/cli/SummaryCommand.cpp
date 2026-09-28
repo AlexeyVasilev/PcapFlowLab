@@ -161,6 +161,21 @@ std::string pad_left(const std::string_view text, const std::size_t width) {
     return std::string(width - text.size(), ' ') + std::string {text};
 }
 
+std::string render_table_cell(
+    const std::string_view text,
+    const TableColumn& column,
+    const std::size_t width,
+    const bool final_column
+) {
+    if (column.right_align) {
+        return pad_left(text, width);
+    }
+    if (final_column) {
+        return std::string {text};
+    }
+    return pad_right(text, width);
+}
+
 std::string render_table(
     const std::vector<TableColumn>& columns,
     const std::vector<std::vector<std::string>>& rows
@@ -187,13 +202,7 @@ std::string render_table(
             out << "  ";
         }
         const bool final_column = index + 1U == columns.size();
-        if (final_column) {
-            out << columns[index].header;
-        } else {
-            out << (columns[index].right_align
-                ? pad_left(columns[index].header, widths[index])
-                : pad_right(columns[index].header, widths[index]));
-        }
+        out << render_table_cell(columns[index].header, columns[index], widths[index], final_column);
     }
     out << '\n';
 
@@ -204,11 +213,7 @@ std::string render_table(
             }
             const std::string_view cell = index < row.size() ? std::string_view {row[index]} : std::string_view {};
             const bool final_column = index + 1U == columns.size();
-            if (final_column) {
-                out << cell;
-            } else {
-                out << (columns[index].right_align ? pad_left(cell, widths[index]) : pad_right(cell, widths[index]));
-            }
+            out << render_table_cell(cell, columns[index], widths[index], final_column);
         }
         out << '\n';
     }

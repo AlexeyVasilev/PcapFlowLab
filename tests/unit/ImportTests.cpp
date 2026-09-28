@@ -52,6 +52,12 @@ std::vector<std::uint8_t> make_erf_type_eth_record(const std::vector<std::uint8_
     return bytes;
 }
 
+std::vector<std::uint8_t> make_unsupported_erf_record(const std::vector<std::uint8_t>& ethernet_packet) {
+    auto bytes = make_erf_type_eth_record(ethernet_packet);
+    bytes[8] = 0x01U;
+    return bytes;
+}
+
 }
 
 void run_import_tests() {
@@ -296,6 +302,69 @@ void run_import_tests() {
 
         PFL_EXPECT(reader.materialize_packet_bytes(packet));
         PFL_EXPECT(packet.bytes == large_network_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(reader.finish_prefix_packet(packet));
+
+        PFL_EXPECT(reader.read_next_import_packet_into(
+            packet,
+            kInitialImportHeaderPrefixBytes,
+            kMinCapturedLengthForStagedImportBytes
+        ));
+        PFL_EXPECT(packet.packet_index == 1U);
+        PFL_EXPECT(packet.data_link_type == kLinkTypeEthernet);
+        PFL_EXPECT(packet.captured_length == small_network_packet.size());
+        PFL_EXPECT(packet.original_length == small_network_packet.size());
+        PFL_EXPECT(packet.bytes == small_network_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(!reader.read_next_import_packet_into(
+            packet,
+            kInitialImportHeaderPrefixBytes,
+            kMinCapturedLengthForStagedImportBytes
+        ));
+        PFL_EXPECT(!reader.has_error());
+    }
+
+    {
+        const auto large_network_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 2, 41),
+            ipv4(10, 0, 2, 42),
+            52346,
+            443,
+            static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 1024U - 40U),
+            0x18
+        );
+        const auto small_network_packet = make_ethernet_ipv4_udp_packet(
+            ipv4(10, 0, 2, 43),
+            ipv4(10, 0, 2, 44),
+            54002,
+            54003
+        );
+        const auto large_erf_record = make_unsupported_erf_record(large_network_packet);
+        const auto small_erf_record = make_erf_type_eth_record(small_network_packet);
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_unsupported_erf_staged_then_small.pcap",
+            make_classic_pcap({{100, large_erf_record}, {200, small_erf_record}}, kLinkTypeErf)
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        RawPcapPacket packet {};
+        PFL_EXPECT(reader.read_next_import_packet_into(
+            packet,
+            kInitialImportHeaderPrefixBytes,
+            kMinCapturedLengthForStagedImportBytes
+        ));
+        PFL_EXPECT(packet.packet_index == 0U);
+        PFL_EXPECT(packet.data_link_type == kLinkTypeErf);
+        PFL_EXPECT(packet.captured_length == large_erf_record.size());
+        PFL_EXPECT(packet.original_length == large_erf_record.size());
+        PFL_EXPECT(packet.data_offset == 24U + 16U);
+        PFL_EXPECT(packet.bytes.size() == kInitialImportHeaderPrefixBytes);
+        PFL_EXPECT(std::equal(packet.bytes.begin(), packet.bytes.end(), large_erf_record.begin()));
+        PFL_EXPECT(reader.next_input_offset() == packet.data_offset + kInitialImportHeaderPrefixBytes);
+
+        PFL_EXPECT(reader.materialize_packet_bytes(packet));
+        PFL_EXPECT(packet.bytes == large_erf_record);
         PFL_EXPECT(packet.bytes.size() == packet.captured_length);
         PFL_EXPECT(reader.finish_prefix_packet(packet));
 
