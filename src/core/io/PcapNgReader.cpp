@@ -342,7 +342,20 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
                 ++next_packet_index_;
                 return packet;
             }
-            continue;
+
+            RawPcapPacket packet {
+                .packet_index = next_packet_index_,
+                .ts_sec = ts_sec,
+                .ts_usec = ts_usec,
+                .captured_length = captured_length,
+                .original_length = original_length,
+                .record_file_offset = block_start,
+                .data_offset = block_start + kEnhancedPacketBlockPacketDataOffset,
+                .data_link_type = kLinkTypeErf,
+                .bytes = {captured_packet_bytes.begin(), captured_packet_bytes.end()},
+            };
+            ++next_packet_index_;
+            return packet;
         }
 
         if (!is_supported_capture_link_type(interface_info.linktype)) {

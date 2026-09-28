@@ -92,6 +92,74 @@ struct ParsedPcapPacket {
     std::vector<std::uint8_t> payload {};
 };
 
+void append_le16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xffU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
+}
+
+void append_le32(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xffU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xffU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xffU));
+}
+
+void append_le64(std::vector<std::uint8_t>& bytes, const std::uint64_t value) {
+    append_le32(bytes, static_cast<std::uint32_t>(value & 0xffff'ffffULL));
+    append_le32(bytes, static_cast<std::uint32_t>((value >> 32U) & 0xffff'ffffULL));
+}
+
+std::size_t pcapng_padding_length(const std::size_t length) noexcept {
+    return (4U - (length % 4U)) % 4U;
+}
+
+std::filesystem::path write_single_erf_record_pcapng(
+    const std::string_view output_name,
+    const ParsedPcapPacket& source_packet
+) {
+    const auto captured_length = static_cast<std::uint32_t>(source_packet.payload.size());
+    const auto padding_length = pcapng_padding_length(source_packet.payload.size());
+    const auto enhanced_packet_block_length =
+        static_cast<std::uint32_t>(12U + kPcapNgEnhancedPacketFixedBodyLength + captured_length + padding_length);
+
+    std::vector<std::uint8_t> bytes {};
+    bytes.reserve(kPcapNgSectionHeaderBlockLength + kPcapNgInterfaceDescriptionBlockLength + enhanced_packet_block_length);
+
+    append_le32(bytes, kPcapNgSectionHeaderBlockType);
+    append_le32(bytes, static_cast<std::uint32_t>(kPcapNgSectionHeaderBlockLength));
+    append_le32(bytes, 0x1a2b3c4dU);
+    append_le16(bytes, static_cast<std::uint16_t>(1U));
+    append_le16(bytes, static_cast<std::uint16_t>(0U));
+    append_le64(bytes, 0xffff'ffff'ffff'ffffULL);
+    append_le32(bytes, static_cast<std::uint32_t>(kPcapNgSectionHeaderBlockLength));
+
+    append_le32(bytes, kPcapNgInterfaceDescriptionBlockType);
+    append_le32(bytes, static_cast<std::uint32_t>(kPcapNgInterfaceDescriptionBlockLength));
+    append_le16(bytes, static_cast<std::uint16_t>(kLinkTypeErf));
+    append_le16(bytes, static_cast<std::uint16_t>(0U));
+    append_le32(bytes, 65535U);
+    append_le32(bytes, static_cast<std::uint32_t>(kPcapNgInterfaceDescriptionBlockLength));
+
+    append_le32(bytes, kPcapNgEnhancedPacketBlockType);
+    append_le32(bytes, enhanced_packet_block_length);
+    append_le32(bytes, 0U);
+    append_le32(bytes, 0U);
+    append_le32(bytes, 0U);
+    append_le32(bytes, captured_length);
+    append_le32(bytes, source_packet.original_length);
+    bytes.insert(bytes.end(), source_packet.payload.begin(), source_packet.payload.end());
+    bytes.insert(bytes.end(), padding_length, static_cast<std::uint8_t>(0U));
+    append_le32(bytes, enhanced_packet_block_length);
+
+    const auto output_path = std::filesystem::temp_directory_path() / std::string(output_name);
+    std::filesystem::remove(output_path);
+    std::ofstream output(output_path, std::ios::binary);
+    PFL_REQUIRE(output.is_open());
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    PFL_REQUIRE(output.good());
+    return output_path;
+}
+
 ParsedPcapPacket read_single_packet_path(const std::filesystem::path& path);
 
 ParsedPcapPacket read_single_packet_fixture(const std::string_view file_name) {
@@ -578,6 +646,49 @@ void expect_malformed_or_unsupported_erf_records_are_unrecognized() {
     }
 }
 
+void expect_pcapng_malformed_or_unsupported_erf_records_are_unrecognized() {
+    struct WrappedFixture {
+        std::string_view source_fixture;
+        std::string_view output_name;
+    };
+
+    const std::vector<WrappedFixture> fixtures {
+        {
+            .source_fixture = "07_erf_unsupported_record_type.pcap",
+            .output_name = "pfl_erf_pcapng_unsupported_record_type.pcapng",
+        },
+        {
+            .source_fixture = "09_erf_truncated_extension_header.pcap",
+            .output_name = "pfl_erf_pcapng_truncated_extension_header.pcapng",
+        },
+    };
+
+    for (const auto& fixture : fixtures) {
+        const auto source_packet = read_single_packet_fixture(fixture.source_fixture);
+        PFL_REQUIRE(source_packet.link_type == kLinkTypeErf);
+
+        const auto pcapng_path = write_single_erf_record_pcapng(fixture.output_name, source_packet);
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(pcapng_path));
+        PFL_EXPECT(session.summary().packet_count == 0U);
+        PFL_EXPECT(session.summary().flow_count == 0U);
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+
+        const auto rows = session.list_unrecognized_packets();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows.front().packet_index == 0U);
+
+        const auto packet = session.find_packet(rows.front().packet_index);
+        PFL_REQUIRE(packet.has_value());
+        PFL_EXPECT(packet->data_link_type == kLinkTypeErf);
+        PFL_EXPECT(packet->byte_offset == kPcapNgSectionHeaderBlockLength + kPcapNgInterfaceDescriptionBlockLength + 28U);
+        PFL_EXPECT(packet->captured_length == source_packet.captured_length);
+        PFL_EXPECT(packet->original_length == source_packet.original_length);
+    }
+}
+
 void expect_erf_flow_export_writes_normalized_ethernet(
     const std::string_view source_fixture,
     const std::string_view output_name
@@ -617,6 +728,7 @@ void run_erf_pcap_fixture_tests() {
     expect_erf_extension_header_fixture_opens();
     expect_erf_network_truncation_uses_network_lengths();
     expect_malformed_or_unsupported_erf_records_are_unrecognized();
+    expect_pcapng_malformed_or_unsupported_erf_records_are_unrecognized();
     expect_erf_flow_export_writes_normalized_ethernet(
         "01_erf_eth_ipv4_tcp.pcap",
         "pfl_erf_classic_export_normalized_ethernet.pcap");
