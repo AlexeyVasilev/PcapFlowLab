@@ -111,6 +111,38 @@ Repository-wide interpretation rules confirmed by these fixtures:
   - `0-RTT` naming;
   - coalesced shell-order checks.
 
+### `quic_example_3.pcap`
+
+- Source/generation: compact manually inspected QUIC v1 regression capture.
+- Packet count: 7.
+- Direction/packet classes:
+  - client `Initial` packets with `CRYPTO` across packets 1-2;
+  - server `Initial` packets with `ACK` and `ACK, PADDING`;
+  - server `Initial` packets with `CRYPTO, PADDING` across packets 5 and 7;
+  - client `Initial` packet with `ACK`.
+- Flow shape:
+  - one bidirectional QUIC Flow;
+  - real encrypted Initial packets;
+  - server Initial context follows the client Initial in the same Flow, so
+    server decryption has the original client Initial CID context.
+- TLS semantics:
+  - client direction exposes `ClientHello`;
+  - client SNI is `i.ytimg.com`;
+  - server direction exposes `ServerHello`;
+  - client SNI must not be carried into server-side semantics.
+- Selected-flow contract:
+  - bounded/window-scoped selected-flow processing;
+  - client CRYPTO presentation, `ClientHello`, and SNI should be available
+    from the client Initial window;
+  - server CRYPTO presentation and `ServerHello` should be available from the
+    server Initial window;
+  - no whole-Flow fallback is required or expected.
+- Useful for:
+  - bounded selected-flow QUIC presentation;
+  - resident/v16 selected-flow provider presentation parity;
+  - compact integration coverage for real encrypted bidirectional Initial
+    context.
+
 ### `quic_initial_ch_1.pcap`
 
 - Source/generation: permanent single-packet client `Initial` smoke fixture.
@@ -141,14 +173,18 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - Packet numbers referenced by automated tests: 1.
 - Direction/packet classes:
   - server `Initial`;
-  - `CRYPTO`.
+  - protected server Initial payload.
 - Initial decryption behavior:
-  - bounded `Initial` payload parsing exposes server TLS handshake metadata.
+  - standalone packet does not provide the original client Initial CID context
+    required for authoritative server Initial decryption;
+  - Packet Details should preserve header-oriented QUIC recognition without
+    fabricating decrypted `CRYPTO` or TLS metadata.
 - TLS semantics:
-  - `ServerHello`;
-  - no client `SNI`.
+  - none when inspected in isolation;
+  - positive server `ServerHello` Packet Details coverage belongs to contextual
+    bidirectional fixtures such as `quic_example_3.pcap`.
 - Useful for:
-  - Packet tests;
+  - Packet header/recognition tests;
   - Flow-hint QUIC recognition smoke coverage.
 
 ### `quic_handshake_3.pcap`

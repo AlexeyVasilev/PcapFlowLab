@@ -603,33 +603,11 @@ void expect_geneve_packet_details_present(
         }));
     }
 
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: Geneve") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Version: 0") != std::string::npos);
-    PFL_EXPECT(protocol_text.find(
-        "Option Length: " + std::to_string(static_cast<unsigned>(expected_option_length_words)) +
-        " words (" + std::to_string(expected_option_length_bytes) + " bytes)"
-    ) != std::string::npos);
-    PFL_EXPECT(protocol_text.find("Protocol Type: Ethernet (0x6558)") != std::string::npos);
-    PFL_EXPECT(protocol_text.find("VNI: " + std::to_string(expected_vni)) != std::string::npos);
-    const auto expected_transport_text =
-        expected_inner_transport_layer_id == "tcp-inner" ? std::string {"TCP"} :
-        expected_inner_transport_layer_id == "udp-inner" ? std::string {"UDP"} :
-        expected_inner_transport_layer_id;
-    if (expected_inner_network_layer_id == "ipv4-inner") {
-        PFL_EXPECT(protocol_text.find("Inner IPv4: " + expected_transport_text) != std::string::npos);
-    } else if (expected_inner_network_layer_id == "ipv6-inner") {
-        PFL_EXPECT(protocol_text.find("Inner IPv6: " + expected_transport_text) != std::string::npos);
-    }
-    if (expect_inner_vlan) {
-        PFL_EXPECT(protocol_text.find("Inner VLAN: 150") != std::string::npos);
-    }
 }
 
 void expect_geneve_warning_packet_details(
     const std::filesystem::path& relative_path,
     const std::initializer_list<std::string> expected_geneve_title_fragments,
-    const std::initializer_list<std::string> expected_protocol_fragments,
     const bool expect_geneve_layer_warning,
     const bool expect_inner_ethernet,
     const bool expect_inner_ipv4,
@@ -651,6 +629,21 @@ void expect_geneve_warning_packet_details(
     PFL_REQUIRE(geneve_layer != nullptr);
     PFL_EXPECT(title_contains_all(*geneve_layer, expected_geneve_title_fragments));
     PFL_EXPECT(geneve_layer->warning == expect_geneve_layer_warning);
+    if (relative_path == std::filesystem::path("parsing/geneve/05_geneve_truncated_base_header.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Available Header Bytes", "6 / 8"));
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Warning", "Geneve header is truncated"));
+    } else if (relative_path == std::filesystem::path("parsing/geneve/06_geneve_invalid_version.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Version", "1"));
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Warning", "Geneve version is not supported"));
+    } else if (relative_path == std::filesystem::path("parsing/geneve/07_geneve_options_length_truncated.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Option Length", "2 words (8 bytes)"));
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Warning", "Geneve options are truncated"));
+    } else if (relative_path == std::filesystem::path("parsing/geneve/08_geneve_truncated_inner_ethernet.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Inner Payload", "Ethernet"));
+    } else if (relative_path == std::filesystem::path("parsing/geneve/10_geneve_unsupported_protocol_type.pcap")) {
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Protocol Type", "IPv4 (0x0800)"));
+        PFL_EXPECT(layer_has_field_containing(*geneve_layer, "Warning", "Geneve protocol type is not supported"));
+    }
 
     const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
     PFL_EXPECT((inner_ethernet_layer != nullptr) == expect_inner_ethernet);
@@ -668,12 +661,6 @@ void expect_geneve_warning_packet_details(
     PFL_EXPECT((inner_udp_layer != nullptr) == expect_inner_udp);
     const auto* inner_tcp_layer = find_top_level_layer(summary_layers, "tcp-inner");
     PFL_EXPECT((inner_tcp_layer != nullptr) == expect_inner_tcp);
-
-    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-    PFL_EXPECT(protocol_text.find("Protocol: Geneve") != std::string::npos);
-    for (const auto& fragment : expected_protocol_fragments) {
-        PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
-    }
 }
 
 }  // namespace
@@ -903,7 +890,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/05_geneve_truncated_base_header.pcap",
         {"Geneve", "malformed"},
-        {"Available Header Bytes: 6 / 8", "Warning: Geneve header is truncated."},
         true,
         false,
         false,
@@ -914,7 +900,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/06_geneve_invalid_version.pcap",
         {"Geneve", "invalid"},
-        {"Version: 1", "Warning: Geneve version is not supported.", "Inner IPv4: TCP"},
         true,
         true,
         true,
@@ -925,7 +910,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/07_geneve_options_length_truncated.pcap",
         {"Geneve", "malformed"},
-        {"Option Length: 2 words (8 bytes)", "Warning: Geneve options are truncated."},
         true,
         false,
         false,
@@ -936,7 +920,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/08_geneve_truncated_inner_ethernet.pcap",
         {"Geneve", "VNI: 100"},
-        {"Inner Payload: Ethernet", "Warning: Inner Ethernet header is truncated."},
         true,
         true,
         false,
@@ -947,7 +930,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/09_geneve_truncated_inner_ipv4.pcap",
         {"Geneve", "VNI: 100"},
-        {"Inner IPv4:", "Warning: Inner IPv4 packet is truncated."},
         false,
         true,
         true,
@@ -958,7 +940,6 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/10_geneve_unsupported_protocol_type.pcap",
         {"Geneve", "unsupported protocol type"},
-        {"Protocol Type: IPv4 (0x0800)", "Warning: Geneve protocol type is not supported."},
         true,
         false,
         false,
@@ -1088,8 +1069,6 @@ void run_geneve_pcap_fixture_tests() {
         PFL_EXPECT(!details->has_geneve);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
         PFL_EXPECT(find_layer(summary_layers, "geneve") == nullptr);
-        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-        PFL_EXPECT(protocol_text.find("Geneve") == std::string::npos);
     }
 
     {

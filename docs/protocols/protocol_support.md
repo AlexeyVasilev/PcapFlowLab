@@ -101,7 +101,7 @@ limitations remain accurately described.
 | Tunnels & Overlays | MikroTik EoIP | Partial | N/A | Partial | N/A | Strict MikroTik EoIP shapes support selected inner Ethernet/IP continuations. |
 | Security | IPsec AH | Partial | N/A | Partial | N/A | AH metadata and bounded inner continuation are supported; validation is not implemented. |
 | Security | IPsec ESP | Partial | N/A | Partial | N/A | SPI and sequence metadata are shown; protected payload is not decrypted. |
-| Application | TLS | Yes | Partial | Yes | Partial | Packet-local SNI is extracted when bytes are present; one exact contiguous second ClientHello segment can recover SNI during import; selected-flow reconstruction remains the stronger fallback. |
+| Application | TLS | Yes | Partial | Yes | Partial | SNI from a segmented ClientHello may be unavailable at import and recovered after flow selection. |
 | Application | QUIC | Yes | Partial | Partial | Partial | Long-header QUIC is recognized; decryptable Initial traffic exposes richer TLS/CRYPTO detail. |
 | Application | HTTP/1.x | Yes | Yes | Yes | Yes | HTTP/1.x requests/responses and Host-derived Service information are supported. |
 | Application | DNS | Yes | Yes | Yes | Yes | Structured DNS over UDP is shown; Stream does not reconstruct DNS transactions. |

@@ -13,10 +13,11 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
-#include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
 
@@ -394,14 +395,41 @@ std::vector<session_detail::PacketSummaryLayer> build_packet_summary_layers_for_
     const auto details = session.read_packet_details(packet);
     PFL_REQUIRE(details.has_value());
     const auto packet_bytes = session.read_packet_data(packet);
-    PacketPayloadService payload_service {};
-    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<std::size_t> loaded_packet_window_count {};
+    const auto flow_rows = session.list_flows();
+    for (const auto& flow_row : flow_rows) {
+        const auto packet_rows = session.list_flow_packets(flow_row.index);
+        const auto packet_it = std::find_if(packet_rows.begin(), packet_rows.end(), [&](const PacketRow& row) {
+            return row.packet_index == packet.packet_index;
+        });
+        if (packet_it == packet_rows.end()) {
+            continue;
+        }
+
+        flow_index = flow_row.index;
+        PFL_REQUIRE(packet_it->row_number > 0U);
+        flow_packet_index = packet_it->row_number - 1U;
+        loaded_packet_window_count = packet_rows.size();
+        break;
+    }
+
+    const auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session,
+        *details,
+        packet,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count,
+        session_detail::derive_captured_transport_payload_length_from_headers(session, packet),
+        session_detail::derive_original_transport_payload_length_from_headers(session, packet)
+    );
     return session_detail::build_packet_summary_layers(
         *details,
         packet,
-        {
-            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-        }
+        packet_summary_preparation.make_options()
     );
 }
 
@@ -473,27 +501,57 @@ std::string require_summary_field_value(
     return field->value;
 }
 
+const session_detail::PacketSummaryLayer& require_server_key_exchange_summary_layer(
+    const session_detail::PacketSummaryLayer& layer
+) {
+    if (const auto* field = find_summary_field(layer, "Handshake Type");
+        field != nullptr && field->value == "ServerKeyExchange") {
+        return layer;
+    }
+
+    const session_detail::PacketSummaryLayer* server_key_exchange_layer = nullptr;
+    std::size_t match_count = 0U;
+    for (const auto& child : layer.children) {
+        if (child.id != "tls_handshake") {
+            continue;
+        }
+        const auto* handshake_type = find_summary_field(child, "Handshake Type");
+        if (handshake_type == nullptr || handshake_type->value != "ServerKeyExchange") {
+            continue;
+        }
+
+        server_key_exchange_layer = &child;
+        ++match_count;
+    }
+
+    PFL_REQUIRE(server_key_exchange_layer != nullptr);
+    PFL_REQUIRE(match_count == 1U);
+    return *server_key_exchange_layer;
+}
+
 void expect_ecdhe_server_key_exchange_summary(
     const session_detail::PacketSummaryLayer& layer,
     const bool expect_explicit_signature_scheme
 ) {
-    PFL_EXPECT(require_summary_field_value(layer, "Handshake Type") == "ServerKeyExchange");
-    PFL_EXPECT(require_summary_field_value(layer, "Key Exchange") == "ECDHE");
-    PFL_EXPECT(require_summary_field_value(layer, "Curve Type") == "Named Curve (3)");
-    PFL_EXPECT(require_summary_field_value(layer, "Named Group") == "secp256r1 (0x0017)");
-    PFL_EXPECT(require_summary_field_value(layer, "Public Key Length") == "65 bytes");
-    PFL_EXPECT(require_summary_field_value(layer, "Public Key Available Length") == "65 bytes");
-    PFL_EXPECT(require_summary_field_value(layer, "Public Key Status") == "Complete");
-    PFL_EXPECT(require_summary_field_value(layer, "Signature Authentication") == "RSA");
+    const auto& server_key_exchange_layer = require_server_key_exchange_summary_layer(layer);
+
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Handshake Type") == "ServerKeyExchange");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Key Exchange") == "ECDHE");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Curve Type") == "Named Curve (3)");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Named Group") == "secp256r1 (0x0017)");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Public Key Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Public Key Available Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Public Key Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Signature Authentication") == "RSA");
     if (expect_explicit_signature_scheme) {
-        PFL_EXPECT(require_summary_field_value(layer, "Signature Scheme") == "rsa_pkcs1_sha512 (0x0601)");
+        PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Signature Scheme") == "rsa_pkcs1_sha512 (0x0601)");
     } else {
-        PFL_EXPECT(find_summary_field(layer, "Signature Scheme") == nullptr);
+        PFL_EXPECT(find_summary_field(server_key_exchange_layer, "Signature Scheme") == nullptr);
     }
-    PFL_EXPECT(require_summary_field_value(layer, "Signature Length") == "256 bytes");
-    PFL_EXPECT(require_summary_field_value(layer, "Signature Available Length") == "256 bytes");
-    PFL_EXPECT(require_summary_field_value(layer, "Signature Status") == "Complete");
-    PFL_EXPECT(require_summary_field_value(layer, "Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Signature Length") == "256 bytes");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Signature Available Length") == "256 bytes");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Signature Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(server_key_exchange_layer, "Status") == "Complete");
 }
 
 void expect_ecdhe_client_key_exchange_summary(const session_detail::PacketSummaryLayer& layer) {
@@ -3524,22 +3582,23 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_sh_2.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
-        const auto* quic_row = find_stream_row_by_label(rows, "QUIC Initial: CRYPTO");
+        const auto* quic_row = find_stream_row_by_label(rows, "QUIC Initial");
         PFL_REQUIRE(quic_row != nullptr);
+        PFL_EXPECT(quic_row->packet_indices == std::vector<std::uint64_t>({0U}));
         const auto packet_rows = session.list_flow_packets(0);
         const auto summary_layers = build_stream_summary_layers(*quic_row, packet_rows);
+        const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
         const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
         const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(stream_item_layer != nullptr);
         PFL_REQUIRE(quic_layer != nullptr);
-        PFL_REQUIRE(tls_layer != nullptr);
-        PFL_EXPECT(find_top_level_summary_layers(summary_layers, "tls").size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "QUIC Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Header Form") == "Long");
         PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
-        PFL_EXPECT(require_summary_field_value(*quic_layer, "Frame Presence") == "CRYPTO");
-        PFL_EXPECT(quic_layer->children.size() == 1U);
-        PFL_EXPECT(require_summary_field_value(quic_layer->children[0], "Type") == "CRYPTO");
-        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ServerHello");
-        PFL_EXPECT(find_summary_field(*tls_layer, "SNI") == nullptr);
-        PFL_EXPECT(find_summary_field(*tls_layer, "Cipher Suite Count") == nullptr);
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Version") == "QUIC v1 (0x00000001)");
+        PFL_EXPECT(find_summary_field(*quic_layer, "Frame Presence") == nullptr);
+        PFL_EXPECT(quic_layer->children.empty());
+        PFL_EXPECT(tls_layer == nullptr);
     }
 
     {
@@ -3656,10 +3715,10 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
-        PFL_EXPECT(rows[0].byte_count == make_quic_crypto_frame_bytes().size());
-        PFL_EXPECT(rows[1].label == "QUIC Initial: ACK");
-        PFL_EXPECT(rows[1].byte_count == make_quic_ack_frame_bytes().size());
+        PFL_EXPECT(rows[0].label == "QUIC Initial");
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[1].label == "QUIC Initial");
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({1U}));
     }
 
     {
@@ -3719,11 +3778,13 @@ void run_stream_query_tests() {
             for (const auto packet_index : row.packet_indices) {
                 PFL_EXPECT(packet_index < 30U);
             }
-            PFL_EXPECT(row.label != "QUIC Initial: CRYPTO");
+            PFL_EXPECT(row.label == "QUIC Initial");
         }
-        PFL_EXPECT(std::any_of(extended_prefix_rows.begin(), extended_prefix_rows.end(), [](const StreamItemRow& row) {
-            return row.label == "QUIC Initial: CRYPTO";
-        }));
+        PFL_EXPECT(find_stream_row_by_label_and_packets(
+            extended_prefix_rows,
+            "QUIC Initial",
+            std::vector<std::uint64_t>({30U})
+        ) != nullptr);
         for (const auto& row : extended_prefix_rows) {
             for (const auto packet_index : row.packet_indices) {
                 PFL_EXPECT(packet_index < 40U);
@@ -3773,9 +3834,10 @@ void run_stream_query_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
-        PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
-        PFL_EXPECT(rows[1].label == "QUIC Initial: ACK");
+        PFL_EXPECT(find_stream_row_by_label_and_packets(rows, "QUIC Initial", std::vector<std::uint64_t>({0U})) != nullptr);
+        PFL_EXPECT(find_stream_row_by_label_and_packets(rows, "QUIC Initial", std::vector<std::uint64_t>({1U})) != nullptr);
+        PFL_EXPECT(find_stream_row_by_label_and_packets(rows, "QUIC Initial", std::vector<std::uint64_t>({2U})) != nullptr);
+        PFL_EXPECT(find_stream_row_by_label_and_packets(rows, "QUIC Initial", std::vector<std::uint64_t>({3U})) != nullptr);
         PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label.find("PADDING") != std::string::npos || row.label.find("PING") != std::string::npos;
         }));
@@ -3794,7 +3856,8 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[0].label == "QUIC Initial");
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
     }
 
     {
@@ -3831,8 +3894,10 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[0].label == "QUIC Initial");
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
         PFL_EXPECT(rows[1].label == "Protected payload");
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({1U}));
     }
 
     {
@@ -3879,55 +3944,33 @@ void run_stream_query_tests() {
     }
 
     {
-        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
-            ipv4(10, 41, 3, 1), ipv4(10, 41, 3, 2), 54020, 443,
-            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
-        const auto server_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
-            ipv4(10, 41, 3, 2), ipv4(10, 41, 3, 1), 443, 54020,
-            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_server_hello_handshake_bytes())));
-        const auto server_ack_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
-            ipv4(10, 41, 3, 2), ipv4(10, 41, 3, 1), 443, 54020,
-            make_plaintext_quic_initial_payload(make_quic_ack_frame_bytes()));
-        const auto path = write_temp_pcap(
-            "pfl_stream_query_quic_direction_ownership_stage1.pcap",
-            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
-                {100U, client_hello_packet},
-                {200U, server_hello_packet},
-                {300U, server_ack_packet},
-            })
-        );
-
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(path, fast_options));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_3.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
-        const auto client_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.packet_indices == std::vector<std::uint64_t> {0U};
+        const auto row_contains_packet = [](const StreamItemRow& row, const std::uint64_t packet_index) {
+            return std::find(row.packet_indices.begin(), row.packet_indices.end(), packet_index) != row.packet_indices.end();
+        };
+        const auto client_row = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
+            return row.label == "QUIC Initial: CRYPTO" && row_contains_packet(row, 1U);
         });
-        const auto server_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.packet_indices == std::vector<std::uint64_t> {1U};
+        const auto server_row = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
+            return row.label == "QUIC Initial: CRYPTO" && row_contains_packet(row, 6U);
         });
-        const auto ack_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.packet_indices == std::vector<std::uint64_t> {2U};
-        });
-
-        PFL_EXPECT(client_row != rows.end());
-        PFL_EXPECT(server_row != rows.end());
-        PFL_EXPECT(ack_row != rows.end());
+        PFL_REQUIRE(client_row != rows.end());
+        PFL_REQUIRE(server_row != rows.end());
 
         const auto client_context = session.derive_quic_protocol_details_for_packet_context(0, client_row->packet_indices);
-        PFL_EXPECT(client_context.has_value());
+        PFL_REQUIRE(client_context.has_value());
         PFL_EXPECT(client_context->find("TLS Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(client_context->find("SNI: i.ytimg.com") != std::string::npos);
         PFL_EXPECT(client_context->find("ServerHello") == std::string::npos);
 
         const auto server_context = session.derive_quic_protocol_details_for_packet_context(0, server_row->packet_indices);
-        PFL_EXPECT(server_context.has_value());
+        PFL_REQUIRE(server_context.has_value());
         PFL_EXPECT(server_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
         PFL_EXPECT(server_context->find("ClientHello") == std::string::npos);
         PFL_EXPECT(server_context->find("SNI:") == std::string::npos);
-
-        const auto ack_context = session.derive_quic_protocol_details_for_packet_context(0, ack_row->packet_indices);
-        PFL_EXPECT(!ack_context.has_value());
     }
 
     {
@@ -3964,20 +4007,11 @@ void run_stream_query_tests() {
         const auto server_tail_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.packet_indices == std::vector<std::uint64_t> {2U};
         });
-        PFL_EXPECT(server_tail_row != rows.end());
-        PFL_EXPECT(
-            starts_with(server_tail_row->label, "QUIC ") ||
-            server_tail_row->label == "QUIC Initial: CRYPTO" ||
-            server_tail_row->label == "QUIC Initial: ACK"
-        );
+        PFL_REQUIRE(server_tail_row != rows.end());
+        PFL_EXPECT(server_tail_row->label == "QUIC Initial");
 
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet_context(0, server_tail_row->packet_indices);
-        PFL_EXPECT(server_tail_context.has_value());
-        PFL_EXPECT(server_tail_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
-        PFL_EXPECT(server_tail_context->find("Selected TLS Version:") != std::string::npos);
-        PFL_EXPECT(server_tail_context->find("Selected Cipher Suite:") != std::string::npos);
-        PFL_EXPECT(server_tail_context->find("ClientHello") == std::string::npos);
-        PFL_EXPECT(server_tail_context->find("SNI:") == std::string::npos);
+        PFL_EXPECT(!server_tail_context.has_value());
     }
 
     {

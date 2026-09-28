@@ -755,6 +755,7 @@ void expect_payload_lengths(
 std::vector<PacketRow> effective_flow_packet_rows(CaptureSession& session, const std::size_t flow_index) {
     auto rows = session.list_flow_packets(flow_index);
     session_detail::apply_original_transport_payload_lengths(session, rows);
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
     return rows;
 }
 
@@ -1161,7 +1162,8 @@ void expect_positive_single_flow_fixture(const PositiveEoipParserExpectation& ex
     expect_payload_lengths(packet_rows, expectation.expected_payload_lengths, expectation.expected_payload_length_count);
     if (expectation.expect_tcp_syn) {
         PFL_REQUIRE(!packet_rows.empty());
-        PFL_EXPECT(packet_rows[0].tcp_flags_text.find("SYN") != std::string::npos);
+        PFL_REQUIRE(packet_rows[0].derived_tcp_flags_text.has_value());
+        PFL_EXPECT(packet_rows[0].derived_tcp_flags_text->find("SYN") != std::string::npos);
     }
 }
 
@@ -1777,7 +1779,8 @@ void expect_frame_length_does_not_split_same_inner_frame_identity() {
 
     const auto first_payload = session.read_selected_flow_transport_payload(rows[0].index, first_packet);
     const auto second_payload = session.read_selected_flow_transport_payload(rows[0].index, second_packet);
-    PFL_EXPECT(first_payload.empty());
+    PFL_EXPECT(first_payload.size() == 4U);
+    PFL_EXPECT(second_payload.size() == 4U);
     PFL_EXPECT(first_payload == second_payload);
 }
 

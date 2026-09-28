@@ -1160,7 +1160,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
             presentation,
             vlan->id,
             bytes,
-            {0x81U, 0x00U, 0x00U, 0x64U, 0x08U, 0x00U}
+            {0x00U, 0x64U, 0x08U, 0x00U}
         );
         expect_hex_prefix(
             presentation,
@@ -1203,13 +1203,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
             presentation,
             outer_vlan->id,
             bytes,
-            {0x88U, 0xA8U, 0x00U, 0xC8U, 0x81U, 0x00U}
+            {0x00U, 0xC8U, 0x81U, 0x00U}
         );
         expect_hex_prefix(
             presentation,
             inner_vlan->id,
             bytes,
-            {0x81U, 0x00U, 0x00U, 0xC9U, 0x08U, 0x00U}
+            {0x00U, 0xC9U, 0x08U, 0x00U}
         );
         expect_hex_prefix(
             presentation,
@@ -1349,7 +1349,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
         const auto* tls_record = require_view(presentation, SelectedPacketByteViewKind::tls_record);
         const auto* tls_handshake = require_view(presentation, SelectedPacketByteViewKind::tls_handshake);
-        PFL_EXPECT(tls_record->truncated);
+        PFL_EXPECT(tls_record->captured_length == 7U);
+        PFL_EXPECT(tls_record->declared_length == std::optional<std::uint32_t> {13U});
+        PFL_REQUIRE(tls_record->declared_length.has_value());
+        PFL_EXPECT(tls_record->captured_length < *tls_record->declared_length);
+        PFL_REQUIRE(tls_record->payload_range.has_value());
+        PFL_EXPECT(tls_record->payload_range->captured_length == 2U);
+        PFL_EXPECT(tls_record->payload_range->declared_length == std::optional<std::uint32_t> {8U});
+        PFL_EXPECT(tls_record->payload_range->truncated);
         PFL_EXPECT(tls_handshake->truncated);
         const auto labels = collect_labels(presentation);
         PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Record Fragment") != labels.end());
@@ -1888,7 +1895,10 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(std::find(labels.begin(), labels.end(), "GTP-U Message") != labels.end());
         PFL_REQUIRE(gtpu_message->payload_range.has_value());
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
-        PFL_EXPECT(!inner_tcp->payload_range.has_value());
+        PFL_REQUIRE(inner_tcp->payload_range.has_value());
+        PFL_EXPECT(inner_tcp->payload_range->captured_length == 0U);
+        PFL_EXPECT(inner_tcp->payload_range->declared_length == std::optional<std::uint32_t> {0U});
+        PFL_EXPECT(!inner_tcp->payload_range->truncated);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tcp_payload) == nullptr);
 
         const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
@@ -1991,7 +2001,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
             presentation,
             eoip_packet->id,
             bytes,
-            {0x81U, 0x02U},
+            {0x02U, 0x00U, 0x00U, 0x00U, 0x81U, 0x02U},
             session_detail::SelectedPacketByteRangeMode::payload_only
         );
     }
@@ -2008,14 +2018,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* first_ipv4 = require_view(first_presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* first_tcp = require_view(first_presentation, SelectedPacketByteViewKind::tcp_payload);
         const auto expected_first_labels = std::vector<std::string> {
-            "Captured Packet",
             "Ethernet II Frame",
             "802.1Q Encapsulation",
             "MPLS Label Stack and Payload",
             "IPv4 Packet",
             "TCP Segment",
         };
-        expect_parent(*first_outer_ethernet, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(find_view(first_presentation, SelectedPacketByteViewKind::frame) == nullptr);
+        PFL_EXPECT(!first_outer_ethernet->parent_id.has_value());
         expect_parent(*first_vlan, SelectedPacketByteViewKind::ethernet_payload);
         expect_parent(*first_mpls, SelectedPacketByteViewKind::vlan_payload, 0U);
         expect_parent(*first_ipv4, SelectedPacketByteViewKind::mpls_payload, 0U);
@@ -2030,14 +2040,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* second_ipv4 = require_view(second_presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* second_tcp = require_view(second_presentation, SelectedPacketByteViewKind::tcp_payload);
         const auto expected_second_labels = std::vector<std::string> {
-            "Captured Packet",
             "Ethernet II Frame",
             "802.1Q Encapsulation",
-            "802.1Q Encapsulation",
+            "802.1Q Encapsulation #2",
             "IPv4 Packet",
             "TCP Segment",
         };
-        expect_parent(*second_outer_ethernet, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(find_view(second_presentation, SelectedPacketByteViewKind::frame) == nullptr);
+        PFL_EXPECT(!second_outer_ethernet->parent_id.has_value());
         expect_parent(*second_outer_vlan, SelectedPacketByteViewKind::ethernet_payload);
         expect_parent(*second_inner_vlan, SelectedPacketByteViewKind::vlan_payload, 0U);
         expect_parent(*second_ipv4, SelectedPacketByteViewKind::vlan_payload, 1U);
@@ -2105,7 +2115,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
             presentation,
             geneve_packet->id,
             bytes,
-            {0x51U, 0x02U},
+            {0x02U, 0x00U, 0x00U, 0x00U, 0x51U, 0x02U},
             session_detail::SelectedPacketByteRangeMode::payload_only
         );
     }
@@ -2186,9 +2196,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
         const auto* ah_packet = require_view(presentation, SelectedPacketByteViewKind::ah_payload);
         const auto* inner_ipv6 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv6_payload);
+        const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
         expect_parent(*ah_packet, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ipv6, SelectedPacketByteViewKind::ah_payload);
-        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload) == nullptr);
+        expect_parent(*inner_tcp, SelectedPacketByteViewKind::inner_ipv6_payload);
+        PFL_REQUIRE(inner_tcp->payload_range.has_value());
+        PFL_EXPECT(inner_tcp->payload_range->captured_length == 0U);
+        PFL_EXPECT(inner_tcp->payload_range->declared_length == std::optional<std::uint32_t> {0U});
+        PFL_EXPECT(!inner_tcp->payload_range->truncated);
 
         const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
         PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
@@ -2249,13 +2264,15 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
 
         const auto* gtpu_payload = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
-        const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
-        PFL_EXPECT(gtpu_payload->captured_length >= inner_ipv4->captured_length);
-        PFL_EXPECT(inner_ipv4->truncated);
-        expect_materialized_view_aliases_owner_bytes(
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload) == nullptr);
+        PFL_REQUIRE(gtpu_payload->payload_range.has_value());
+        PFL_EXPECT(gtpu_payload->payload_range->captured_length == 10U);
+        expect_hex_prefix(
             presentation,
-            SelectedPacketByteViewId {.kind = SelectedPacketByteViewKind::inner_ipv4_payload, .occurrence = 0U},
-            bytes
+            gtpu_payload->id,
+            bytes,
+            {0x45U, 0x00U, 0x00U, 0x1CU, 0x12U, 0x34U, 0x00U, 0x00U, 0x40U, 0x06U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
         );
     }
 
@@ -2283,6 +2300,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
         PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::packet_local);
         PFL_EXPECT(!tls_handshake->contributing_unit_count.has_value());
+        PFL_EXPECT(!tls_handshake->contributing_unit_kind.has_value());
         PFL_EXPECT(quic_packet->offset >= udp_payload->offset);
         PFL_EXPECT(quic_packet->offset + quic_packet->captured_length <= udp_payload->offset + udp_payload->captured_length);
         expect_parent(*quic_packet, SelectedPacketByteViewKind::udp_payload);
@@ -2308,6 +2326,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(crypto_data_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(crypto_data->quic_crypto_stream_offset.has_value());
+        PFL_EXPECT(crypto_data->quic_crypto_stream_offset == std::optional<std::uint32_t> {0U});
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
 
         const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
@@ -2340,7 +2359,6 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto second_materialized = require_materialized_view(presentation, second_crypto_data->id, bytes);
         PFL_REQUIRE(!first_materialized.bytes.empty());
         PFL_REQUIRE(!second_materialized.bytes.empty());
-        PFL_EXPECT(first_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(second_materialized.bytes[0] == 0x01U);
     }
 
@@ -2453,12 +2471,8 @@ void run_selected_packet_byte_presentation_tests_impl() {
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
         const auto* first_crypto_frame =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
-        const auto* second_crypto_frame =
-            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
         const auto* first_crypto_data =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 0U);
-        const auto* second_crypto_data =
-            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 1U);
         const auto* crypto_stream =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
         const auto* tls_handshake =
@@ -2470,17 +2484,15 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent(*zero_rtt_packet, SelectedPacketByteViewKind::udp_payload);
         expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
         expect_parent_in_scope(*first_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
-        expect_parent_in_scope(*second_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
         expect_parent_in_scope(*first_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
-        expect_parent_in_scope(*second_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
-        expect_parent_in_scope(*crypto_stream, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*crypto_stream, SelectedPacketByteViewKind::quic_initial_packet, 0U);
         expect_parent_in_scope(*tls_handshake, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
         PFL_EXPECT(crypto_stream->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
         PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
         PFL_EXPECT(crypto_stream->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
         PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
-        PFL_EXPECT(crypto_stream->contributing_unit_count == std::optional<std::uint32_t> {2U});
-        PFL_EXPECT(tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(crypto_stream->contributing_unit_count == std::optional<std::uint32_t> {4U});
+        PFL_EXPECT(tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {4U});
         PFL_EXPECT(crypto_stream->contributing_unit_kind ==
             std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
                 session_detail::SelectedPacketByteContributionUnitKind::quic_crypto_frame
@@ -2499,6 +2511,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_REQUIRE(!tls_handshake_materialized.bytes.empty());
         PFL_EXPECT(crypto_stream_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 1U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 1U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 1U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 1U) == nullptr);

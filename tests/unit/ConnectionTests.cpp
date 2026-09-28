@@ -52,6 +52,9 @@ PacketImportMetadata packet_import_metadata(
     PacketImportMetadata metadata {
         .is_ip_fragmented = is_ip_fragmented,
     };
+    if (is_ip_fragmented) {
+        metadata.ip_fragmentation_kind = IpFragmentationKind::ipv4_initial;
+    }
     metadata.transport_payload_length = payload_length;
     metadata.tcp_flags = tcp_flags;
     return metadata;

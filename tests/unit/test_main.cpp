@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
@@ -16,6 +18,16 @@ std::vector<RecordedTestFailure>& failure_storage() {
     return failures;
 }
 
+const char*& last_suite_name() {
+    static const char* value = "<none>";
+    return value;
+}
+
+std::string& last_checkpoint_text() {
+    static std::string value {"<none>"};
+    return value;
+}
+
 std::vector<std::string>& context_storage() {
     static std::vector<std::string> contexts {};
     return contexts;
@@ -29,6 +41,17 @@ std::string format_failure_message(const char* file, int line, const char* kind,
     }
     builder << file << ':' << line << ' ' << kind << ": " << expression;
     return builder.str();
+}
+
+void core_test_terminate_handler() {
+    std::fputs("Core test runner terminated unexpectedly: std::terminate\nLast suite: ", stderr);
+    std::fputs(last_suite_name(), stderr);
+    std::fputs("\nLast checkpoint: ", stderr);
+    std::fputs(last_checkpoint_text().c_str(), stderr);
+    std::fputc('\n', stderr);
+    std::fflush(stderr);
+
+    std::abort();
 }
 
 }  // namespace
@@ -106,6 +129,7 @@ void run_unrecognized_packet_tests();
 void run_mpls_pcap_fixture_tests();
 void run_pppoe_pcap_fixture_tests();
 void run_vlan_pcap_fixture_tests();
+void run_erf_pcap_fixture_tests();
 void run_llc_snap_pcap_fixture_tests();
 void run_mpls_pseudowire_pcap_fixture_tests();
 void run_pbb_pcap_fixture_tests();
@@ -180,6 +204,16 @@ std::string current_test_context() {
     return builder.str();
 }
 
+void set_last_checkpoint(const char* file, const int line, const char* expression) {
+    std::ostringstream builder {};
+    const auto context = current_test_context();
+    if (!context.empty()) {
+        builder << '[' << context << "] ";
+    }
+    builder << file << ':' << line << " checkpoint: " << expression;
+    last_checkpoint_text() = builder.str();
+}
+
 ScopedTestContext::ScopedTestContext(std::string context) {
     push_test_context(std::move(context));
 }
@@ -193,6 +227,8 @@ ScopedTestContext::~ScopedTestContext() {
 }  // namespace pfl::tests
 
 int main() {
+    std::set_terminate(pfl::tests::core_test_terminate_handler);
+
     pfl::tests::clear_recorded_failures();
 
     struct TestSuiteEntry {
@@ -274,6 +310,7 @@ int main() {
         {"mpls_pcap_fixtures", pfl::tests::run_mpls_pcap_fixture_tests},
         {"pppoe_pcap_fixtures", pfl::tests::run_pppoe_pcap_fixture_tests},
         {"vlan_pcap_fixtures", pfl::tests::run_vlan_pcap_fixture_tests},
+        {"erf_pcap_fixtures", pfl::tests::run_erf_pcap_fixture_tests},
         {"llc_snap_pcap_fixtures", pfl::tests::run_llc_snap_pcap_fixture_tests},
         {"mpls_pseudowire_pcap_fixtures", pfl::tests::run_mpls_pseudowire_pcap_fixture_tests},
         {"pbb_pcap_fixtures", pfl::tests::run_pbb_pcap_fixture_tests},
@@ -291,6 +328,7 @@ int main() {
 
     for (const auto& suite : suites) {
         try {
+            pfl::tests::last_suite_name() = suite.name.data();
             const auto suite_context = std::string {"suite="} + std::string {suite.name};
             pfl::tests::ScopedTestContext scoped_suite_context {suite_context};
             std::cout << "Entering core suite: " << suite.name << '\n';

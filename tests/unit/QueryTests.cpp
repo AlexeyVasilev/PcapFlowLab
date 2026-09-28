@@ -796,7 +796,7 @@ void run_query_tests() {
         PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "80"));
         PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "frag"));
         PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "7"));
-        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "12"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "definitely_no_matching_flow"));
         PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "2048"));
         PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "vxlan"));
     }
@@ -887,6 +887,7 @@ void run_query_tests() {
         PFL_EXPECT(complement_indices(scoped_candidate_indices, result.ordered_flow_indices) ==
             sorted_unique_indices(std::vector<std::size_t> {*http_index}));
 
+        query.selected_flow_indices.reset();
         query.text_filter.clear();
         query.sort = session_detail::FlowQuerySortSpec {
             .key = session_detail::FlowQuerySortKey::canonical_index,

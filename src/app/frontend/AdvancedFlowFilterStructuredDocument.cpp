@@ -1452,6 +1452,7 @@ bool decode_traffic_row_into_range(
     const FrontendAdvancedFlowFilterTrafficRowDto& row,
     const StructuredTrafficMetricDescriptor& descriptor,
     const std::size_t row_index,
+    const std::string_view section_id,
     std::optional<session_detail::AdvancedFlowFilterInclusiveRange<T>>& target,
     FrontendAdvancedFlowFilterStructuredDocumentResult& result
 ) {
@@ -1468,7 +1469,7 @@ bool decode_traffic_row_into_range(
         !parse_traffic_bound_text(
             descriptor,
             row.min_text,
-            "traffic",
+            section_id,
             row_index,
             "min_text",
             row.unit_id,
@@ -1480,7 +1481,7 @@ bool decode_traffic_row_into_range(
         !parse_traffic_bound_text(
             descriptor,
             row.max_text,
-            "traffic",
+            section_id,
             row_index,
             "max_text",
             row.unit_id,
@@ -1492,7 +1493,7 @@ bool decode_traffic_row_into_range(
     if (!row.min_text.empty() && !row.max_text.empty() && min_value_u64 > max_value_u64) {
         set_invalid_update_issue(
             result,
-            "traffic",
+            section_id,
             "traffic",
             descriptor.stable_id,
             row_index,
@@ -1507,7 +1508,7 @@ bool decode_traffic_row_into_range(
             (!row.max_text.empty() && max_value_u64 > static_cast<std::uint64_t>(std::numeric_limits<T>::max()))) {
             set_invalid_update_issue(
                 result,
-                "traffic",
+                section_id,
                 "traffic",
                 descriptor.stable_id,
                 row_index,
@@ -1648,6 +1649,7 @@ bool decode_time_section(
             section.duration,
             kTimeDurationMetricDescriptor,
             0U,
+            "time",
             time.duration_us,
             result)) {
         return false;
@@ -1712,50 +1714,50 @@ bool decode_traffic_section(
         switch (descriptor->kind) {
         case StructuredTrafficValueKind::count_u64:
             if (row.metric_id == "packets") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.packet_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.packet_count, result);
             }
             if (row.metric_id == "fragmented_packet_count") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.fragmented_packet_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.fragmented_packet_count, result);
             }
             if (row.metric_id == "truncated_packet_count") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.truncated_packet_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.truncated_packet_count, result);
             }
             if (row.metric_id == "tcp_syn_count") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.tcp_syn_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.tcp_syn_count, result);
             }
             if (row.metric_id == "tcp_fin_count") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.tcp_fin_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.tcp_fin_count, result);
             }
             if (row.metric_id == "tcp_rst_count") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.tcp_rst_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.tcp_rst_count, result);
             }
             if (row.metric_id == "a_to_b_packets") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.a_to_b_packet_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.a_to_b_packet_count, result);
             }
             if (row.metric_id == "b_to_a_packets") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.b_to_a_packet_count, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.b_to_a_packet_count, result);
             }
             break;
         case StructuredTrafficValueKind::byte_u64:
             if (row.metric_id == "original_bytes") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.original_bytes, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.original_bytes, result);
             }
             if (row.metric_id == "captured_bytes") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.captured_bytes, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.captured_bytes, result);
             }
             if (row.metric_id == "a_to_b_original_bytes") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.a_to_b_original_bytes, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.a_to_b_original_bytes, result);
             }
             if (row.metric_id == "b_to_a_original_bytes") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.b_to_a_original_bytes, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.b_to_a_original_bytes, result);
             }
             break;
         case StructuredTrafficValueKind::byte_u32:
             if (row.metric_id == "max_original_packet_size") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.max_original_packet_length, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.max_original_packet_length, result);
             }
             if (row.metric_id == "max_captured_packet_size") {
-                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.max_captured_packet_length, result);
+                return decode_traffic_row_into_range(row, *descriptor, row_index, "traffic", aggregate.max_captured_packet_length, result);
             }
             break;
         case StructuredTrafficValueKind::duration_us_u64:

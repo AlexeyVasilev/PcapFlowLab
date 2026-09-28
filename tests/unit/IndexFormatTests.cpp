@@ -689,6 +689,36 @@ CaptureStatisticsFlowPacketCountHistogram make_capture_statistics_flow_histogram
     return histogram;
 }
 
+void populate_flow_triple_metric_histograms(
+    CaptureStatisticsSnapshot& snapshot,
+    const std::uint64_t total_flow_count,
+    const std::uint64_t total_captured_bytes,
+    const std::uint64_t total_original_bytes
+) {
+    snapshot.flow_duration_histogram = make_default_capture_statistics_flow_duration_histogram();
+    snapshot.flow_duration_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_duration_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_duration_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_duration_histogram.buckets[0].original_byte_count = total_original_bytes;
+
+    snapshot.flow_original_byte_size_histogram =
+        make_default_capture_statistics_flow_original_byte_size_histogram();
+    snapshot.flow_original_byte_size_histogram.total_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.total_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.total_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.maximum_bucket_original_byte_count = total_original_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].flow_count = total_flow_count;
+    snapshot.flow_original_byte_size_histogram.buckets[0].captured_byte_count = total_captured_bytes;
+    snapshot.flow_original_byte_size_histogram.buckets[0].original_byte_count = total_original_bytes;
+}
+
 CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
     CaptureStatisticsSnapshot snapshot {};
     snapshot.scope = CaptureStatisticsScope::complete;
@@ -727,6 +757,14 @@ CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
         .rst_packet_count = 1U,
     };
     snapshot.flow_packet_count_histogram = make_capture_statistics_flow_histogram();
+    populate_flow_triple_metric_histograms(
+        snapshot,
+        4U,
+        snapshot.flow_packet_count_histogram.total_captured_byte_count +
+            snapshot.flow_packet_count_histogram.excluded_zero_packet_captured_byte_count,
+        snapshot.flow_packet_count_histogram.total_original_byte_count +
+            snapshot.flow_packet_count_histogram.excluded_zero_packet_original_byte_count
+    );
     snapshot.transport_protocols = make_default_capture_statistics_transport_protocol_rows();
     snapshot.transport_protocols[0].counters = capture_statistics_counters(2U, 6U, 900U, 1'100U);
     snapshot.transport_protocols[1].counters = capture_statistics_counters(1U, 3U, 250U, 300U);
@@ -2011,8 +2049,6 @@ void run_index_format_tests() {
         const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
         const auto sections = parse_sections(base_bytes);
         PFL_REQUIRE(sections.size() == 4U);
-        const auto snapshot_payload_offset = sections[0].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
-        const auto settings_payload_offset = sections[1].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
         const auto registry_payload_offset = sections[2].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
         const auto display_payload_offset = sections[3].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
 
@@ -2038,8 +2074,12 @@ void run_index_format_tests() {
             };
 
         {
-            auto malformed_snapshot_bytes = base_bytes;
-            malformed_snapshot_bytes[snapshot_payload_offset] = 99U;
+            auto malformed_snapshot_bytes = replace_section_payload(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot),
+                0U,
+                1U
+            );
             expect_fast_tier_status(
                 std::move(malformed_snapshot_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_statistics_snapshot_payload
@@ -2058,8 +2098,12 @@ void run_index_format_tests() {
         }
 
         {
-            auto malformed_settings_bytes = base_bytes;
-            malformed_settings_bytes[settings_payload_offset] = 99U;
+            auto malformed_settings_bytes = replace_section_payload(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings),
+                0U,
+                1U
+            );
             expect_fast_tier_status(
                 std::move(malformed_settings_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_import_settings_payload
@@ -2206,7 +2250,11 @@ void run_index_format_tests() {
 
         {
             auto malformed_registry_bytes = base_bytes;
-            write_le64_at(malformed_registry_bytes, registry_payload_offset, 99U);
+            write_le64_at(
+                malformed_registry_bytes,
+                registry_payload_offset,
+                (std::numeric_limits<std::uint64_t>::max)()
+            );
             expect_fast_tier_status(
                 std::move(malformed_registry_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload
@@ -2346,8 +2394,8 @@ void run_index_format_tests() {
         CaptureSession session {};
         PFL_REQUIRE(session.load_v16_index_for_testing(session_index_path));
         PFL_EXPECT(session.opened_from_index());
-        PFL_EXPECT(session.summary().packet_count == state.summary.packet_count);
-        PFL_EXPECT(session.summary().flow_count == state.summary.flow_count);
+        PFL_EXPECT(session.summary().packet_count == fast_tier.capture_statistics_snapshot.total_packet_count);
+        PFL_EXPECT(session.summary().flow_count == fast_tier.capture_statistics_snapshot.total_flow_count);
         PFL_EXPECT(session.packet_statistics().total_packet_count == state.packet_statistics.total_packet_count);
 
         const auto session_rows = session.list_flows();
@@ -3633,6 +3681,7 @@ void run_index_format_tests() {
             "pfl_index_utf8/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap"
         );
     std::filesystem::create_directories(unicode_source_path.parent_path());
+    std::filesystem::remove(unicode_source_path);
     std::filesystem::copy_file(source_path, unicode_source_path, std::filesystem::copy_options::overwrite_existing);
 
     const auto unicode_index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index_utf8.idx";
@@ -3774,7 +3823,9 @@ void run_index_format_tests() {
         );
         detail::CaptureIndexV16CompleteReadResult truncated_chunked_ipv4_read {};
         PFL_EXPECT(!index_reader.read_v16_complete(truncated_chunked_ipv4_index_path, truncated_chunked_ipv4_read));
-        PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
+        PFL_EXPECT(truncated_chunked_ipv4_read.status == detail::CaptureIndexV16CompleteReadStatus::invalid_metadata_tier);
+        PFL_EXPECT(truncated_chunked_ipv4_read.metadata_status != detail::CaptureIndexV16MetadataTierReadStatus::ok);
+        PFL_EXPECT(!index_reader.last_error().reason.empty());
     }
 
     {
@@ -3963,7 +4014,9 @@ void run_index_format_tests() {
     );
     detail::CaptureIndexV16CompleteReadResult truncated_tail_read {};
     PFL_EXPECT(!index_reader.read_v16_complete(truncated_tail_index_path, truncated_tail_read));
-    PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
+    PFL_EXPECT(truncated_tail_read.status == detail::CaptureIndexV16CompleteReadStatus::invalid_metadata_tier);
+    PFL_EXPECT(truncated_tail_read.metadata_status != detail::CaptureIndexV16MetadataTierReadStatus::ok);
+    PFL_EXPECT(!index_reader.last_error().reason.empty());
 
     const auto missing_index_path = write_temp_binary_file(
         "pfl_index_missing_capture_statistics_snapshot.idx",

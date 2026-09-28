@@ -25,7 +25,7 @@ struct GreFixtureExpectation {
     bool is_positive_decode_fixture;
 };
 
-constexpr std::array<GreFixtureExpectation, 23> kGreFixtureExpectations {{
+constexpr std::array<GreFixtureExpectation, 24> kGreFixtureExpectations {{
     {"01_gre_ipv4_tcp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv4 -> TCP", true},
     {"02_gre_ipv4_udp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP", true},
     {"03_gre_ipv6_tcp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv6 -> TCP", true},
@@ -49,9 +49,10 @@ constexpr std::array<GreFixtureExpectation, 23> kGreFixtureExpectations {{
     {"21_gre_same_inner_tuple_different_keys.pcap", 2U, 2U, "", true},
     {"22_gre_same_inner_tuple_same_key_two_packets.pcap", 2U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP", true},
     {"23_gre_key_ipv4_icmp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4", true},
+    {"24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap", 1U, 1U, "EthernetII -> VLAN(vid=330) -> MPLS(label=16030) -> MPLS(label=16031) -> IPv4 -> GRE -> IPv4 -> TCP", true},
 }};
 
-constexpr std::array<std::string_view, 18> kSupportedGreFixturesNow {{
+constexpr std::array<std::string_view, 19> kSupportedGreFixturesNow {{
     "01_gre_ipv4_tcp.pcap",
     "02_gre_ipv4_udp.pcap",
     "03_gre_ipv6_tcp.pcap",
@@ -70,6 +71,7 @@ constexpr std::array<std::string_view, 18> kSupportedGreFixturesNow {{
     "21_gre_same_inner_tuple_different_keys.pcap",
     "22_gre_same_inner_tuple_same_key_two_packets.pcap",
     "23_gre_key_ipv4_icmp.pcap",
+    "24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap",
 }};
 
 constexpr std::array<std::string_view, 5> kUnsupportedGreFixturesNow {{

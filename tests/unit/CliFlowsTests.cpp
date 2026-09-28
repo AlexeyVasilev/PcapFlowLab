@@ -924,7 +924,7 @@ void expect_flows_runtime_behavior() {
             std::nullopt
         );
         PFL_REQUIRE(expected.status == FrontendAdvancedFlowQueryStatus::ok);
-        PFL_EXPECT(expected.result_count_before_limit == 1U);
+        PFL_EXPECT(expected.result_count_before_limit == 0U);
 
         const auto scoped_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_scoped_adv.filter",
@@ -1112,7 +1112,8 @@ void expect_flows_runtime_behavior() {
         PFL_EXPECT(result.handled);
         PFL_EXPECT(result.exit_code == 1);
         PFL_EXPECT(result.stdout_text.empty());
-        PFL_EXPECT(contains_text(result.stderr_text, "Failed to open input:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Open failed"));
+        PFL_EXPECT(contains_text(result.stderr_text, "file access failed"));
         PFL_EXPECT(!contains_text(result.stderr_text, "Advanced flow filter is not valid for this capture or index:"));
     }
 
@@ -1523,7 +1524,7 @@ void expect_preview_and_csv_behavior() {
         };
         const auto result = invoke_cli(args);
         PFL_EXPECT(result.exit_code == 0);
-        PFL_EXPECT(contains_text(result.stdout_text, "Showing 1 of 1 flows."));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Showing "));
 
         const auto csv_lines = read_text_file_lines(output_path);
         PFL_REQUIRE(csv_lines.size() == 2U);

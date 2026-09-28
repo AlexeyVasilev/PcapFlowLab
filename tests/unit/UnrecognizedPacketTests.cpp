@@ -123,7 +123,7 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(details.details_available);
         PFL_EXPECT(!details.byte_view_descriptors.empty());
         PFL_EXPECT(details.selected_byte_view.available);
-        PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+        PFL_EXPECT(details.selected_byte_view.stable_id == details.byte_view_descriptors.front().stable_id);
         PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
         PFL_EXPECT(!details.summary_layers.empty());
         PFL_EXPECT(details.summary_layers.front().id == "warnings");
@@ -210,7 +210,7 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(loaded_frontend_details.selected_byte_view.available);
         const auto loaded_frontend_bytes = loaded_adapter.get_unrecognized_packet_byte_view_content(
             loaded_frontend_packets.packets[0].packet_index,
-            "frame:0:0"
+            loaded_frontend_details.selected_byte_view.stable_id
         );
         PFL_EXPECT(loaded_frontend_bytes.available);
 

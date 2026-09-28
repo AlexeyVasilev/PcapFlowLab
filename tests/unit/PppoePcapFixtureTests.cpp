@@ -9,6 +9,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
 
@@ -24,6 +25,17 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     const auto packet = session.find_packet(packet_index);
     PFL_REQUIRE(packet.has_value());
     return *packet;
+}
+
+std::vector<PacketRow> require_enriched_packet_rows(CaptureSession& session, const std::size_t flow_index) {
+    auto rows = session.list_flow_packets(flow_index);
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
+    return rows;
+}
+
+void expect_derived_payload_length(const PacketRow& row, const std::uint32_t expected_payload_length) {
+    PFL_REQUIRE(row.derived_payload_length.has_value());
+    PFL_EXPECT(*row.derived_payload_length == expected_payload_length);
 }
 
 ProtocolId flow_protocol_id(const FlowRow& row) {
@@ -279,9 +291,9 @@ void expect_session_flow_contract(
         1U,
         1U);
 
-    const auto packet_rows = session.list_flow_packets(0U);
+    const auto packet_rows = require_enriched_packet_rows(session, 0U);
     PFL_REQUIRE(packet_rows.size() == 1U);
-    PFL_EXPECT(packet_rows[0].payload_length == expected_payload_length);
+    expect_derived_payload_length(packet_rows[0], expected_payload_length);
 
     const auto packet = require_packet(session, packet_rows[0].packet_index);
     const auto details = session.read_packet_details(packet);
@@ -351,10 +363,10 @@ void expect_multi_packet_session_flow_contract(
         1U,
         static_cast<std::uint64_t>(expected_session_ids.size()));
 
-    const auto packet_rows = session.list_flow_packets(0U);
+    const auto packet_rows = require_enriched_packet_rows(session, 0U);
     PFL_REQUIRE(packet_rows.size() == expected_session_ids.size());
     for (std::size_t index = 0; index < packet_rows.size(); ++index) {
-        PFL_EXPECT(packet_rows[index].payload_length == expected_payload_length);
+        expect_derived_payload_length(packet_rows[index], expected_payload_length);
         const auto packet = require_packet(session, packet_rows[index].packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -680,9 +692,9 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP");
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
-        const auto packet_rows = session.list_flow_packets(0U);
+        const auto packet_rows = require_enriched_packet_rows(session, 0U);
         PFL_REQUIRE(packet_rows.size() == 1U);
-        PFL_EXPECT(packet_rows[0].payload_length == 9U);
+        expect_derived_payload_length(packet_rows[0], 9U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());

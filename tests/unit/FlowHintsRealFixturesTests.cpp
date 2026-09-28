@@ -461,12 +461,12 @@ void expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views() {
     PFL_REQUIRE(tls_handshake_descriptor != nullptr);
     PFL_EXPECT(crypto_stream_descriptor->owner_kind == "quic_crypto_prefix");
     PFL_EXPECT(crypto_stream_descriptor->assembly_kind == "reassembled");
-    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
     PFL_EXPECT(crypto_stream_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
-    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_plaintext:0:0"});
+    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_packet:0:0"});
     PFL_EXPECT(tls_handshake_descriptor->owner_kind == "quic_crypto_prefix");
     PFL_EXPECT(tls_handshake_descriptor->assembly_kind == "reassembled");
-    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
     PFL_EXPECT(tls_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
     PFL_EXPECT(tls_handshake_descriptor->parent_stable_id == std::optional<std::string> {"quic_crypto_stream:0:0"});
 
@@ -478,9 +478,9 @@ void expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views() {
     );
     PFL_EXPECT(handshake_content.available);
     PFL_EXPECT(handshake_content.assembly_kind == "reassembled");
-    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {4U});
     PFL_EXPECT(handshake_content.contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
-    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 2 CRYPTO frames") != std::string::npos);
+    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 4 CRYPTO frames") != std::string::npos);
     PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
 }
 
@@ -579,7 +579,7 @@ void expect_frontend_adapter_selected_flow_packet_byte_views() {
     PFL_EXPECT(details.byte_view_descriptors[1].parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
     PFL_EXPECT(details.byte_view_descriptors[2].parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
     PFL_EXPECT(details.byte_view_descriptors[0].available_length == packet.captured_length);
-    PFL_EXPECT(details.byte_view_descriptors[0].declared_length == std::optional<std::uint32_t> {packet.original_length});
+    PFL_EXPECT(!details.byte_view_descriptors[0].declared_length.has_value());
     PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
     PFL_EXPECT(details.byte_view_descriptors[2].owner_kind == "captured_packet");
     PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
@@ -607,12 +607,17 @@ void expect_frontend_adapter_ieee8023_packet_byte_view() {
     FrontendSessionAdapter adapter {};
     const auto open_result = adapter.open_capture(fixture_path("parsing/llc_snap/02_llc_snap_ipv4_udp.pcap"));
     PFL_REQUIRE(open_result.opened);
+    PFL_EXPECT(adapter.get_overview().unrecognized_packet_count == 0U);
 
-    const auto unrecognized = adapter.get_unrecognized_packets(0U, 4U);
-    PFL_REQUIRE(unrecognized.packets.size() == 1U);
-    const auto& packet = unrecognized.packets[0];
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_REQUIRE(adapter.select_flow(flows[0].flow_index).selected);
 
-    const auto details = adapter.get_unrecognized_packet_details(packet.packet_index);
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
     PFL_EXPECT(details.error_text.empty());
     PFL_EXPECT(details.packet_found);
     PFL_EXPECT(details.details_available);
@@ -620,16 +625,24 @@ void expect_frontend_adapter_ieee8023_packet_byte_view() {
     const auto labels = packet_byte_view_labels(details);
     PFL_EXPECT(std::find(labels.begin(), labels.end(), "IEEE 802.3 Frame") != labels.end());
     PFL_EXPECT(std::find(labels.begin(), labels.end(), "Ethernet II Frame") == labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "IPv4 Packet") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "UDP Datagram") != labels.end());
 
     const auto* ieee8023_descriptor = find_packet_byte_view_descriptor(details, "ieee8023:0:0");
     const auto* llc_descriptor = find_packet_byte_view_descriptor(details, "llc:0:0");
     const auto* snap_descriptor = find_packet_byte_view_descriptor(details, "snap:0:0");
+    const auto* ipv4_descriptor = find_packet_byte_view_descriptor(details, "ipv4:0:0");
+    const auto* udp_descriptor = find_packet_byte_view_descriptor(details, "udp:0:0");
     PFL_REQUIRE(ieee8023_descriptor != nullptr);
     PFL_REQUIRE(llc_descriptor != nullptr);
     PFL_REQUIRE(snap_descriptor != nullptr);
+    PFL_REQUIRE(ipv4_descriptor != nullptr);
+    PFL_REQUIRE(udp_descriptor != nullptr);
     PFL_EXPECT(!ieee8023_descriptor->parent_stable_id.has_value());
     PFL_EXPECT(llc_descriptor->parent_stable_id == std::optional<std::string> {"ieee8023:0:0"});
     PFL_EXPECT(snap_descriptor->parent_stable_id == std::optional<std::string> {"llc:0:0"});
+    PFL_EXPECT(ipv4_descriptor->parent_stable_id == std::optional<std::string> {"snap:0:0"});
+    PFL_EXPECT(udp_descriptor->parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
     PFL_EXPECT(ieee8023_descriptor->supports_payload_only);
     PFL_REQUIRE(ieee8023_descriptor->payload_available_length.has_value());
 }
@@ -638,7 +651,7 @@ void expect_frontend_adapter_truncated_ethernet_packet_byte_fallback() {
     FrontendSessionAdapter adapter {};
     const auto open_result = adapter.open_capture(fixture_path("parsing/packet_byte_views/02_truncated_ethernet_header.pcap"));
     PFL_REQUIRE(open_result.opened);
-    PFL_EXPECT(adapter.get_overview().summary.packet_count == 1U);
+    PFL_EXPECT(adapter.get_overview().unrecognized_packet_count == 1U);
 
     const auto unrecognized = adapter.get_unrecognized_packets(0U, 4U);
     PFL_REQUIRE(unrecognized.packets.size() == 1U);
@@ -665,10 +678,8 @@ void expect_frontend_adapter_truncated_ethernet_packet_byte_fallback() {
     PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
     PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
 
-    const auto* frame_layer = find_summary_layer(details.summary_layers, "frame");
-    PFL_REQUIRE(frame_layer != nullptr);
-    PFL_EXPECT(require_summary_field_value(*frame_layer, "Captured Length") == "10 bytes");
-    PFL_EXPECT(require_summary_field_value(*frame_layer, "Original Length") == "46 bytes");
+    PFL_EXPECT(contains_text(details.summary_text, "Captured Length: 10"));
+    PFL_EXPECT(contains_text(details.summary_text, "Original Length: 46"));
 
     const auto fallback_content = adapter.get_unrecognized_packet_byte_view_content(
         packet.packet_index,
@@ -693,7 +704,7 @@ void expect_frontend_adapter_truncated_ethernet_packet_byte_fallback() {
     PFL_EXPECT(contains_text(details_json, "\"details_available\":false"));
     PFL_EXPECT(contains_text(details_json, "\"byte_view_descriptors\":[{\"stable_id\":\"frame:0:0\""));
     PFL_EXPECT(contains_text(details_json, "\"selected_byte_view\":{\"available\":true,\"stable_id\":\"frame:0:0\",\"label\":\"Captured Packet\""));
-    PFL_EXPECT(contains_text(details_json, "\"formatted_text\":\"0000  00 11 22 33 44 55 66 77 88 99"));
+    PFL_EXPECT(contains_text(details_json, "\"formatted_text\":\"00000000  00 11 22 33 44 55 66 77 88 99"));
     pfl_frontend_session_adapter_free(bridge_handle);
 }
 
@@ -978,7 +989,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/mdns/01_mdns_ipv4_ptr_query.pcap", .expected_protocol_hint = "mdns", .expected_service_hint = "_demo-service._tcp.local"},
         {.relative_path = "parsing/mdns/02_mdns_ipv6_ptr_query.pcap", .expected_protocol_hint = "mdns", .expected_service_hint = "_demo-service._tcp.local"},
         {.relative_path = "parsing/mdns/03_mdns_ipv4_ptr_response.pcap", .expected_protocol_hint = "mdns", .expected_service_hint = "_demo-service._tcp.local"},
-        {.relative_path = "parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap", .expected_protocol_hint = "mdns", .expected_service_hint = "_demo-service._tcp.local"},
+        {.relative_path = "parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap", .expected_protocol_hint = "mdns"},
         {.relative_path = "parsing/mdns/10_mdns_ipv4_truncated_message.pcap", .expected_protocol_hint = "mdns"},
         {.relative_path = "parsing/mdns/11_mdns_ipv4_malformed_pointer.pcap", .expected_protocol_hint = "mdns"},
         {.relative_path = "parsing/mdns/12_mdns_wrong_port_negative.pcap", .expected_protocol_hint = ""},

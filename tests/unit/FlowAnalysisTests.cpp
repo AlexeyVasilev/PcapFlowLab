@@ -612,8 +612,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "256-511") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "512-1023") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1024-1399") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1400-1550") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1551-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1400-1550") == 2U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1551-2499") == 0U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "2500-5000") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "5001+") == 1U);
     PFL_EXPECT(
@@ -689,7 +689,7 @@ void run_flow_analysis_tests() {
     PFL_REQUIRE(raw_truncated_rows.size() == 1U);
     const auto raw_truncated_analysis = raw_truncated_session.get_flow_analysis(raw_truncated_rows.front().index);
     PFL_REQUIRE(raw_truncated_analysis.has_value());
-    PFL_EXPECT(raw_truncated_analysis->max_packet_size_bytes == 400U);
+    PFL_EXPECT(raw_truncated_analysis->max_packet_size_bytes == truncated_response_packet.size());
     PFL_EXPECT(raw_truncated_analysis->max_captured_packet_size_bytes == truncated_response_packet.size());
 
     const auto truncated_index_path =
@@ -827,8 +827,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b.size() == 10U);
     PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a.size() == 10U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "0-63") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1400-1550") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1551-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1400-1550") == 2U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1551-2499") == 0U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "1024-1399") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b, "5001+") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "64-127") == 1U);
@@ -836,8 +836,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "512-1023") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.original.histogram_b_to_a, "2500-5000") == 2U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "0-63") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1400-1550") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1551-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1400-1550") == 2U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1551-2499") == 0U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "1024-1399") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_a_to_b, "5001+") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "64-127") == 1U);

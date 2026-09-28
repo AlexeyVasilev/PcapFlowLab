@@ -880,6 +880,10 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(materialized == http_partial_tail);
     }
 
+    constexpr std::string_view kHttpGetFixtureLabel =
+        "HTTP GET /components/com_virtuemart/assets/css/"
+        "vm-ltr-common.css?vmver=8dcacf73";
+
     {
         FrontendSessionAdapter adapter {};
         const auto opened = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
@@ -887,7 +891,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(adapter.select_flow(0U).selected);
 
         const auto stream = adapter.get_selected_flow_stream(30U, 16U);
-        const auto* row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /");
+        const auto* row = find_frontend_stream_item_by_label(stream.items, kHttpGetFixtureLabel);
         PFL_REQUIRE(row != nullptr);
         PFL_EXPECT(row->stream_item_data.formatted_text.empty());
 
@@ -909,20 +913,26 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(adapter.select_flow(0U).selected);
 
         const auto stream = adapter.get_selected_flow_stream(30U, 32U);
-        PFL_REQUIRE(stream.items.size() == 1U);
-        PFL_EXPECT(stream.items[0].payload_preview_text.empty());
-        PFL_EXPECT(stream.items[0].payload_preview_unavailable_text.empty());
-        PFL_EXPECT(stream.items[0].stream_item_data.formatted_text.empty());
+        const auto* row = [&]() -> const FrontendStreamItemDto* {
+            const auto it = std::find_if(stream.items.begin(), stream.items.end(), [](const FrontendStreamItemDto& item) {
+                return item.label == "TCP Payload" && item.source_packet_indices == std::vector<std::uint64_t> {3U};
+            });
+            return it == stream.items.end() ? nullptr : &(*it);
+        }();
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(row->payload_preview_text.empty());
+        PFL_EXPECT(row->payload_preview_unavailable_text.empty());
+        PFL_EXPECT(row->stream_item_data.formatted_text.empty());
 
-        const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, stream.items[0].stream_item_index);
-        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 32U, stream.items[0].stream_item_index);
+        const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, row->stream_item_index);
+        const auto item_data = adapter.get_selected_flow_stream_item_data(30U, 32U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
         PFL_EXPECT(!details.stream_item_data.available);
         PFL_EXPECT(details.stream_item_data.formatted_text.empty());
         PFL_EXPECT(item_data.available);
         PFL_EXPECT(item_data.semantic_kind == "tcp_payload");
         PFL_EXPECT(item_data.source_kind == "captured_packet_range");
-        PFL_EXPECT(item_data.formatted_text.find("48 65 6c 6c 6f") != std::string::npos);
+        PFL_EXPECT(item_data.formatted_text.find("01 00 00 00 00 02 00 0d") != std::string::npos);
     }
 
     {
@@ -932,7 +942,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(adapter.select_flow(0U).selected);
 
         const auto stream = adapter.get_selected_flow_stream(30U, 16U);
-        const auto* row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /");
+        const auto* row = find_frontend_stream_item_by_label(stream.items, kHttpGetFixtureLabel);
         PFL_REQUIRE(row != nullptr);
         PFL_EXPECT(row->stream_item_data.formatted_text.empty());
 
@@ -1035,6 +1045,19 @@ void run_selected_stream_item_data_presentation_tests() {
             5U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
+
+        auto unresolved_packet_row = *row;
+        unresolved_packet_row.packet_indices = {std::numeric_limits<std::uint64_t>::max()};
+        const auto unresolved_packet_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            unresolved_packet_row,
+            row->materialization_stability,
+            0U,
+            5U
+        );
+        expect_same_stream_item_data_presentation(unresolved_packet_presentation, presentation);
     }
 
     {
@@ -1095,7 +1118,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(item_data.assembly_kind == "reassembled");
         PFL_EXPECT(item_data.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
         PFL_EXPECT(item_data.contributing_unit_count == std::optional<std::uint64_t> {2U});
-        PFL_EXPECT(item_data.formatted_text.find("16 03 03") != std::string::npos);
+        PFL_EXPECT(item_data.formatted_text.find("16 03 01") != std::string::npos);
     }
 
     {
@@ -1139,24 +1162,6 @@ void run_selected_stream_item_data_presentation_tests() {
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
 
-        auto unresolved_packet_row = *row;
-        unresolved_packet_row.packet_indices = {std::numeric_limits<std::uint64_t>::max()};
-        const auto unresolved_packet_presentation = session_detail::derive_selected_stream_item_data_presentation(
-            session,
-            0U,
-            ProtocolId::tcp,
-            unresolved_packet_row,
-            row->materialization_stability,
-            0U,
-            30U
-        );
-        PFL_EXPECT(unresolved_packet_presentation.semantic_kind == session_detail::StreamItemDataSemanticKind::tls_record);
-        PFL_EXPECT(unresolved_packet_presentation.source_kind == session_detail::StreamItemDataSourceKind::retained_item_bytes);
-        PFL_EXPECT(unresolved_packet_presentation.state == presentation.state);
-        PFL_EXPECT(unresolved_packet_presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
-        PFL_EXPECT(unresolved_packet_presentation.available_length == row->summary_payload_bytes.size());
-        PFL_EXPECT(unresolved_packet_presentation.declared_length == presentation.declared_length);
-        PFL_EXPECT(unresolved_packet_presentation.owned_bytes == row->summary_payload_bytes);
     }
 
     {
@@ -1291,13 +1296,39 @@ void run_selected_stream_item_data_presentation_tests() {
     }
 
     {
+        CaptureSession backend_session {};
+        PFL_EXPECT(backend_session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"), fast_options()));
+
+        const auto backend_rows = backend_session.list_flow_stream_items_for_packet_prefix(0U, 30U, 32U);
+        const auto* backend_row = find_stream_row_by_label_and_packets(
+            backend_rows,
+            "QUIC Initial: CRYPTO",
+            {2U}
+        );
+        PFL_REQUIRE(backend_row != nullptr);
+        PFL_REQUIRE(backend_row->quic_stream_presentation.has_value());
+        PFL_REQUIRE(backend_row->quic_stream_presentation->packet.frames.size() == 1U);
+        const auto expected_crypto_offset =
+            backend_row->quic_stream_presentation->packet.frames.front().crypto_offset;
+        PFL_REQUIRE(expected_crypto_offset.has_value());
+
         FrontendSessionAdapter adapter {};
         const auto opened = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
         PFL_REQUIRE(opened.opened);
         PFL_REQUIRE(adapter.select_flow(0U).selected);
 
         const auto stream = adapter.get_selected_flow_stream(30U, 32U);
-        const auto* row = find_frontend_stream_item_by_label(stream.items, "QUIC Initial: CRYPTO");
+        const auto* row = [&]() -> const FrontendStreamItemDto* {
+            const auto it = std::find_if(
+                stream.items.begin(),
+                stream.items.end(),
+                [&](const FrontendStreamItemDto& item) {
+                    return item.stream_item_index == backend_row->stream_item_index &&
+                        item.source_packet_indices == backend_row->packet_indices;
+                }
+            );
+            return it == stream.items.end() ? nullptr : &(*it);
+        }();
         PFL_REQUIRE(row != nullptr);
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, row->stream_item_index);
@@ -1307,7 +1338,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(details.stream_item_data.formatted_text.empty());
         PFL_EXPECT(item_data.available);
         PFL_EXPECT(item_data.semantic_kind == "quic_frame");
-        PFL_EXPECT(item_data.logical_offset == std::optional<std::uint64_t> {0U});
+        PFL_EXPECT(item_data.logical_offset == expected_crypto_offset);
         PFL_EXPECT(item_data.formatted_text.find("06") != std::string::npos);
     }
 

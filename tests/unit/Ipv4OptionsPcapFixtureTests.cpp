@@ -53,10 +53,12 @@ std::optional<PacketDetails> decode_fixture_packet_details_best_effort(const Raw
 std::vector<session_detail::PacketSummaryLayer> build_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,
-    const std::string& /*protocol_details_text*/ = {}
+    const std::string& /*protocol_details_text*/ = {},
+    const std::optional<bool> is_ip_fragmented = std::nullopt
 ) {
     session_detail::PacketSummaryOptions options {};
     options.source_capture_accessible = true;
+    options.is_ip_fragmented = is_ip_fragmented;
     return session_detail::build_packet_summary_layers(details, packet, options);
 }
 
@@ -319,12 +321,20 @@ void run_ipv4_options_pcap_fixture_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_udp);
-        PFL_EXPECT(session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented == true);
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+        PFL_EXPECT(metadata.is_ip_fragmented == true);
 
-        const auto layers = build_summary_layers(*details, packet, session.read_packet_protocol_details_text(packet));
+        const auto layers = build_summary_layers(
+            *details,
+            packet,
+            session.read_packet_protocol_details_text(packet),
+            metadata.is_ip_fragmented
+        );
         const auto* ipv4_layer = find_layer(layers, "ipv4");
         PFL_REQUIRE(ipv4_layer != nullptr);
-        PFL_REQUIRE(find_field(*ipv4_layer, "Fragmentation") != nullptr);
+        const auto* fragmentation_field = find_field(*ipv4_layer, "Fragmentation");
+        PFL_REQUIRE(fragmentation_field != nullptr);
+        PFL_EXPECT(fragmentation_field->value == "Packet is fragmented");
         const auto* ipv4_options = find_child(*ipv4_layer, "ipv4_options");
         PFL_REQUIRE(ipv4_options != nullptr);
         PFL_REQUIRE(find_child(*ipv4_options, "ipv4_option_router_alert") != nullptr);

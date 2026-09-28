@@ -283,7 +283,7 @@ void expect_current_default_mdns_detector_scope() {
     expect_flow_hint_fixture(
         "parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap",
         "mdns",
-        std::optional<std::string> {"_demo-service._tcp.local"}
+        std::nullopt
     );
     expect_flow_hint_fixture("parsing/mdns/10_mdns_ipv4_truncated_message.pcap", "mdns", std::nullopt);
     expect_flow_hint_fixture("parsing/mdns/11_mdns_ipv4_malformed_pointer.pcap", "mdns", std::nullopt);
@@ -493,7 +493,7 @@ void expect_mdns_summary_contracts() {
         const auto summary_layers = build_fixture_summary_layers("parsing/mdns/05_mdns_ipv6_dns_sd_response_aaaa.pcap");
         const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
         PFL_REQUIRE(mdns_layer != nullptr);
-        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "Address") == "2001:db8::44");
+        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "Address") == "2001:0db8:0000:0000:0000:0000:0000:0044");
     }
 
     {

@@ -311,7 +311,7 @@ void expect_packet_info_help_and_parser_behavior() {
         const std::vector<std::string_view> args {"capture.pcap", "--flow-number", "1", "--packet-in-file", "2"};
         const auto parse_result = cli::parse_packet_info_command_arguments(args);
         PFL_EXPECT(!parse_result.ok);
-        PFL_EXPECT(contains_text(parse_result.error_text, "either flow-scoped selection or --packet-in-file"));
+        PFL_EXPECT(contains_text(parse_result.error_text, "--flow-number and --packet-in-flow"));
     }
 
     {
@@ -582,7 +582,7 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "Packet in File: 2"));
         PFL_EXPECT(contains_text(result.stdout_text, "Captured Length: "));
         PFL_EXPECT(contains_text(result.stdout_text, "Original Length: "));
-        PFL_EXPECT(!contains_text(result.stdout_text, "Payload Length: "));
+        PFL_EXPECT(contains_text(result.stdout_text, "Payload Length: "));
         PFL_EXPECT(contains_text(result.stdout_text, "\nSummary\n"));
         PFL_EXPECT(contains_text(result.stdout_text, "Ethernet II"));
         PFL_EXPECT(contains_text(result.stdout_text, "IPv4"));
@@ -695,17 +695,16 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(contains_text(result.stdout_text, "\nSummary\n"));
         PFL_EXPECT(contains_text(result.stdout_text, "\nBytes\n"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Captured Packet - "));
+        PFL_EXPECT(contains_text(result.stdout_text, "Ethernet II Frame - "));
         PFL_EXPECT(contains_text(result.stdout_text, expected_hex));
         PFL_EXPECT(!contains_text(result.stdout_text, "frame:0:0"));
-        PFL_EXPECT(!contains_text(result.stdout_text, "Ethernet II Frame - "));
     }
 
     {
         const auto vlan_capture_path = fixture_path("parsing/vlan/01_vlan_ipv4_tcp.pcap");
         const auto expected_hex = expected_packet_hex_dump(vlan_capture_path, 0U);
         const auto captured_length = expected_captured_length(vlan_capture_path, 0U);
-        const auto expected_length_text = std::string {"Captured Packet - "}
+        const auto expected_length_text = std::string {"Ethernet II Frame - "}
             + std::to_string(captured_length)
             + " bytes";
 
@@ -752,7 +751,7 @@ void expect_packet_info_runtime_and_output_behavior() {
         const auto mpls_capture_path = fixture_path("parsing/mpls/13_vlan_mpls_ipv4_tcp.pcap");
         const auto expected_hex = expected_packet_hex_dump(mpls_capture_path, 0U);
         const auto captured_length = expected_captured_length(mpls_capture_path, 0U);
-        const auto expected_length_text = std::string {"Captured Packet - "}
+        const auto expected_length_text = std::string {"Ethernet II Frame - "}
             + std::to_string(captured_length)
             + " bytes";
 
@@ -1010,7 +1009,7 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(contains_text(result.stdout_text, "\nBytes\n"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Captured Packet - "));
+        PFL_EXPECT(contains_text(result.stdout_text, "Ethernet II Frame - "));
         PFL_EXPECT(contains_text(result.stdout_text, expected_hex));
     }
 

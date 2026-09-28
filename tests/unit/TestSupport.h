@@ -25,6 +25,7 @@ void clear_recorded_failures();
 void push_test_context(std::string context);
 void pop_test_context();
 std::string current_test_context();
+void set_last_checkpoint(const char* file, int line, const char* expression);
 
 class ScopedTestContext final {
 public:
@@ -40,5 +41,9 @@ private:
 
 }  // namespace pfl::tests
 
-#define PFL_EXPECT(expression) ::pfl::tests::expect((expression), #expression, __FILE__, __LINE__)
-#define PFL_REQUIRE(expression) ::pfl::tests::require((expression), #expression, __FILE__, __LINE__)
+#define PFL_EXPECT(expression) \
+    (::pfl::tests::set_last_checkpoint(__FILE__, __LINE__, #expression), \
+        ::pfl::tests::expect((expression), #expression, __FILE__, __LINE__))
+#define PFL_REQUIRE(expression) \
+    (::pfl::tests::set_last_checkpoint(__FILE__, __LINE__, #expression), \
+        ::pfl::tests::require((expression), #expression, __FILE__, __LINE__))

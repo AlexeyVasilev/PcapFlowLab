@@ -740,27 +740,33 @@ SelectedFlowMergedPacketReadResult read_selected_flow_merged_range(
     }
     result.packets.reserve(static_cast<std::size_t>(packet_count_to_return));
 
-    const auto partition = find_merged_partition(
-        source,
-        count_a.packet_count,
-        count_b.packet_count,
-        merged_offset
-    );
-    if (!partition) {
-        result.status = partition.status;
-        result.error_detail = partition.error_detail;
-        return result;
+    std::uint64_t offset_a = 0U;
+    std::uint64_t offset_b = 0U;
+    if (merged_offset > 0U) {
+        const auto partition = find_merged_partition(
+            source,
+            count_a.packet_count,
+            count_b.packet_count,
+            merged_offset
+        );
+        if (!partition) {
+            result.status = partition.status;
+            result.error_detail = partition.error_detail;
+            return result;
+        }
+        offset_a = partition.offset_a;
+        offset_b = partition.offset_b;
     }
 
     DirectionCursor cursor_a {
         .direction = Direction::a_to_b,
         .total_count = count_a.packet_count,
-        .next_offset = partition.offset_a,
+        .next_offset = offset_a,
     };
     DirectionCursor cursor_b {
         .direction = Direction::b_to_a,
         .total_count = count_b.packet_count,
-        .next_offset = partition.offset_b,
+        .next_offset = offset_b,
     };
 
     auto ensure_cursor = [&](DirectionCursor& cursor) -> std::optional<SelectedFlowDirectionalPacketReadResult> {

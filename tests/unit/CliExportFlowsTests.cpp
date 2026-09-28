@@ -1505,10 +1505,11 @@ void expect_unrecognized_export_behavior() {
     }
 
     {
+        const auto existing_output_capture_path = build_unrecognized_export_cli_capture_path();
         const auto output_path = write_temp_text_file("pfl_cli_export_unrecognized_existing_output.pcap", "old");
         const auto rejected = invoke_cli({
             "export-flows",
-            capture_path.string(),
+            existing_output_capture_path.string(),
             "--unrecognized-packets",
             "--out",
             output_path.string(),
@@ -1520,7 +1521,7 @@ void expect_unrecognized_export_behavior() {
 
         const auto forced = invoke_cli({
             "export-flows",
-            capture_path.string(),
+            existing_output_capture_path.string(),
             "--unrecognized-packets",
             "--out",
             output_path.string(),

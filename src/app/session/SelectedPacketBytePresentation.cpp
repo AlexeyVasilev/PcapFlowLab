@@ -1,6 +1,7 @@
 #include "app/session/SelectedPacketBytePresentation.h"
 
 #include <algorithm>
+#include <limits>
 #include <sstream>
 
 #include "core/io/LinkType.h"
@@ -835,6 +836,8 @@ std::optional<SelectedPacketByteViewId> append_view(
         captured_length,
         truncated,
         std::nullopt,
+        std::nullopt,
+        std::nullopt,
         quic_crypto_stream_offset
     );
 }
@@ -867,6 +870,8 @@ std::optional<SelectedPacketByteViewId> append_protocol_unit_view(
         unit_range.captured_length,
         unit_range.truncated,
         payload_range,
+        std::nullopt,
+        std::nullopt,
         quic_crypto_stream_offset
     );
 }
@@ -1150,17 +1155,19 @@ std::optional<SelectedPacketByteViewId> append_tcp_segment_view(
     }
 
     std::optional<PacketByteRange> payload_range {};
-    if (parent_range.captured_length > header_length &&
-        (!parent_range.declared_length.has_value() || *parent_range.declared_length > header_length)) {
+    if (parent_range.captured_length >= header_length &&
+        (!parent_range.declared_length.has_value() || *parent_range.declared_length >= header_length) &&
+        parent_range.offset <= std::numeric_limits<std::uint32_t>::max() - header_length) {
+        const auto captured_payload_length = parent_range.captured_length - header_length;
+        const auto declared_payload_length = parent_range.declared_length.has_value()
+            ? std::optional<std::uint32_t> {*parent_range.declared_length - header_length}
+            : std::nullopt;
         payload_range = PacketByteRange {
             .offset = parent_range.offset + header_length,
-            .declared_length = parent_range.declared_length.has_value()
-                ? std::optional<std::uint32_t> {*parent_range.declared_length - header_length}
-                : std::nullopt,
-            .captured_length = parent_range.captured_length - header_length,
+            .declared_length = declared_payload_length,
+            .captured_length = captured_payload_length,
             .truncated = parent_range.truncated ||
-                (parent_range.declared_length.has_value() &&
-                 (parent_range.captured_length - header_length) < (*parent_range.declared_length - header_length)),
+                (declared_payload_length.has_value() && captured_payload_length < *declared_payload_length),
         };
     }
 
@@ -1203,12 +1210,16 @@ std::optional<SelectedPacketByteViewId> append_udp_datagram_view(
     };
 
     std::optional<PacketByteRange> payload_range {};
-    if (udp.length > kUdpHeaderSize && unit_captured_length > kUdpHeaderSize) {
+    if (udp.length >= kUdpHeaderSize &&
+        unit_captured_length >= kUdpHeaderSize &&
+        parent_range.offset <= std::numeric_limits<std::uint32_t>::max() - kUdpHeaderSize) {
+        const auto captured_payload_length = unit_captured_length - kUdpHeaderSize;
+        const auto declared_payload_length = static_cast<std::uint32_t>(udp.length - kUdpHeaderSize);
         payload_range = PacketByteRange {
             .offset = parent_range.offset + kUdpHeaderSize,
-            .declared_length = std::optional<std::uint32_t> {static_cast<std::uint32_t>(udp.length - kUdpHeaderSize)},
-            .captured_length = unit_captured_length - kUdpHeaderSize,
-            .truncated = unit_range.truncated || (unit_captured_length - kUdpHeaderSize) < (udp.length - kUdpHeaderSize),
+            .declared_length = std::optional<std::uint32_t> {declared_payload_length},
+            .captured_length = captured_payload_length,
+            .truncated = parent_range.truncated || unit_range.truncated || captured_payload_length < declared_payload_length,
         };
     }
 
@@ -1396,10 +1407,11 @@ std::optional<SelectedPacketByteViewId> append_inner_ethernet_branch(
     const InnerPacket& inner,
     std::vector<SelectedPacketByteViewDescriptor>& views,
     const std::uint32_t owner_captured_length,
-    const std::optional<SelectedPacketByteViewId>& parent_id
+    const std::optional<SelectedPacketByteViewId>& parent_id,
+    std::optional<PacketByteRange> initial_payload_range = std::nullopt
 ) {
     auto current_parent = parent_id;
-    std::optional<PacketByteRange> current_payload_range {};
+    auto current_payload_range = initial_payload_range;
     if (inner.has_inner_ethernet && inner.inner_ethernet.payload_range.has_value()) {
         const auto inner_unit_offset =
             inner.inner_ethernet.payload_range->offset >= 14U
@@ -1699,7 +1711,7 @@ void append_packet_data_view(
 
     const auto& packet_data = *options.packet_data;
     if (packet_data.role != PacketDataRole::transport_payload ||
-        packet_data.disposition != TransportPayloadDisposition::unclaimed_data ||
+        packet_data.byte_view_disposition != TransportPayloadDisposition::unclaimed_data ||
         packet_data.transport == PacketDataTransportKind::unknown ||
         packet_data.captured_length == 0U) {
         return;
@@ -1798,7 +1810,13 @@ void append_overlay_payload_branches(
             details.gre.payload_range
         );
         if (details.gre.has_inner_packet && details.gre.inner_packet != nullptr) {
-            append_inner_ethernet_branch(*details.gre.inner_packet, views, owner_captured_length, gre_id);
+            append_inner_ethernet_branch(
+                *details.gre.inner_packet,
+                views,
+                owner_captured_length,
+                gre_id,
+                details.gre.payload_range
+            );
         }
         return;
     }
@@ -2431,7 +2449,7 @@ void append_effective_transport_dns_message_view(
     SelectedPacketBytePresentation& presentation,
     const PacketDetails& details,
     std::span<const std::uint8_t> packet_bytes,
-    const QuicPresentationResult& quic_presentation
+    const bool suppress_udp_dns_for_quic
 ) {
     if (!details.effective_transport_payload.has_value()) {
         return;
@@ -2439,7 +2457,7 @@ void append_effective_transport_dns_message_view(
 
     const auto& effective_payload = *details.effective_transport_payload;
     if (effective_payload.transport == EffectiveTransportKind::udp) {
-        if (!quic_presentation.packets.empty()) {
+        if (suppress_udp_dns_for_quic) {
             return;
         }
         if (effective_payload.role == EffectiveTransportRole::top_level &&
@@ -2488,7 +2506,7 @@ void append_direct_dns_message_view(
     const PacketDetails& details,
     const PacketRef& packet,
     std::span<const std::uint8_t> packet_bytes,
-    const QuicPresentationResult& quic_presentation,
+    const bool suppress_udp_dns_for_quic,
     const std::optional<SelectedPacketByteViewId>& outer_tcp_id,
     const std::optional<SelectedPacketByteViewId>& outer_udp_id
 ) {
@@ -2499,7 +2517,7 @@ void append_direct_dns_message_view(
             !details.has_vxlan &&
             !details.has_geneve &&
             !details.has_gtpu &&
-            quic_presentation.packets.empty()) {
+            !suppress_udp_dns_for_quic) {
             if (const auto* udp_view = presentation.find_view(*outer_udp_id); udp_view != nullptr) {
                 append_dns_message_view(presentation, *outer_udp_id, *udp_view, *dns_message);
             }
@@ -3229,6 +3247,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         options.quic_presentation.has_value()
             ? *options.quic_presentation
             : empty_quic_presentation;
+    const bool suppress_udp_dns_for_quic = !quic_presentation_ref.packets.empty();
     const auto quic_packet_ids = append_quic_packet_views(
         presentation,
         quic_presentation_ref,
@@ -3245,7 +3264,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             presentation,
             details,
             options.packet_bytes,
-            quic_presentation_ref
+            suppress_udp_dns_for_quic
         );
     } else if (!options.packet_bytes.empty()) {
         append_direct_dns_message_view(
@@ -3253,7 +3272,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             details,
             packet,
             options.packet_bytes,
-            quic_presentation_ref,
+            suppress_udp_dns_for_quic,
             outer_tcp_id,
             outer_udp_id
         );

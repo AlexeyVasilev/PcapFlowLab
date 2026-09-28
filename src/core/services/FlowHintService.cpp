@@ -139,6 +139,10 @@ bool has_port_pair(const std::uint16_t left, const std::uint16_t right, const st
     return (left == port_a && right == port_b) || (left == port_b && right == port_a);
 }
 
+bool is_mdns_destination_port(const std::uint16_t port) noexcept {
+    return port == kMdnsPort;
+}
+
 bool is_mdns_multicast_destination(const std::uint32_t destination) noexcept {
     return destination == kMdnsIpv4Multicast;
 }
@@ -1289,7 +1293,7 @@ FlowHintUpdate detect_dns_hint(std::span<const std::uint8_t> payload, const bool
 }
 template <typename FlowKey>
 FlowHintUpdate detect_mdns_hint(std::span<const std::uint8_t> payload, const FlowKey& flow_key) {
-    if (!has_port(flow_key.src_port, flow_key.dst_port, kMdnsPort)) {
+    if (!is_mdns_destination_port(flow_key.dst_port)) {
         return {};
     }
 
@@ -1755,7 +1759,7 @@ const AnalysisSettings& FlowHintService::settings() const noexcept {
 }
 
 bool packet_matches_mdns_hint(const PacketDetails& details) noexcept {
-    if (!details.has_udp || !has_port(details.udp.src_port, details.udp.dst_port, kMdnsPort)) {
+    if (!details.has_udp || !is_mdns_destination_port(details.udp.dst_port)) {
         return false;
     }
 
