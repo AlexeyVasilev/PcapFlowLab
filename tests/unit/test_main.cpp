@@ -1,5 +1,5 @@
-#include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
@@ -43,43 +43,6 @@ std::string format_failure_message(const char* file, int line, const char* kind,
     return builder.str();
 }
 
-void emit_termination_diagnostics_and_abort(const char* reason) {
-    std::fputs("Core test runner terminated unexpectedly: ", stderr);
-    std::fputs(reason, stderr);
-    std::fputs("\nLast suite: ", stderr);
-    std::fputs(last_suite_name(), stderr);
-    std::fputs("\nLast checkpoint: ", stderr);
-    std::fputs(last_checkpoint_text().c_str(), stderr);
-    std::fputc('\n', stderr);
-    std::fflush(stderr);
-
-    std::signal(SIGABRT, SIG_DFL);
-    std::signal(SIGSEGV, SIG_DFL);
-    std::signal(SIGILL, SIG_DFL);
-    std::signal(SIGFPE, SIG_DFL);
-    std::abort();
-}
-
-void core_test_signal_handler(const int signal_number) {
-    switch (signal_number) {
-    case SIGABRT:
-        emit_termination_diagnostics_and_abort("SIGABRT");
-        break;
-    case SIGSEGV:
-        emit_termination_diagnostics_and_abort("SIGSEGV");
-        break;
-    case SIGILL:
-        emit_termination_diagnostics_and_abort("SIGILL");
-        break;
-    case SIGFPE:
-        emit_termination_diagnostics_and_abort("SIGFPE");
-        break;
-    default:
-        emit_termination_diagnostics_and_abort("signal");
-        break;
-    }
-}
-
 void core_test_terminate_handler() {
     std::fputs("Core test runner terminated unexpectedly: std::terminate\nLast suite: ", stderr);
     std::fputs(last_suite_name(), stderr);
@@ -88,7 +51,6 @@ void core_test_terminate_handler() {
     std::fputc('\n', stderr);
     std::fflush(stderr);
 
-    std::signal(SIGABRT, SIG_DFL);
     std::abort();
 }
 
@@ -266,10 +228,6 @@ ScopedTestContext::~ScopedTestContext() {
 
 int main() {
     std::set_terminate(pfl::tests::core_test_terminate_handler);
-    std::signal(SIGABRT, pfl::tests::core_test_signal_handler);
-    std::signal(SIGSEGV, pfl::tests::core_test_signal_handler);
-    std::signal(SIGILL, pfl::tests::core_test_signal_handler);
-    std::signal(SIGFPE, pfl::tests::core_test_signal_handler);
 
     pfl::tests::clear_recorded_failures();
 
