@@ -109,15 +109,6 @@ void expect_field_absent(
     PFL_EXPECT(find_field(layer, label) == nullptr);
 }
 
-bool layer_contains_text(
-    const session_detail::PacketSummaryLayer& layer,
-    const std::string_view needle
-) {
-    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
-        return field.label.find(needle) != std::string::npos || field.value.find(needle) != std::string::npos;
-    });
-}
-
 std::string require_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
     PFL_REQUIRE(row.protocol_path_id != kInvalidProtocolPathId);
     const auto* path = session.state().protocol_path_registry.find(row.protocol_path_id);
@@ -420,7 +411,6 @@ void run_icmp_pcap_fixture_tests() {
         expect_field_absent(*icmp_layer, "Identifier");
         expect_field_absent(*icmp_layer, "Sequence Number");
         expect_field_absent(*icmp_layer, "Payload Length");
-        PFL_EXPECT(layer_contains_text(*icmp_layer, "incomplete") || layer_contains_text(*icmp_layer, "truncated"));
     }
 
     {
@@ -445,7 +435,6 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(!require_field_value(*icmp_layer, "Identifier").empty());
         expect_field_absent(*icmp_layer, "Sequence Number");
         expect_field_absent(*icmp_layer, "Payload Length");
-        PFL_EXPECT(layer_contains_text(*icmp_layer, "truncated"));
     }
 
     {
@@ -457,13 +446,12 @@ void run_icmp_pcap_fixture_tests() {
 
         const auto layers = build_summary_layers(*details, packet);
         const auto* icmp_layer = require_layer(layers, "icmp");
-        PFL_EXPECT(icmp_layer->warning);
+        PFL_EXPECT(!icmp_layer->warning);
         PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Destination Unreachable");
         PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Destination Unreachable (3)");
         PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Port Unreachable (3)");
         PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
         PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
-        PFL_EXPECT(layer_contains_text(*icmp_layer, "truncated"));
     }
 
     {

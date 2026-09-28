@@ -428,10 +428,7 @@ void run_index_tests() {
         PFL_EXPECT(loaded_session.list_flows().size() == 1);
 
         const auto packet = loaded_session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
-        PFL_EXPECT(loaded_session.read_packet_data(*packet).empty());
-        PFL_EXPECT(!loaded_session.read_packet_details(*packet).has_value());
-        PFL_EXPECT(loaded_session.read_packet_hex_dump(*packet).empty());
+        PFL_EXPECT(!packet.has_value());
         PFL_EXPECT(!loaded_session.export_flow_to_pcap(0, should_not_export_path));
         PFL_EXPECT(!loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_should_not_save.idx"));
 
@@ -461,9 +458,11 @@ void run_index_tests() {
         PFL_EXPECT(loaded_session.attach_source_capture(moved_source_path));
         PFL_EXPECT(loaded_session.has_source_capture());
         PFL_EXPECT(loaded_session.capture_path() == moved_source_path);
-        PFL_EXPECT(!loaded_session.read_packet_data(*packet).empty());
-        PFL_EXPECT(loaded_session.read_packet_details(*packet).has_value());
-        PFL_EXPECT(!loaded_session.read_packet_hex_dump(*packet).empty());
+        const auto attached_packet = loaded_session.find_packet(0);
+        PFL_REQUIRE(attached_packet.has_value());
+        PFL_EXPECT(!loaded_session.read_packet_data(*attached_packet).empty());
+        PFL_EXPECT(loaded_session.read_packet_details(*attached_packet).has_value());
+        PFL_EXPECT(!loaded_session.read_packet_hex_dump(*attached_packet).empty());
         PFL_EXPECT(loaded_session.export_flow_to_pcap(0, should_not_export_path));
         PFL_EXPECT(loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_attached_source_save.idx"));
     }

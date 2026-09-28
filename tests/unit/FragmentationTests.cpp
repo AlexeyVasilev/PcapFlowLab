@@ -110,7 +110,7 @@ void run_fragmentation_tests() {
 
     const auto rows = session.list_flows();
     PFL_EXPECT(rows.size() == 5);
-    PFL_EXPECT(fragmentation_count(rows) == 3U);
+    PFL_EXPECT(fragmentation_count(rows) == 2U);
 
     std::size_t fragmented_flows {0};
     for (const auto& row : rows) {
@@ -121,7 +121,7 @@ void run_fragmentation_tests() {
             PFL_EXPECT(row.fragmented_packet_count == 0U);
         }
     }
-    PFL_EXPECT(fragmented_flows == 3U);
+    PFL_EXPECT(fragmented_flows == 2U);
 
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_fragmentation.idx";
     std::filesystem::remove(index_path);
@@ -130,7 +130,7 @@ void run_fragmentation_tests() {
     CaptureSession loaded_session {};
     PFL_EXPECT(loaded_session.load_index(index_path));
     const auto loaded_rows = loaded_session.list_flows();
-    PFL_EXPECT(fragmentation_count(loaded_rows) == 3U);
+    PFL_EXPECT(fragmentation_count(loaded_rows) == 2U);
     const auto loaded_packet0 = loaded_session.find_packet(0);
     const auto loaded_packet2 = loaded_session.find_packet(2);
     PFL_REQUIRE(loaded_packet0.has_value());

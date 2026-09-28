@@ -606,10 +606,6 @@ std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::ui
     return make_quic_crypto_frame_bytes(0U, crypto_bytes);
 }
 
-std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
-    return {0x02U, 0x00U, 0x00U, 0x00U, 0x00U};
-}
-
 std::vector<std::uint8_t> make_tls_server_hello_handshake_bytes() {
     std::vector<std::uint8_t> body {};
     append_be16(body, 0x0303U);

@@ -493,53 +493,6 @@ private:
     );
 }
 
-std::filesystem::path write_quic_directional_context_capture() {
-    const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
-    const auto split_offset = server_hello_bytes.size() / 2U;
-    const std::vector<std::uint8_t> server_hello_prefix(
-        server_hello_bytes.begin(),
-        server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset));
-    const std::vector<std::uint8_t> server_hello_suffix(
-        server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset),
-        server_hello_bytes.end());
-
-    return write_temp_pcap(
-        "pfl_selected_flow_quic_provider_directional_context.pcap",
-        make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
-            {
-                100U,
-                make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                    ipv4(10, 41, 3, 1),
-                    ipv4(10, 41, 3, 2),
-                    54020,
-                    443,
-                    make_plaintext_quic_initial_payload(
-                        make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())))
-            },
-            {
-                200U,
-                make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                    ipv4(10, 41, 3, 2),
-                    ipv4(10, 41, 3, 1),
-                    443,
-                    54020,
-                    make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(server_hello_prefix)))
-            },
-            {
-                300U,
-                make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                    ipv4(10, 41, 3, 2),
-                    ipv4(10, 41, 3, 1),
-                    443,
-                    54020,
-                    make_plaintext_quic_initial_payload(concat_bytes(
-                        make_quic_crypto_frame_bytes(static_cast<std::uint64_t>(split_offset), server_hello_suffix),
-                        make_quic_ack_frame_bytes())))
-            },
-        })
-    );
-}
-
 std::filesystem::path write_quic_bounded_access_capture(const std::size_t packet_count) {
     std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
     packets.reserve(packet_count);

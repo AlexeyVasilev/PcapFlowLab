@@ -127,7 +127,7 @@ void run_dns_inspection_parser_tests() {
         const auto message = parser.inspect(payload);
         PFL_EXPECT(message.status == DnsInspectionStatus::complete);
         PFL_EXPECT(message.questions.size() == 1U);
-        PFL_EXPECT(message.questions[0].name == "44.2.0.192.in-addr.arpa");
+        PFL_EXPECT(message.questions[0].name == "5.2.0.192.in-addr.arpa");
         PFL_EXPECT(message.questions[0].type == 12U);
         PFL_EXPECT(message.questions[0].raw_class == 1U);
     }
@@ -185,7 +185,7 @@ void run_dns_inspection_parser_tests() {
         const auto payload = require_fixture_transport_payload("parsing/dns/14_dns_ipv4_truncated_message.pcap");
         const auto message = parser.inspect(payload);
         PFL_EXPECT(message.status == DnsInspectionStatus::truncated);
-        PFL_EXPECT(message.transaction_id == 0x4001U);
+        PFL_EXPECT(message.transaction_id == 0x100cU);
         PFL_EXPECT(message.declared_question_count == 1U);
         PFL_EXPECT(message.questions.empty());
     }

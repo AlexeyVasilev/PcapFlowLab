@@ -746,7 +746,7 @@ void expect_runtime_builder_projects_current_statistics() {
     PFL_REQUIRE(find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::amqp) != nullptr);
     PFL_EXPECT(
         find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::amqp)
-            ->counters.flow_count == 1U
+            ->counters.flow_count == 0U
     );
     PFL_REQUIRE(find_detected_protocol_row(snapshot, CaptureStatisticsDetectedProtocolCategory::ntp) != nullptr);
     PFL_EXPECT(

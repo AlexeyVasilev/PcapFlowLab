@@ -23,6 +23,22 @@ namespace {
 
 constexpr std::size_t kTlsMaxRecordPayloadSize = (1U << 14U) + 2048U;
 
+ConnectionV4* require_single_ipv4_connection(CaptureState& state) {
+    const auto connections = state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_REQUIRE(connections.front() != nullptr);
+
+    auto* connection = state.ipv4_connections.find(connections.front()->key);
+    PFL_REQUIRE(connection != nullptr);
+    return connection;
+}
+
+FlowKeyV4 require_first_observed_flow_key(const ConnectionV4& connection) {
+    const auto flow_key = first_observed_flow_key(connection);
+    PFL_REQUIRE(flow_key.has_value());
+    return *flow_key;
+}
+
 std::vector<std::uint8_t> make_http_request_payload() {
     constexpr char request[] =
         "GET / HTTP/1.1\r\n"
@@ -949,10 +965,10 @@ void run_flow_hints_tests() {
             service
         ));
 
-        auto* connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        auto* connection = require_single_ipv4_connection(state);
+        const auto retained_flow_key = require_first_observed_flow_key(*connection);
         PFL_EXPECT(has_pending_tls_client_hello(connection->hint_search_state));
-        PFL_EXPECT(service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.has_pending_tls_client_hello(retained_flow_key));
         PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 1U);
         PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == first_payload.size());
 
@@ -973,10 +989,9 @@ void run_flow_hints_tests() {
             service
         ));
 
-        connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        connection = require_single_ipv4_connection(state);
         PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
-        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(!service.has_pending_tls_client_hello(retained_flow_key));
         PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
         PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
         PFL_EXPECT(connection->service_hint.empty());
@@ -996,8 +1011,7 @@ void run_flow_hints_tests() {
             service
         ));
 
-        connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        connection = require_single_ipv4_connection(state);
         PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
         PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::tls);
         PFL_EXPECT(connection->service_hint.empty());
@@ -1032,10 +1046,10 @@ void run_flow_hints_tests() {
             service
         ));
 
-        auto* connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        auto* connection = require_single_ipv4_connection(state);
+        const auto retained_flow_key = require_first_observed_flow_key(*connection);
         PFL_EXPECT(has_pending_tls_client_hello(connection->hint_search_state));
-        PFL_EXPECT(service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(service.has_pending_tls_client_hello(retained_flow_key));
         PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == first_payload.size());
 
         auto retransmitted_first_packet = make_import_packet(
@@ -1058,10 +1072,9 @@ void run_flow_hints_tests() {
             service
         ));
 
-        connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        connection = require_single_ipv4_connection(state);
         PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
-        PFL_EXPECT(!service.has_pending_tls_client_hello(flow_key));
+        PFL_EXPECT(!service.has_pending_tls_client_hello(retained_flow_key));
         PFL_EXPECT(service.pending_tls_client_hello_candidate_count() == 0U);
         PFL_EXPECT(service.pending_tls_client_hello_retained_bytes() == 0U);
         PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::tls);
@@ -1078,8 +1091,7 @@ void run_flow_hints_tests() {
             service
         ));
 
-        connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        connection = require_single_ipv4_connection(state);
         PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
         PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::tls);
         PFL_EXPECT(connection->service_hint.empty());
@@ -1476,8 +1488,7 @@ void run_flow_hints_tests() {
             service
         ));
 
-        auto* connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        auto* connection = require_single_ipv4_connection(state);
         PFL_EXPECT(connection->service_hint.empty());
 
         set_pending_tls_client_hello(connection->hint_search_state, ConnectionFlowSlot::flow_a);
@@ -1499,8 +1510,7 @@ void run_flow_hints_tests() {
             service
         ));
 
-        connection = state.ipv4_connections.find(make_connection_key(flow_key));
-        PFL_REQUIRE(connection != nullptr);
+        connection = require_single_ipv4_connection(state);
         PFL_EXPECT(!has_pending_tls_client_hello(connection->hint_search_state));
         PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::unknown);
         PFL_EXPECT(connection->service_hint.empty());
