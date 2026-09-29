@@ -77,6 +77,26 @@ views for the current selection.
 Qt is the primary UI. Some screenshots below use the experimental Tauri
 frontend because its compact layout shows the same workflows more clearly.
 
+## Filter flows with structured conditions
+
+![Advanced Flow Filter settings](user_docs/ui/images/advanced-filter/advanced-filter-settings.png)
+
+Use `Simple Filter` for quick text matching across displayed Flow fields. Use
+`Advanced Flow Filter` when you need structured Flow conditions before opening
+packets, Stream, or Analysis.
+
+Advanced Flow Filter can reduce a large Flow List by Flow protocol, detected
+protocol, endpoint addresses and ports, time ranges and Flow lifetime overlap,
+traffic volume and packet-count ranges, directional traffic characteristics,
+service metadata, Protocol Path, Contains Layer, and Include / Exclude
+conditions. Sections can also be disabled temporarily without deleting their
+configuration.
+
+Complex filters can be saved as reusable `.filter` files, reopened in the
+desktop UI, and reused by the CLI. See the
+[Advanced Flow Filter guide](user_docs/ui/advanced-flow-filter.md) for range,
+direction, time, traffic, Protocol Path, and saved-filter workflows.
+
 ## Inspect protocol Streams
 
 ![Selected-flow Stream inspection](user_docs/ui/images/overview/overview-tls-stream.png)
@@ -164,6 +184,8 @@ workspace for focused inspection.
 - On-demand selected-flow Analysis for timing, rates, distributions, and
   sequence context.
 - Capture-wide Statistics, including Protocol Path aggregation.
+- Structured Advanced Flow Filter for protocol, endpoint, time, traffic,
+  service, and Protocol Path conditions, with reusable `.filter` documents.
 - Reusable indexes so processed captures can be reopened without starting from
   raw import every time.
 - Smart Export and per-flow export workflows for targeted packet extraction.
