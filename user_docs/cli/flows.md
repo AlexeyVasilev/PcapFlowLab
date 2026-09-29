@@ -151,6 +151,11 @@ Traffic predicates used by the desktop UI, for example:
 These predicates stay metadata-backed for ordinary flow listing. They do not
 require source-packet rereads or packet rescanning during evaluation.
 
+For the desktop workflow and user-facing meaning of Advanced Filter sections,
+including condition combination, Endpoint A/B directionality, `.filter` files,
+and Smart Export interaction, see
+[Advanced Flow Filter](../ui/advanced-flow-filter.md).
+
 ## Find the busiest flows
 
 Filtering and sorting solve different problems.

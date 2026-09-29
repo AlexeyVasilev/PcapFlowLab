@@ -170,9 +170,8 @@ The Flows workspace has two primary filter modes:
 - `Simple Filter`
 - `Advanced Filter`
 
-`Simple Filter` uses the text field above the flow table. `Advanced Filter`
-uses the dedicated `Settings` dialog and applies a structured `.filter`
-document through the shared backend path.
+These modes are mutually exclusive. The Simple Filter text and Advanced Filter
+document are not applied together.
 
 Use the text filter above the flow table to narrow the visible flow set in
 `Simple Filter` mode.
@@ -189,24 +188,27 @@ Current flow text filtering matches against:
 
 Use `Clear` to remove the current text filter quickly.
 
-In `Advanced Filter` mode, the compact toolbar shows the current filter name
-and rule count instead of the text field. `Settings` opens the structured
-editor for the current filter document.
+Use `Advanced Filter` when you need structured Flow metadata conditions instead
+of text matching. In Advanced mode, the compact toolbar replaces the text field
+with:
 
-Current Advanced Filter areas include:
+- `Settings`;
+- the current filter display name;
+- the active rule count;
+- `Use simple filter`;
+- `Clear`.
+
+`Settings` opens the structured editor for the current filter document. Current
+Advanced Filter areas include:
 
 - family, protocol, detected protocol, TLS, QUIC, and observed directions;
-- `Time`:
-  - flow start
-  - flow end
-  - flow lifetime overlap
-  - duration
-- `Traffic`:
-  - packets / original bytes / captured bytes
-  - packet distribution / data distribution
-  - `A -> B` and `B -> A` packet and original-byte ranges
-  - additional advanced metrics such as fragmentation, truncation, TCP control
-    counts, and maximum packet sizes
+- ports and IP addresses;
+- time ranges for Flow start, Flow end, lifetime overlap, and duration;
+- traffic ranges such as packets, original bytes, captured bytes, directional
+  packet/byte totals, fragmentation, truncation, TCP control counts, and packet
+  size maxima;
+- service metadata;
+- Protocol Path and Contains Layer.
 
 Observed-direction and directional-traffic semantics use the stored flow
 orientation:
@@ -214,6 +216,10 @@ orientation:
 - `A -> B` is the direction of the first observed packet in the flow
 - `Only A -> B packets` means no reverse-direction packet was observed
 - `Packets in both directions` means both directions were observed
+
+For the full workflow, condition-combination rules, file-backed `.filter`
+documents, Smart Export interaction, and CLI relationship, see
+[Advanced Flow Filter](advanced-flow-filter.md).
 
 Column sorting is available directly from the flow-table headers. Current
 sorting is available for the main visible inventory fields such as:
@@ -520,5 +526,6 @@ is stated explicitly.
 ## Related documentation
 
 - [Main window](main-window.md)
+- [Advanced Flow Filter](advanced-flow-filter.md)
 - [CLI overview](../cli/README.md)
 - [Capture processing settings](../reference/settings.md)

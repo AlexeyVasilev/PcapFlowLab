@@ -34,6 +34,10 @@ right.
 
 Use [Flows workspace](flows.md) for the detailed guide.
 
+Use [Advanced Flow Filter](advanced-flow-filter.md) when you need structured
+Flow filtering by protocol, endpoints, time, traffic, service, and Protocol
+Path instead of a simple text search.
+
 ## Inspect protocol streams
 
 `Stream` is derived from the selected canonical flow.
@@ -173,6 +177,7 @@ Use [Settings](settings.md) for the practical guide.
 | --- | --- |
 | [Main window](main-window.md) | Overall window layout, top-level navigation, menus, and workspace placement |
 | [Flows workspace](flows.md) | Canonical flow navigation, packet inspection, stream inspection, Packet Details, and Bytes |
+| [Advanced Flow Filter](advanced-flow-filter.md) | Structured filtering by protocol, endpoints, time, traffic, service, and Protocol Path |
 | [Analysis workspace](analysis.md) | Selected-flow metrics, rates, timing, size distributions, and sequence preview |
 | [Statistics workspace](statistics.md) | Whole-capture summaries, protocol-path aggregation, and capture-wide quantitative views |
 | [Captures and indexes](capture-and-index.md) | Raw capture import, index reuse, source-capture attachment, and session lifecycle |
