@@ -63,17 +63,6 @@ void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t va
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
-std::vector<std::uint8_t> concat_bytes(
-    const std::vector<std::uint8_t>& first,
-    const std::vector<std::uint8_t>& second
-) {
-    std::vector<std::uint8_t> combined {};
-    combined.reserve(first.size() + second.size());
-    combined.insert(combined.end(), first.begin(), first.end());
-    combined.insert(combined.end(), second.begin(), second.end());
-    return combined;
-}
-
 std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<std::uint8_t>& frame_bytes) {
     std::vector<std::uint8_t> payload {
         0xC0U,
@@ -144,31 +133,6 @@ std::vector<std::uint8_t> make_tls_client_hello_handshake_bytes() {
     body.insert(body.end(), extensions.begin(), extensions.end());
 
     std::vector<std::uint8_t> handshake {0x01U};
-    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
-    handshake.insert(handshake.end(), body.begin(), body.end());
-    return handshake;
-}
-
-std::vector<std::uint8_t> make_tls_server_hello_handshake_bytes() {
-    std::vector<std::uint8_t> body {};
-    append_be16(body, 0x0303U);
-    for (std::uint8_t index = 0U; index < 32U; ++index) {
-        body.push_back(static_cast<std::uint8_t>(0xA0U + index));
-    }
-    body.push_back(0x00U);
-    append_be16(body, 0x1301U);
-    body.push_back(0x00U);
-
-    std::vector<std::uint8_t> extensions {};
-    append_be16(extensions, 0x002BU);
-    append_be16(extensions, 0x0002U);
-    extensions.push_back(0x03U);
-    extensions.push_back(0x04U);
-
-    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
-    body.insert(body.end(), extensions.begin(), extensions.end());
-
-    std::vector<std::uint8_t> handshake {0x02U};
     append_be24(handshake, static_cast<std::uint32_t>(body.size()));
     handshake.insert(handshake.end(), body.begin(), body.end());
     return handshake;
