@@ -5,7 +5,7 @@
 It supports two selection modes:
 
 - a global packet number in the capture timeline;
-- a packet position inside one canonical flow.
+- a packet position inside one Flow.
 
 In the normal CLI workflow:
 
@@ -38,7 +38,7 @@ pcap-flow-lab packet-info pcap_flow_lab_showcase.pcap --packet-in-file 1
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Packet 1
 
 Packet
@@ -132,7 +132,7 @@ product surface. In practice that means:
 
 ## Inspect a packet inside a flow
 
-Use flow-scoped selection when you want the N-th packet inside one canonical
+Use flow-scoped selection when you want the N-th packet inside one Flow
 flow instead of the N-th packet in the whole capture.
 
 Command:
@@ -144,7 +144,7 @@ pcap-flow-lab packet-info pcap_flow_lab_showcase.pcap --flow-number 1 --packet-i
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Flow 1 / Packet 4
 
 Flow Context
@@ -236,7 +236,7 @@ Transport Layer Security, ClientHello
 This flow-scoped mode adds two useful things:
 
 - `Flow Context` with the stored flow endpoints;
-- `Direction` relative to the selected canonical flow's stored A/B
+- `Direction` relative to the selected Flow's stored A/B
   orientation.
 
 The `Direction` line should be read only as:
@@ -272,9 +272,9 @@ In the showcase GRE example below:
 Current production behavior is:
 
 - `--packet-in-file <N>` is global to the capture timeline;
-- `--flow-number <F> --packet-in-flow <P>` is local to one canonical flow;
+- `--flow-number <F> --packet-in-flow <P>` is local to one Flow;
 - flow-scoped packet numbering is one-based and follows the packet order of
-  that selected canonical flow.
+  that selected Flow.
 
 ## Inspect nested protocol layers
 
@@ -290,7 +290,7 @@ pcap-flow-lab packet-info pcap_flow_lab_showcase.pcap --flow-number 2 --packet-i
 Verified relevant output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Flow 2 / Packet 4
 
 Flow Context
@@ -443,7 +443,7 @@ pcap-flow-lab packet-info pcap_flow_lab_showcase.pcap --flow-number 16 --packet-
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Flow 16 / Packet 1
 
 Flow Context
@@ -553,7 +553,7 @@ pcap-flow-lab packet-info showcase.idx --packet-in-file 1 --source-capture pcap_
 Verified output excerpt:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 Packet 1
 
 Packet
@@ -617,7 +617,7 @@ But positional input and `--input` are mutually exclusive input forms.
 Current user-relevant contract is:
 
 - settings are applied before raw-capture inspection;
-- for flow-scoped selection, grouping settings can therefore affect canonical
+- for flow-scoped selection, grouping settings can therefore affect
   flow numbering and packet membership;
 - index input rejects `--settings`.
 
@@ -659,7 +659,7 @@ pcap-flow-lab packet-info --input <input> ...
 | Selection | Meaning |
 | --- | --- |
 | `--packet-in-file <N>` | Select the N-th captured packet in the global capture timeline. |
-| `--flow-number <F> --packet-in-flow <P>` | Select the P-th packet inside canonical flow F. |
+| `--flow-number <F> --packet-in-flow <P>` | Select the P-th packet inside Flow F. |
 
 Current rules:
 

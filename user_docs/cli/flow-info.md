@@ -1,6 +1,6 @@
 # `flow-info`
 
-`flow-info` shows a detailed analysis report for exactly one canonical flow.
+`flow-info` shows a detailed analysis report for exactly one Flow.
 
 The normal CLI workflow is:
 
@@ -12,7 +12,7 @@ summary
 
 In practice, you usually:
 
-- run `flows` to find the canonical `No.` you care about;
+- run `flows` to find the `No.` you care about;
 - then run `flow-info ... --flow-number N` to inspect that one flow in detail.
 
 The examples below were captured from the 0.3.0 CLI using the repository
@@ -33,7 +33,7 @@ pcap-flow-lab flow-info showcase.idx --flow-number 1
 Verified output:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 Flow 1
 
 Identity
@@ -449,10 +449,10 @@ At the same time, this verified example keeps the same:
 The safe way to interpret this is:
 
 - `--settings` applies during raw capture import;
-- grouping-related settings can change the imported canonical flow inventory and
+- grouping-related settings can change the imported Flow inventory and
   the resulting flow identity/path presentation;
 - `--flow-number 2` therefore means flow 2 in **that** imported inventory;
-- canonical flow numbers should not be treated as globally stable across
+- Flow numbers should not be treated as globally stable across
   differently grouped imports.
 
 For index input, this does not apply the same way:
@@ -518,8 +518,8 @@ These forms are mutually exclusive.
 --flow-number <N>
 ```
 
-This is a one-based canonical flow number within the specific imported or
-indexed flow inventory currently being opened.
+This is a one-based Flow number within the specific imported or indexed Flow
+inventory currently being opened.
 
 The normal discovery workflow is:
 
@@ -534,7 +534,7 @@ pcap-flow-lab flows ...
 | Option | Value | Description |
 | --- | --- | --- |
 | `--input` | `<path>` | Provide the input path explicitly instead of using a positional path. |
-| `--flow-number` | `<N>` | Select exactly one one-based canonical flow. |
+| `--flow-number` | `<N>` | Select exactly one one-based Flow. |
 | `--settings` | `<settings.json>` | Apply supported raw-import settings during raw capture import. Invalid for index input. |
 | `--progress` | `auto`, `on`, `off` | Control live open-progress reporting on `stderr`. |
 | `-h`, `--help` | none | Show flow-info-specific help and exit successfully. |
@@ -543,7 +543,7 @@ pcap-flow-lab flows ...
 
 | Capability | Raw capture | Index |
 | --- | --- | --- |
-| Analyze one canonical flow | Yes | Yes |
+| Analyze one Flow | Yes | Yes |
 | `--settings` | Yes | No |
 | `--progress` | Yes | Yes |
 | Uses stored flow inventory already present in input | No, inventory is built during import | Yes |
@@ -584,17 +584,17 @@ Flow N is out of range for this input.
 
 ## Notes and limitations
 
-`flow-info` is intentionally focused on one selected canonical flow.
+`flow-info` is intentionally focused on one selected Flow.
 
 It does not:
 
 - discover flows for you;
-- select multiple canonical flows;
+- select multiple Flows;
 - filter the whole flow inventory;
 - sort the whole flow inventory;
 - export packet data.
 
-If you need to find the right canonical flow first, use `flows`.
+If you need to find the right Flow first, use `flows`.
 
 If you need packet-level inspection, use `packet-info`.
 
@@ -608,6 +608,6 @@ is written to `stdout`.
 The most relevant companion commands are:
 
 - `summary` for whole-input overview;
-- `flows` for listing and selecting canonical flows;
+- `flows` for listing and selecting Flows;
 - `packet-info` for packet-level inspection;
 - `export-flows` for packet export workflows.
