@@ -3,7 +3,7 @@
 ## Role
 
 This document is the current technical contract for protocol-path-aware flow
-identity in Pcap Flow Lab 0.3.0.
+identity in Pcap Flow Lab 0.4.0.
 
 It describes the implemented behavior first. Historical RFC and migration
 context is kept only as clearly marked background near the end.

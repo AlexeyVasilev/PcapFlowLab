@@ -229,7 +229,7 @@ start with the [user documentation landing page](user_docs/README.md).
 
 ## Current scope
 
-Pcap Flow Lab 0.3.0 is intentionally focused:
+Pcap Flow Lab 0.4.0 is intentionally focused:
 
 - Qt is the primary desktop UI.
 - Tauri is an experimental alternative frontend, not a perfect feature-parity
@@ -254,7 +254,7 @@ Requirements:
 - Qt 6.8 or newer with `Quick`, `Qml`, `QuickControls2`, and `Widgets` for the
   primary desktop UI
 
-For Pcap Flow Lab 0.3.0, four prebuilt application archives are planned:
+For Pcap Flow Lab 0.4.0, four prebuilt application archives are planned:
 
 - Windows Qt
 - Windows Tauri

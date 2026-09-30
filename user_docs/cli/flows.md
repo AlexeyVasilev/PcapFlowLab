@@ -7,7 +7,7 @@ index. In practice it is usually the next CLI step after `summary`:
 - `flows` lets you inspect, filter, rank, select, and export the recognized
   flow list.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture. Shell-specific executable prefixes such as `.\` are
 omitted.
 

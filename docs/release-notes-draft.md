@@ -1,95 +1,49 @@
-# Pcap Flow Lab 0.3.0
+# Pcap Flow Lab 0.4.0
 
-Pcap Flow Lab 0.3.0 is a substantial release for flow-based packet-capture
-inspection. It expands the product well beyond a simple large-capture utility
-and brings together flow navigation, Protocol Path-aware identity, selected
-packet and Stream inspection, selected-flow Analysis, capture-wide Statistics,
-reusable indexes, practical export workflows, and a modern CLI.
+Pcap Flow Lab 0.4.0 is the next release after the published `v0.3.0` tag. It
+keeps the same positioning: **a flow-based PCAP analyzer** that complements
+Wireshark rather than replacing deep packet-by-packet dissection.
 
-Pcap Flow Lab remains **a flow-based PCAP analyzer.** It is not intended to
-replace Wireshark. Instead, it provides a different flow-based analysis model
-that can complement deeper packet-based Wireshark inspection.
+This release focuses on structured flow filtering, broader whole-capture
+Statistics, reusable report output, newer index metadata, expanded protocol
+recognition, ERF Ethernet capture input, and parity hardening across Qt, Tauri,
+and CLI.
 
-## Highlights
+## Highlights Since v0.3.0
 
-- Flow-based capture exploration with Protocol Path-aware identity and
-  presentation.
-- Structured Advanced Flow Filter workflows with reusable `.filter`
-  documents.
-- Structured selected-packet `Summary` and protocol-aware `Bytes`.
-- Bounded selected-flow Stream inspection with useful structured HTTP,
-  DNS/mDNS, TLS, and QUIC cases where supported.
-- Selected-flow Analysis for timing, rates, directionality, distributions, and
-  sequence context.
-- Capture/index-wide Statistics including packet and flow distributions,
-  IP fragmentation, detected protocols, QUIC/TLS summaries, top flows,
-  top endpoints/ports, Unrecognized Packets, and Protocol Path aggregation.
+- Structured Advanced Flow Filter workflows across the shared backend, Qt,
+  Tauri, CLI, and reusable `.filter` documents.
+- Expanded capture/index-wide Statistics, including richer packet and flow
+  distributions, IP fragmentation, Protocol Path statistics, protocol hints,
+  QUIC/TLS summaries, top flows, endpoints, and ports.
 - Whole-session Statistics report export as HTML or Markdown from desktop and
   CLI.
-- A modern CLI built around `summary`, `flows`, `export-flows`, `flow-info`,
-  and `packet-info`.
-- Practical export workflows including Smart Export, per-flow output where
-  supported, flow metadata export, and selected byte export.
-- A versioned showcase capture for ready-to-open demos and release smoke tests.
+- Stable revision-19 indexes with persisted Statistics/import provenance and
+  metadata-backed reopen workflows.
+- Expanded recognition for application protocols such as MQTT, AMQP, NTP, and
+  mail-protocol hints, with support depth documented explicitly.
+- ERF Ethernet capture/link-layer input support for classic PCAP and PCAPNG
+  `LINKTYPE_ERF` captures.
+- CLI documentation and examples refreshed against the current showcase,
+  including Advanced Filter, Statistics export, per-Flow export, and
+  unrecognized-packet export workflows.
+- Runtime and selected-flow hardening for byte ownership, Packet Details,
+  Stream Item Data, QUIC/TLS presentation, and malformed/truncated input.
 
-## Flow-based analysis and Protocol Path
+## Advanced Flow Filter
 
-Protocol Path-aware flow identity and presentation are major capabilities in
-0.3.0. Pcap Flow Lab can preserve meaningful encapsulation context so that
-flows whose effective inner tuples would otherwise look identical remain
-distinguishable when identity-bearing layers differ.
+0.4.0 adds a structured Advanced Flow Filter workflow on top of the existing
+flow model. Users can combine protocol, endpoint, service, time, traffic,
+Protocol Path, and contained-layer predicates, then save and reopen those
+filters as `.filter` documents.
 
-Representative examples include:
+The parser, formatter, compiler, evaluator, Qt editor, Tauri editor, CLI
+integration, and Smart Export path now share the same backend semantics.
 
-- VLAN VID
-- MPLS label
-- VXLAN VNI
-- Geneve VNI
-- GTP-U TEID
-- GRE key
-- AH SPI
-- ESP SPI
+## Statistics and Reports
 
-This same context is visible in the user-facing Protocol Path presentation
-across Flows and Statistics, making nested traffic and overlay identity easier
-to understand at both the per-flow and whole-capture levels.
-
-Advanced Flow Filter adds a structured filtering workflow on top of this flow
-model. Users can combine protocol, endpoint, service, time, traffic, Protocol
-Path, and contained-layer predicates, save them as reusable `.filter`
-documents, and apply the same backend semantics from the desktop UI or CLI
-where supported.
-
-## Packet and Stream inspection
-
-Selected-packet inspection now centers on two current Packet Details surfaces:
-
-- `Summary`
-- `Bytes`
-
-`Summary` provides structured packet inspection, while `Bytes` exposes
-authoritative packet and supported derived byte views.
-
-Selected-flow Stream inspection is bounded, practical, and protocol-aware where
-enough evidence exists. Stream Item Details currently uses:
-
-- `Summary`
-- `Item Data`
-
-Useful structured Stream behavior is available for supported HTTP, DNS/mDNS,
-TLS, and bounded QUIC cases, with generic fallback where a specialized Stream
-parser is not available. This does not imply full TCP-correct session
-reconstruction.
-
-## Analysis and Statistics
-
-Selected-flow Analysis is one of the major user-facing surfaces in 0.3.0. It
-provides timing, rates, directionality, packet-size and inter-arrival
-distributions, burst/idle information, sequence context, and related metrics
-for one selected flow.
-
-Statistics is the capture-wide or index-wide quantitative workspace. Important
-current capabilities include:
+Statistics is substantially broader than in the released `v0.3.0` baseline.
+Current Statistics includes representative areas such as:
 
 - capture overview and capture time
 - transport and IP-family summary
@@ -105,9 +59,6 @@ current capabilities include:
 - top flows by original bytes
 - top endpoints and ports
 
-Together, Analysis and Statistics give both the local flow view and the global
-capture view without forcing every expensive computation into capture-open time.
-
 Statistics can also be exported as complete whole-session reports:
 
 - desktop: `Statistics -> Export Statistics as HTML...` and
@@ -115,10 +66,12 @@ Statistics can also be exported as complete whole-session reports:
 - CLI: `summary --out-statistics-html <path>` and
   `summary --out-statistics-markdown <path>`
 
-## CLI and export
+The report path uses the shared Statistics/report model and is available for
+raw captures and compatible indexes.
 
-The current CLI is an important part of the 0.3.0 release. Its public command
-set is:
+## CLI and Export
+
+The public CLI command set remains:
 
 - `summary`
 - `flows`
@@ -126,105 +79,88 @@ set is:
 - `flow-info`
 - `packet-info`
 
-The release also includes practical export workflows across the shared backend,
-including Smart Export, per-flow output where supported, flow metadata export,
-and selected byte export from the interactive inspection surfaces.
-
-CLI workflows support raw captures and compatible indexes, filtering and
-sorting, Advanced `.filter` documents through `flows --adv-filter`, Statistics
-HTML/Markdown report export through `summary`, per-flow export, and
-unrecognized-packet export.
+0.4.0 expands the documented CLI workflows around raw captures and compatible
+indexes, filtering and sorting, `flows --adv-filter`, Statistics HTML/Markdown
+report export through `summary`, per-Flow export, and unrecognized-packet
+export.
 
 Each prebuilt desktop archive also includes the `pcap-flow-lab` CLI and a short
 package-oriented `README.md`.
 
-## Protocol coverage
+## Protocol and Capture Support
 
-0.3.0 significantly expands protocol coverage at the user-facing level.
-Representative supported families now include:
+Protocol support remains intentionally explicit about depth. Recognition, flow
+identity, selected-packet Summary, Stream semantics, Service hints, and byte
+views are not identical for every protocol family.
 
-- PCAP and PCAPNG
-- Ethernet and Linux cooked captures
-- VLAN and MPLS
-- IPv4 and IPv6
-- TCP, UDP, and SCTP
-- GRE and IP-in-IP
-- VXLAN, Geneve, and GTP-U
-- AH and ESP
-- HTTP
-- DNS and mDNS
-- TLS
-- QUIC
-- MQTT, AMQP, and NTP recognition
-- additional supported control, link, and tunnel protocol families from the
-  current protocol catalog
+Notable post-`v0.3.0` additions and expansions include recognition-oriented
+support for MQTT, AMQP, NTP, SSH, STUN, BitTorrent, DHCPv4, SMTP, POP3, and
+IMAP, plus continued hardening for TLS, QUIC, DNS/mDNS, HTTP, overlays, and
+encapsulation handling.
 
-Support depth varies by protocol. Recognition, flow identity, structured Packet
-Summary, Stream semantics, and service metadata are not identical for every
-protocol family. MQTT, AMQP, and NTP are recognition-oriented additions in this
-release rather than full deep protocol analyzers.
+MQTT, AMQP, NTP, mail protocols, SSH, STUN, BitTorrent, and DHCPv4 are
+recognition-oriented unless the current protocol catalog states deeper support.
+Do not infer full selected-packet or Stream parsing from recognition alone.
 
-ERF Ethernet capture support is treated as capture/link-layer input support,
-not as an application protocol.
+ERF Ethernet support is capture/link-layer input support, not an application
+protocol. The first supported scope is deliberately narrow: `LINKTYPE_ERF`
+records carrying Ethernet traffic, including the PCAPNG ERF case.
 
-## Large captures and reusable indexes
+For the authoritative protocol capability matrix, see:
 
-Large-capture usability remains a meaningful strength of Pcap Flow Lab 0.3.0,
-but it is not the sole definition of the product. The application has been
-tested with real captures measuring several tens of gigabytes, and expensive
-inspection stays bounded and on demand rather than globally materialized.
+- [`docs/protocols/protocol_support.md`](protocols/protocol_support.md)
 
-Reusable indexes are another major part of the release. After processing a raw
-capture, users can save an analysis index and reopen it later without starting
-from zero, while still attaching the original source capture for byte-backed
-workflows when needed.
+## Index Compatibility
 
-## Showcase capture
+The application release version is `0.4.0`; the current stable index revision
+is still `19`.
+
+Pcap Flow Lab uses exact-version index loading. Revision 18 and older full
+indexes require rebuild from the original PCAP or PCAPNG for full load. When an
+older index is rejected, rebuild it from the source capture rather than
+expecting automatic migration.
+
+Indexes are metadata-backed. Byte-backed inspection, Stream reconstruction, and
+packet-writing export still require readable source capture bytes where those
+features need packet data.
+
+## Showcase Capture
 
 The versioned showcase capture:
 
 - [`examples/showcase/pcap_flow_lab_showcase.pcap`](../examples/showcase/pcap_flow_lab_showcase.pcap)
 
-provides ready-to-open examples for important flows, protocols, Analysis,
-Statistics, Stream inspection, Protocol Path identity, tunnels, and selected
-edge cases.
+has been expanded to exercise current 0.4.0 scenarios, including Advanced Flow
+Filter, Statistics, Protocol Path identity, tunnels, recognition-only
+protocols, Stream inspection, and edge cases.
 
 Suggested scenarios and stable scenario IDs are documented in:
 
 - [`examples/showcase/README.md`](../examples/showcase/README.md)
 
-## Platform availability
+## Platform Availability
 
-Pcap Flow Lab 0.3.0 is planned to publish four prebuilt application archives:
+Pcap Flow Lab 0.4.0 is planned to publish four prebuilt application archives:
 
-- `PcapFlowLab-0.3.0-windows-x64-qt.zip`
-- `PcapFlowLab-0.3.0-windows-x64-tauri.zip`
-- `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz`
-- `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz`
+- `PcapFlowLab-0.4.0-windows-x64-qt.zip`
+- `PcapFlowLab-0.4.0-windows-x64-tauri.zip`
+- `PcapFlowLab-0.4.0-ubuntu-x64-qt.tar.gz`
+- `PcapFlowLab-0.4.0-ubuntu-x64-tauri.tar.gz`
 
 In addition, the release publishes one separate sample asset:
 
 - `pcap_flow_lab_showcase.pcap`
 
-Windows therefore has prebuilt Qt and Tauri applications. Ubuntu therefore has
-prebuilt Qt and Tauri applications. Qt remains the primary desktop UI. Tauri
-remains an experimental alternative frontend over the shared backend model.
+Windows and Ubuntu have prebuilt Qt and Tauri applications. Qt remains the
+primary desktop UI. Tauri remains an experimental alternative frontend over the
+shared backend model.
 
 macOS is source-build-only for this release. Linux distributions other than the
 published Ubuntu target are source-build-only.
 
 Release artifacts remain manually assembled and manually verified.
 
-## Compatibility
-
-Pcap Flow Lab currently uses exact-version index loading. The current capture
-index revision is `19`.
-
-Revision 18 and older full indexes require rebuild from the original PCAP or
-PCAPNG for full load. When an older index is rejected, rebuild it from the
-source capture rather than expecting automatic migration.
-
-## Current limitations
+## Current Limitations
 
 - Pcap Flow Lab does not provide full TCP recovery or reassembly under adverse
   capture conditions.
@@ -234,12 +170,14 @@ source capture rather than expecting automatic migration.
   application-data decryption.
 - Tauri remains experimental and is not guaranteed to match every Qt workflow
   perfectly.
+- Protocol support depth varies by protocol and should be read from the
+  protocol-support catalog rather than inferred from a detection label.
 - Packet-detail breadth remains intentionally below Wireshark.
 - Malformed and truncated data is handled conservatively.
 
-## Download / source-build guidance
+## Download / Source-Build Guidance
 
-Release assets will be published through the GitHub release page for `0.3.0`.
+Release assets will be published through the GitHub release page for `v0.4.0`.
 Users who need source-build instructions can use:
 
 - [`README.md`](../README.md)
@@ -247,17 +185,16 @@ Users who need source-build instructions can use:
 
 ## Suggested GitHub Release Summary
 
-Pcap Flow Lab 0.3.0 is a substantial release for flow-based packet-capture
-analysis. It adds Protocol Path-aware identity and presentation, structured
-Packet Details `Summary` / `Bytes`, bounded selected-flow Stream inspection,
-selected-flow Analysis, expanded capture-wide Statistics with HTML/Markdown
-report export, structured Advanced Flow Filter workflows, a modern CLI,
-practical export workflows, reusable revision-19 indexes, and a versioned
-showcase capture. Pcap Flow Lab complements Wireshark rather than replacing it,
-and remains explicit about bounds around TCP recovery, full session
-reconstruction, protocol-support depth, and broad QUIC decryption.
+Pcap Flow Lab 0.4.0 is the next release after `v0.3.0`. It adds structured
+Advanced Flow Filter workflows, expanded capture/index-wide Statistics with
+HTML/Markdown report export, revision-19 index metadata/provenance,
+recognition for more application protocols, ERF Ethernet capture input, a
+refreshed CLI/export workflow set, and the current showcase capture. Pcap Flow
+Lab remains a flow-based PCAP analyzer that complements Wireshark and stays
+explicit about bounded Stream behavior, protocol-support depth, and QUIC/TLS
+limits.
 
-## Repository metadata suggestion
+## Repository Metadata Suggestion
 
 Recommended repository description:
 

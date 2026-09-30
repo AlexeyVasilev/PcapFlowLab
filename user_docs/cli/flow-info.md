@@ -15,7 +15,7 @@ In practice, you usually:
 - run `flows` to find the `No.` you care about;
 - then run `flow-info ... --flow-number N` to inspect that one flow in detail.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture. Shell-specific executable prefixes such as `.\` are
 omitted.
 

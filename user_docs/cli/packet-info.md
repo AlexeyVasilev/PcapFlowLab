@@ -20,7 +20,7 @@ But `packet-info` can also inspect a packet directly with `--packet-in-file`
 when you already know the global packet number and do not need to pick a flow
 first.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture and index. Shell-specific executable prefixes such as
 `.\` are omitted.
 

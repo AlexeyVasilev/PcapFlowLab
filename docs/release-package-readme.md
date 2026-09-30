@@ -1,4 +1,4 @@
-# Pcap Flow Lab 0.3.0
+# Pcap Flow Lab 0.4.0
 
 Pcap Flow Lab is a flow-based PCAP analyzer.
 
@@ -33,16 +33,16 @@ The CLI also supports reusable indexes, Advanced `.filter` documents for the
 
 ## Saved indexes
 
-Pcap Flow Lab 0.3.0 writes current revision-19 indexes. Older incompatible
+Pcap Flow Lab 0.4.0 writes current revision-19 indexes. Older incompatible
 indexes should be rebuilt from the original source capture.
 
 ## Try the showcase capture
 
-The 0.3.0 release publishes the showcase capture separately as:
+The 0.4.0 release publishes the showcase capture separately as:
 
 - `pcap_flow_lab_showcase.pcap`
 
-You can download it from the `0.3.0` GitHub Release or from the project
+You can download it from the `v0.4.0` GitHub Release or from the project
 repository, then open it directly in the desktop application or use it with the
 CLI.
 

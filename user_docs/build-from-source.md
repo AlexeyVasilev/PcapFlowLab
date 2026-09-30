@@ -1,7 +1,7 @@
 # Build Pcap Flow Lab from source
 
 Prebuilt application archives are normally the easiest way to start with Pcap
-Flow Lab 0.3.0 on Windows and Ubuntu. This guide is for source builds.
+Flow Lab 0.4.0 on Windows and Ubuntu. This guide is for source builds.
 
 Pcap Flow Lab currently has two desktop frontends over the same backend:
 
@@ -215,7 +215,7 @@ OpenSSL because that dependency belongs to the shared core build.
 
 ## macOS
 
-Pcap Flow Lab 0.3.0 does not publish a verified prebuilt macOS archive. macOS
+Pcap Flow Lab 0.4.0 does not publish a verified prebuilt macOS archive. macOS
 users build from source.
 
 For the Qt desktop application, plan for:
@@ -234,11 +234,11 @@ For the Tauri frontend, plan for:
   `experimental/tauri-ui-spike/src-tauri`
 
 Use this guide together with the normal upstream Qt and Tauri prerequisite
-documentation as needed, but do not assume a published macOS binary for 0.3.0.
+documentation as needed, but do not assume a published macOS binary for 0.4.0.
 
 ## Other Linux distributions
 
-Ubuntu is the 0.3.0 prebuilt Linux release target. Other Linux distributions
+Ubuntu is the 0.4.0 prebuilt Linux release target. Other Linux distributions
 are source-build-only.
 
 Plan for:
@@ -256,7 +256,7 @@ for your system before building.
 ## Build vs packaging
 
 This guide explains how to build Pcap Flow Lab from source. It does not define
-the official 0.3.0 release archive packaging procedure.
+the official 0.4.0 release archive packaging procedure.
 
 A successful local source build does not automatically mean you produced the
 same archive layout that is published on GitHub Releases.

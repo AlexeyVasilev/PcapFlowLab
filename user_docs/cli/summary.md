@@ -11,7 +11,7 @@ index. Use it when you want a quick answer to questions like:
 It is also the default CLI command. If you pass an input file without naming a
 command, Pcap Flow Lab runs `summary`.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture. Shell-specific executable prefixes such as `.\` are
 omitted.
 
@@ -464,7 +464,7 @@ Current verified Markdown report metadata includes:
 
 ```text
 | Application | Pcap Flow Lab |
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 | Client | CLI |
 | Statistics scope | Complete |
 | Index revision | 19 |

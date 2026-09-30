@@ -1,6 +1,6 @@
 # Current State
 
-Pcap Flow Lab 0.3.0 is a flow-first packet-capture analyzer built around a
+Pcap Flow Lab 0.4.0 is a flow-first packet-capture analyzer built around a
 canonical bidirectional flow inventory, on-demand packet inspection, and
 bounded selected-flow analysis.
 
@@ -185,7 +185,7 @@ Byte-backed export still depends on readable source capture bytes.
 
 ## Application surfaces
 
-Qt is the primary/reference desktop UI for Pcap Flow Lab 0.3.0.
+Qt is the primary/reference desktop UI for Pcap Flow Lab 0.4.0.
 
 The repository also contains:
 

@@ -14,7 +14,7 @@ summary
 then writes packet data for those selected flows. It also has a separate
 unrecognized-packet mode for packets that were not assigned to a normal flow.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture and index. Shell-specific executable prefixes such as
 `.\` are omitted.
 
