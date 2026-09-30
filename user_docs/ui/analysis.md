@@ -16,7 +16,7 @@ capture `Statistics` workspace.
 
 Use it when you want to:
 
-- inspect one canonical flow as a whole;
+- inspect one Flow as a whole;
 - compare `A->B` and `B->A` traffic behavior;
 - understand rates, timing, sizes, bursts, and idle gaps;
 - preview packet order and export the flow sequence;
@@ -26,7 +26,7 @@ Use it when you want to:
 
 The left side of the workspace is `Analysis Flows`.
 
-Each row represents one canonical flow and currently shows:
+Each row represents one Flow and currently shows:
 
 - `#`
 - `Detected`
@@ -39,7 +39,7 @@ Selecting a row makes that flow the active Analysis target on the right.
 
 Field meanings:
 
-- `#` is the same one-based canonical flow number used elsewhere in the UI.
+- `#` is the same one-based Flow number used elsewhere in the UI.
 - `Detected` keeps the same detected-protocol meaning as in `Flows`.
 - `Service` keeps the same service-hint meaning as in `Flows`.
 - `Packets` is the total number of packets in that flow.
@@ -448,7 +448,7 @@ These are normal presentation states, not necessarily errors.
 
 `Open in Flows` bridges back to the detailed inspection workspace.
 
-It takes the same canonical flow that is currently active in `Analysis` and
+It takes the same Flow that is currently active in `Analysis` and
 opens it as the active target in `Flows`, where you can inspect:
 
 - packet rows;

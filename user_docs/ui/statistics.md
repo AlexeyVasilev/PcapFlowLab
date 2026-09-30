@@ -220,11 +220,14 @@ The separate maximum line follows the selected mode:
 - `Maximum original packet size`
 
 This intentionally differs from the selected-flow Analysis packet-size
-histogram. In current production:
+histogram. In current production, the main distinction is scope and local
+direction controls:
 
-- `Statistics -> Packet Size Distribution` can show captured or original packet
-  length across the whole capture;
-- `Analysis -> Packet Size Histogram` uses original packet length.
+- `Statistics -> Packet Size Distribution` covers the whole active capture or
+  index and supports `Captured` / `Original` modes.
+- `Analysis -> Packet Size Histogram` covers only the selected Flow, also
+  supports `Original` / `Captured` modes, and adds local direction selection:
+  `All`, `A->B`, and `B->A`.
 
 That difference matters whenever truncation or snaplen causes captured length
 and original length to differ.
