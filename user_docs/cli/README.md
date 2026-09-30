@@ -4,7 +4,7 @@ Pcap Flow Lab CLI helps you work with packet captures and saved indexes from
 the command line. It uses the same analysis backend to:
 
 - summarize captures and indexes;
-- list and inspect canonical flows;
+- list and inspect Flows;
 - inspect individual packets;
 - export selected packet data to new PCAP files.
 
@@ -64,7 +64,7 @@ pcap-flow-lab export-flows pcap_flow_lab_showcase.pcap --flow-number 1 --out flo
 | --- | --- |
 | Understand the input as a whole | [summary](summary.md) |
 | Find, rank, and select flows | [flows](flows.md) |
-| Analyze one canonical flow | [flow-info](flow-info.md) |
+| Analyze one Flow | [flow-info](flow-info.md) |
 | Inspect one captured packet | [packet-info](packet-info.md) |
 | Write selected packet data to PCAP | [export-flows](export-flows.md) |
 
@@ -131,10 +131,10 @@ Metadata-oriented workflows such as [summary](summary.md),
 [flows](flows.md), and [flow-info](flow-info.md) do not need source packet
 bytes for their documented reports.
 
-## Canonical flow numbers
+## Flow numbers
 
-The `No.` column shown by [flows](flows.md) is the one-based canonical flow
-number within the currently opened flow inventory.
+The `No.` column shown by [flows](flows.md) is the one-based Flow number within
+the currently opened Flow inventory.
 
 That number is then used by:
 
@@ -156,11 +156,25 @@ For details, see [flows](flows.md) and
 - `--packet-in-file <N>` selects the N-th captured packet in the whole capture
   timeline;
 - `--flow-number <F> --packet-in-flow <P>` selects the P-th packet inside
-  canonical flow F.
+  Flow F.
 
 Use `Packet in File` when you already know the global capture position.
-Use `Packet in Flow` when you are moving from a selected canonical flow down to
-one packet inside that flow.
+Use `Packet in Flow` when you are moving from a selected Flow down to one
+packet inside that Flow.
+
+## Statistics report export
+
+`summary` can also write the complete shared Statistics report as side-output
+files:
+
+```text
+pcap-flow-lab summary showcase.idx --out-statistics-html statistics.html --out-statistics-markdown statistics.md
+```
+
+Use HTML for a standalone report that is convenient to open in a browser. Use
+Markdown when you want text for notes, issue reports, or source-controlled
+investigations. See [summary](summary.md) for command syntax and
+[Statistics](../ui/statistics.md) for the shared report content.
 
 ## Capture processing settings
 

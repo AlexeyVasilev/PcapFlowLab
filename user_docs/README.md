@@ -56,6 +56,7 @@ but they support different workflows:
 | [Desktop interface](ui/README.md) | Visual overview of the flow-first desktop workflow |
 | [Main window](ui/main-window.md) | Top-level layout, workspaces, menus, and global navigation |
 | [Flows](ui/flows.md) | Canonical flow navigation, packets, Stream inspection, Packet Details, and Bytes |
+| [Advanced Flow Filter](ui/advanced-flow-filter.md) | Structured Flow filtering by protocol, endpoints, time, traffic, service, and Protocol Path |
 | [Analysis](ui/analysis.md) | Quantitative analysis of one selected canonical flow |
 | [Statistics](ui/statistics.md) | Whole-capture or whole-index summaries and aggregations |
 | [Captures and indexes](ui/capture-and-index.md) | Raw capture import, index reuse, source-byte availability, and attachment |

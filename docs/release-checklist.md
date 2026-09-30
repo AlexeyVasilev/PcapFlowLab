@@ -2,7 +2,7 @@
 
 ## 1. Release goal
 
-Pcap Flow Lab 0.3.0 should publish the project as a practical flow-based PCAP
+Pcap Flow Lab 0.4.0 should publish the project as a practical flow-based PCAP
 analyzer with:
 
 - flow-based exploration
@@ -11,6 +11,8 @@ analyzer with:
 - bounded selected-flow Stream inspection
 - selected-flow Analysis
 - capture/index-wide Statistics
+- Statistics HTML/Markdown report export
+- structured Advanced Flow Filter
 - reusable indexes
 - modern CLI and practical export workflows
 
@@ -23,10 +25,10 @@ universal protocol-forensics suite.
 All four planned application archives must be treated as independent release
 targets:
 
-- [ ] `PcapFlowLab-0.3.0-windows-x64-qt.zip`
-- [ ] `PcapFlowLab-0.3.0-windows-x64-tauri.zip`
-- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz`
-- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz`
+- [ ] `PcapFlowLab-0.4.0-windows-x64-qt.zip`
+- [ ] `PcapFlowLab-0.4.0-windows-x64-tauri.zip`
+- [ ] `PcapFlowLab-0.4.0-ubuntu-x64-qt.tar.gz`
+- [ ] `PcapFlowLab-0.4.0-ubuntu-x64-tauri.tar.gz`
 - [ ] `pcap_flow_lab_showcase.pcap`
 
 Release artifacts are manually assembled and manually verified.
@@ -43,6 +45,8 @@ Release artifacts are manually assembled and manually verified.
 - [ ] Selected-flow Stream is useful on representative supported flows.
 - [ ] Selected-flow Analysis is useful on representative supported flows.
 - [ ] Statistics opens and the major sections populate correctly.
+- [ ] Statistics HTML/Markdown export works where supported.
+- [ ] Advanced Flow Filter can apply a representative structured filter.
 - [ ] Protocol Path tree can be opened and is usable on representative
       identity-bearing traffic.
 - [ ] Normal export workflow is usable where supported.
@@ -109,7 +113,10 @@ Release artifacts are manually assembled and manually verified.
 
 - [ ] CLI build status is known for the exact release commit.
 - [ ] `summary` works on a representative PCAP input.
+- [ ] `summary --out-statistics-html` or `--out-statistics-markdown` writes a
+      representative report.
 - [ ] `flows` works on a representative PCAP or index input.
+- [ ] `flows --adv-filter` applies a representative `.filter` document.
 - [ ] `flow-info` works on a representative selected flow.
 - [ ] `packet-info` works on a representative packet.
 - [ ] `export-flows` works on a representative export scenario.
@@ -133,8 +140,10 @@ Release artifacts are manually assembled and manually verified.
       packet-based analyzer rather than a replacement target.
 - [ ] Packet Details wording is current: `Summary` / `Bytes`.
 - [ ] Stream Item Details wording is current: `Summary` / `Item Data`.
+- [ ] Advanced Flow Filter and Statistics report export are represented in the
+      release-facing docs.
 - [ ] Release-facing docs describe all four planned application archives.
-- [ ] No changed release-facing doc still describes 0.3.0 as one Windows
+- [ ] No changed release-facing doc still describes 0.4.0 as one Windows
       archive or conditional Ubuntu binaries.
 - [ ] Index compatibility wording is present and user-facing.
 - [ ] Showcase links and source-build links resolve.
@@ -164,8 +173,8 @@ Release artifacts are manually assembled and manually verified.
 
 ## 14. Release notes and metadata
 
-- [ ] Release notes describe the actual 0.3.0 scope rather than an older
-      pre-0.3 draft.
+- [ ] Release notes describe the actual 0.4.0 scope since `v0.3.0` rather
+      than an older pre-0.4 draft.
 - [ ] Repository description matches the approved flow-based positioning.
 - [ ] Topic recommendations avoid misleading replacement framing such as
       `wireshark-alternative`.

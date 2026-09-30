@@ -3,7 +3,7 @@
 ## Role
 
 This document is the current technical contract for protocol-path-aware flow
-identity in Pcap Flow Lab 0.3.0.
+identity in Pcap Flow Lab 0.4.0.
 
 It describes the implemented behavior first. Historical RFC and migration
 context is kept only as clearly marked background near the end.
@@ -173,11 +173,11 @@ correlation, GTP-C tracking, or PFCP-aware session joining.
 
 ## Index And Persistence Contract
 
-Current stable index revision is `18`.
+Current stable index revision is `19`.
 
 Current persistence facts verified from code:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 18`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 19`;
 - the stable index stores flow and connection `protocol_path_id` values;
 - the stable index stores one capture-level `ProtocolPathRegistry` table;
 - packet records do not store full protocol paths or per-packet

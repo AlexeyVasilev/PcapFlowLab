@@ -4,16 +4,16 @@ Use this as the compact publication-day pass for the actual GitHub release.
 
 ## Version and tag
 
-- [ ] Release version is exactly `0.3.0`.
-- [ ] Git tag is exactly `0.3.0`.
-- [ ] Visible application version string matches `0.3.0`.
+- [ ] Release version is exactly `0.4.0`.
+- [ ] Git tag is exactly `v0.4.0`.
+- [ ] Visible application version string matches `0.4.0`.
 
 ## Planned archives
 
-- [ ] `PcapFlowLab-0.3.0-windows-x64-qt.zip` exists.
-- [ ] `PcapFlowLab-0.3.0-windows-x64-tauri.zip` exists.
-- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz` exists.
-- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz` exists.
+- [ ] `PcapFlowLab-0.4.0-windows-x64-qt.zip` exists.
+- [ ] `PcapFlowLab-0.4.0-windows-x64-tauri.zip` exists.
+- [ ] `PcapFlowLab-0.4.0-ubuntu-x64-qt.tar.gz` exists.
+- [ ] `PcapFlowLab-0.4.0-ubuntu-x64-tauri.tar.gz` exists.
 - [ ] All four archive names match the agreed names exactly.
 - [ ] `pcap_flow_lab_showcase.pcap` exists as the standalone showcase asset.
 
@@ -31,6 +31,8 @@ Use this as the compact publication-day pass for the actual GitHub release.
 - [ ] Older-index compatibility wording is present and clear.
 - [ ] Packet Details wording is current: `Summary` / `Bytes`.
 - [ ] Stream Item Details wording is current: `Summary` / `Item Data`.
+- [ ] Advanced Flow Filter and Statistics report export are mentioned where
+      appropriate.
 
 ## Package-content checks
 

@@ -11,7 +11,7 @@ index. Use it when you want a quick answer to questions like:
 It is also the default CLI command. If you pass an input file without naming a
 command, Pcap Flow Lab runs `summary`.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture. Shell-specific executable prefixes such as `.\` are
 omitted.
 
@@ -29,34 +29,39 @@ pcap-flow-lab summary pcap_flow_lab_showcase.pcap --out-index showcase.idx --out
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 
 PcapFlowLab Summary
 
 Input
   File:            pcap_flow_lab_showcase.pcap
   Type:            PCAP
-  File size:       728.9 KB
+  File size:       729.7 KB
 
 Capture
-  Flows:                 58
-  Packets:               1 557
-  Captured bytes:        704.6 KB
-  Original bytes:        706 KB
+  Flows:                 61
+  Packets:               1 567
+  Captured bytes:        705.2 KB
+  Original bytes:        706.6 KB
   Unrecognized packets:  5
+
+Capture Time
+  Start:     2026-03-22 12:26:40.000 UTC
+  End:       2026-03-22 12:28:35.540 UTC
+  Duration:  00:01:55.540
 
 Transport Summary
 
 Transport  Flows  Packets  Captured Bytes  Original Bytes
-TCP           33    1 125        455.4 KB        456.8 KB
-UDP           20      419        248.6 KB        248.6 KB
+TCP           35    1 133        455.9 KB        457.2 KB
+UDP           21      421        248.8 KB        248.8 KB
 SCTP           1        1            66 B            66 B
 Other          4        7           360 B           360 B
 
 IP Family Summary
 
 Family  Flows  Packets  Captured Bytes  Original Bytes
-IPv4       56    1 267        657.8 KB        659.2 KB
+IPv4       59    1 277        658.4 KB        659.8 KB
 IPv6        2      285         46.6 KB         46.6 KB
 
 Index written to: showcase.idx
@@ -68,11 +73,11 @@ This single run demonstrates four things:
 - one raw-capture pass;
 - the standard whole-capture summary;
 - reusable index creation with `--out-index`;
-- canonical flow-list CSV creation with `--out-flows-list`.
+- Flow-list CSV creation with `--out-flows-list`.
 
 The shown values are already enough to answer several practical questions:
 
-- the showcase currently opens as `58` recognized flows across `1 557` packets;
+- the showcase currently opens as `61` recognized flows across `1 567` packets;
 - TCP is the dominant transport family in this capture;
 - most bytes are carried by IPv4 rather than IPv6;
 - only `5` packets remain unrecognized under current product semantics.
@@ -119,7 +124,7 @@ while opening a raw capture" pattern.
 Use it when you expect to come back to the same data later and want faster,
 index-backed reopen workflows.
 
-`--out-flows-list` writes the complete canonical flow list as CSV:
+`--out-flows-list` writes the complete Flow list as CSV:
 
 ```text
 --out-flows-list showcase_flows.csv
@@ -144,21 +149,21 @@ pcap-flow-lab summary showcase.idx --out-protocol-path-tree showcase_tree.txt --
 Verified excerpt:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 
 PcapFlowLab Summary
 
 Input
   File:            showcase.idx
   Type:            PcapFlowLab Index
-  File size:       72.4 KB
+  File size:       76 KB
   Source capture:  pcap_flow_lab_showcase.pcap
 
 Capture
-  Flows:                 58
-  Packets:               1 557
-  Captured bytes:        704.6 KB
-  Original bytes:        706 KB
+  Flows:                 61
+  Packets:               1 567
+  Captured bytes:        705.2 KB
+  Original bytes:        706.6 KB
   Unrecognized packets:  5
 
 ...
@@ -176,11 +181,11 @@ This workflow shows that:
 - the full Protocol Path Tree can be exported as a side output;
 - this summary workflow does not require packet-byte-backed inspection.
 
-For current revision 19 indexes using the v16 physical architecture, standard
-summary output, `--extended`, Protocol Path Tree preview, and Protocol Path Tree export are read from the index's fast
-Statistics tier. This means the command can report summary data without
-opening the original capture file and without scanning the later flow-detail
-parts of the index.
+For a current compatible index, standard summary output, `--extended`,
+Protocol Path Tree preview, and Protocol Path Tree export are read from the
+index's fast Statistics tier. This means the command can report summary data
+without opening the original capture file and without scanning later
+flow-detail sections.
 
 When fast summary output shows `Source capture`, that line is the source
 identity recorded in the index. It is not a live check that the original
@@ -209,8 +214,8 @@ Verified excerpts:
 Packet Size Distribution
 
 Captured Size  Packets  Percent
-0-63               207      13%
-64-127             494      32%
+0-63               214      14%
+64-127             497      32%
 128-255            234      15%
 256-511            176      11%
 ...
@@ -223,9 +228,9 @@ Captured Size  Packets  Percent
 Flows by Packet Count
 
 Packets / Flow     Flows  Original Bytes
-1               27 (47%)  3.9 KB (0.55%)
-2                 4 (7%)   888 B (0.12%)
-3-5              9 (16%)  106.6 KB (15%)
+1               27 (44%)  3.9 KB (0.55%)
+2                 5 (8%)     1 KB (0.15%)
+3-5             11 (18%)    107 KB (15%)
 ...
 101-250           1 (2%)  121.7 KB (17%)
 251-500           3 (5%)  395.2 KB (56%)
@@ -235,8 +240,9 @@ Packets / Flow     Flows  Original Bytes
 Flows by Duration
 
 Duration     Flows  Captured Bytes  Original Bytes
-0            12 (21%)    8 KB (1%)       8 KB (1%)
-1-10 ms       4 (7%)    12 KB (2%)      12 KB (2%)
+0            27 (44%)  2.6 KB (0.36%)  3.9 KB (0.55%)
+10-100 ms     8 (13%)    13.3 KB (2%)    13.3 KB (2%)
+100 ms-1 s   16 (26%)  135.9 KB (19%)  135.9 KB (19%)
 ...
 ```
 
@@ -244,19 +250,22 @@ Duration     Flows  Captured Bytes  Original Bytes
 Flows by Data Size
 
 Original Flow Size     Flows  Captured Bytes  Original Bytes
-0-255 B              20 (34%)    5 KB (1%)       5 KB (1%)
-1-4 KiB               8 (14%)   24 KB (4%)      24 KB (4%)
+0-255 B             34 (56%)  3.7 KB (0.52%)  3.7 KB (0.52%)
+256-1023 B          12 (20%)  6.1 KB (0.87%)  6.1 KB (0.86%)
 ...
 ```
 
 ```text
 IP Fragmentation
 
-Metric                         Count
-Fragmented IP packets          3 (0.19%)
-Initial fragments              2 (67%)
-Non-initial fragments          1 (33%)
-Flows containing fragments      1 (2%)
+Metric                          Count
+Fragmented IP packets       2 (0.13%)
+IPv4 fragmented packets     2 (0.16%)
+IPv6 fragmented packets        0 (0%)
+Initial fragments             1 (50%)
+Non-initial fragments         1 (50%)
+IPv6 atomic fragments          0 (0%)
+Flows containing fragments     1 (2%)
 ```
 
 ```text
@@ -264,11 +273,14 @@ Detected Protocol Hints
 
 Protocol Hint      Flows     Packets  Captured Bytes  Original Bytes
 HTTP              3 (5%)     53 (3%)      23 KB (3%)      23 KB (3%)
-TLS               5 (9%)   725 (47%)  381.9 KB (54%)  381.9 KB (54%)
+TLS               5 (8%)   725 (46%)  381.9 KB (54%)  381.9 KB (54%)
 DNS               2 (3%)  12 (0.77%)  1.3 KB (0.18%)  1.3 KB (0.18%)
 QUIC              4 (7%)     57 (4%)    35.9 KB (5%)    35.9 KB (5%)
+MQTT              1 (2%)   4 (0.26%)   247 B (0.03%)   247 B (0.03%)
+AMQP              1 (2%)   4 (0.26%)   224 B (0.03%)   224 B (0.03%)
+NTP               1 (2%)   2 (0.13%)   180 B (0.02%)   180 B (0.02%)
 ...
-Unknown         34 (59%)   654 (42%)  257.5 KB (37%)  258.8 KB (37%)
+Unknown         34 (56%)   654 (42%)  257.5 KB (37%)  258.8 KB (37%)
 ```
 
 ```text
@@ -343,20 +355,28 @@ Protocol Path Tree
 Mode: Identity tree
 
 Layer                               Flows        Packets    Original Bytes
-Ethernet II                    57 (98.3%)  1 551 (99.9%)   705.7 KB (100%)
-  IPv4                         44 (75.9%)    710 (45.7%)  432.1 KB (61.2%)
-    UDP                        21 (36.2%)     100 (6.4%)  144.1 KB (20.4%)
-      GTP-U (TEID 0x01020304)    1 (1.7%)      1 (0.06%)     112 B (0.02%)
-        IPv4                     1 (1.7%)      1 (0.06%)     112 B (0.02%)
-          TCP                    1 (1.7%)      1 (0.06%)     112 B (0.02%)
-      Geneve (VNI 100)           1 (1.7%)      1 (0.06%)     106 B (0.01%)
-        Ethernet II              1 (1.7%)      1 (0.06%)     106 B (0.01%)
-          IPv4                   1 (1.7%)      1 (0.06%)     106 B (0.01%)
-            TCP                  1 (1.7%)      1 (0.06%)     106 B (0.01%)
-      VXLAN (VNI 100)            1 (1.7%)      1 (0.06%)     118 B (0.02%)
-        Ethernet II              1 (1.7%)      1 (0.06%)     118 B (0.02%)
-          IPv4                   1 (1.7%)      1 (0.06%)     118 B (0.02%)
-            TCP                  1 (1.7%)      1 (0.06%)     118 B (0.02%)
+Ethernet II                    60 (98.4%)  1 561 (99.6%)   706.3 KB (100%)
+  IPv4                           47 (77%)    720 (45.9%)  432.8 KB (61.2%)
+    TCP                        17 (27.9%)    607 (38.7%)  287.8 KB (40.7%)
+    UDP                        22 (36.1%)     102 (6.5%)  144.3 KB (20.4%)
+      GTP-U (TEID 0x01020304)    1 (1.6%)      1 (0.06%)     112 B (0.02%)
+        IPv4                     1 (1.6%)      1 (0.06%)     112 B (0.02%)
+          TCP                    1 (1.6%)      1 (0.06%)     112 B (0.02%)
+      GTP-U (TEID 0x11223344)    1 (1.6%)      1 (0.06%)     112 B (0.02%)
+        IPv4                     1 (1.6%)      1 (0.06%)     112 B (0.02%)
+          TCP                    1 (1.6%)      1 (0.06%)     112 B (0.02%)
+      Geneve (VNI 100)           1 (1.6%)      1 (0.06%)     106 B (0.01%)
+        Ethernet II              1 (1.6%)      1 (0.06%)     106 B (0.01%)
+          IPv4                   1 (1.6%)      1 (0.06%)     106 B (0.01%)
+            TCP                  1 (1.6%)      1 (0.06%)     106 B (0.01%)
+      Geneve (VNI 200)           1 (1.6%)      1 (0.06%)     106 B (0.01%)
+        Ethernet II              1 (1.6%)      1 (0.06%)     106 B (0.01%)
+          IPv4                   1 (1.6%)      1 (0.06%)     106 B (0.01%)
+            TCP                  1 (1.6%)      1 (0.06%)     106 B (0.01%)
+      VXLAN (VNI 100)            1 (1.6%)      1 (0.06%)     118 B (0.02%)
+        Ethernet II              1 (1.6%)      1 (0.06%)     118 B (0.02%)
+          IPv4                   1 (1.6%)      1 (0.06%)     118 B (0.02%)
+            TCP                  1 (1.6%)      1 (0.06%)     118 B (0.02%)
 ```
 
 This kind of view is useful when you want to see not just "which protocols
@@ -398,6 +418,74 @@ than the CLI preview window, the CLI prints a note telling you to use
 `--out-protocol-path-tree <file>` for the complete tree.
 
 The file export is not limited by that preview size.
+
+## Export Statistics reports
+
+`summary` can also write the complete shared Statistics report as HTML,
+Markdown, or both in the same invocation.
+
+Command:
+
+```text
+pcap-flow-lab summary showcase.idx --out-statistics-html statistics.html --out-statistics-markdown statistics.md
+```
+
+Verified output excerpt:
+
+```text
+Opening index: 100% (76 KB / 76 KB)
+PcapFlowLab Summary
+
+Input
+  File:            showcase.idx
+  Type:            PcapFlowLab Index
+  File size:       76 KB
+  Source capture:  pcap_flow_lab_showcase.pcap
+
+Capture
+  Flows:                 61
+  Packets:               1 567
+  Captured bytes:        705.2 KB
+  Original bytes:        706.6 KB
+  Unrecognized packets:  5
+
+...
+
+Statistics Markdown report written to: statistics.md
+Statistics HTML report written to: statistics.html
+```
+
+The report export is independent of `--extended`: normal summary text is still
+printed, and the report files are written as side outputs. The generated report
+uses the same complete Statistics/report model as the desktop Statistics export
+workflow; see [Statistics](../ui/statistics.md).
+
+Current verified Markdown report metadata includes:
+
+```text
+| Application | Pcap Flow Lab |
+| Version | 0.4.0 |
+| Client | CLI |
+| Statistics scope | Complete |
+| Index revision | 19 |
+```
+
+The report includes sections such as Report Information, Input, Capture Import
+Settings, Overview, Capture Time, Protocol Summary, Unrecognized Packets,
+packet-size and flow-distribution sections, Detected Protocol Hints, QUIC and
+TLS, top-flow/endpoint/port summaries, and Protocol Path Statistics in Identity
+tree form. The verified HTML report was manually opened and visually checked.
+
+Important rules:
+
+- raw captures and compatible indexes are supported;
+- index report generation does not require `--source-capture`;
+- Statistics report export is metadata/statistics-backed and does not require
+  selected packet bytes;
+- existing report files are rejected unless `--force` is supplied;
+- all side-output paths in one invocation must be distinct;
+- side outputs cannot overwrite the input or settings file;
+- output parent directories must already exist.
 
 ### Option dependency
 
@@ -493,8 +581,10 @@ The CLI recognizes both `.idx` and `.pflidx` as index file extensions.
 | `--protocol-path-tree` | none | Show a Protocol Path Tree preview in stdout. |
 | `--protocol-path-mode` | `kind-overview`, `identity-tree`, `terminal-paths` | Choose the Protocol Path Tree mode. Default is `kind-overview`. |
 | `--out-index` | `<path>` | Save a Pcap Flow Lab index from a raw capture. Invalid for index input. |
-| `--out-flows-list` | `<path>` | Export the complete canonical flow list as CSV. |
+| `--out-flows-list` | `<path>` | Export the complete Flow list as CSV. |
 | `--out-protocol-path-tree` | `<path>` | Export the complete Protocol Path Tree to a text file. |
+| `--out-statistics-html` | `<path>` | Export the complete Statistics report as a self-contained HTML file. |
+| `--out-statistics-markdown` | `<path>` | Export the complete Statistics report as Markdown. |
 | `--progress` | `auto`, `on`, `off` | Control live open-progress reporting on `stderr`. Default is `auto`. |
 | `--force` | none | Allow existing side-output files to be overwritten. |
 | `-h`, `--help` | none | Show summary-specific help and exit successfully. |
@@ -511,14 +601,15 @@ The CLI recognizes both `.idx` and `.pflidx` as index file extensions.
 | `--out-index` | Yes | No |
 | `--out-flows-list` | Yes | Yes |
 | `--progress` | Yes | Yes |
+| Statistics report export | Yes | Yes |
 
 For `summary`, an index is meant to be self-sufficient for summary data.
 Unlike byte-backed inspection commands, `summary` does not need
 `--source-capture`.
 
-For current revision 19 indexes using the v16 physical architecture,
-summary-style outputs use the index fast Statistics tier when possible. This is a quick metadata read, not a full validation of
-every later flow-detail section in the index.
+For a current compatible index, summary-style outputs use the index fast
+Statistics tier when possible. This is a quick metadata read, not a full
+validation of every later flow-detail section in the index.
 
 ## Invalid combinations and errors
 
@@ -578,6 +669,6 @@ requested summary text is written to `stdout`.
 After `summary`, the next most relevant commands are:
 
 - `flows` for listing, filtering, sorting, and exporting flow metadata;
-- `flow-info` for detailed analysis of one canonical flow;
+- `flow-info` for detailed analysis of one Flow;
 - `packet-info` for inspecting one packet;
 - `export-flows` for exporting packet data for selected flows.

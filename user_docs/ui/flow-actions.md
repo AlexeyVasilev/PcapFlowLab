@@ -165,6 +165,10 @@ Important details:
 - `Unrecognized packets` is a separate packet export mode, not a normal-flow
   export mode.
 
+For the structured filter workflow, section semantics, and `.filter` file
+behavior behind Advanced Filter, see
+[Advanced Flow Filter](advanced-flow-filter.md).
+
 ### Packet retention rules
 
 Smart Export works on whole packets. It never slices packets into partial byte

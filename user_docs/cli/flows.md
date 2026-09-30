@@ -1,13 +1,13 @@
 # `flows`
 
-`flows` lists the canonical flow inventory for a capture or a Pcap Flow Lab
+`flows` lists the Flow inventory for a capture or a Pcap Flow Lab
 index. In practice it is usually the next CLI step after `summary`:
 
 - `summary` tells you what is in the input as a whole;
 - `flows` lets you inspect, filter, rank, select, and export the recognized
   flow list.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture. Shell-specific executable prefixes such as `.\` are
 omitted.
 
@@ -25,7 +25,7 @@ pcap-flow-lab flows showcase.idx --limit 12
 Verified output:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 Flows
 
 No.  Endpoint A                                       Endpoint B                                      Protocol  Detected Protocol  Service                      Path                        Packets  Original Bytes
@@ -35,19 +35,19 @@ No.  Endpoint A                                       Endpoint B                
   4  192.0.2.202:52002                                198.51.100.202:9202                             UDP                                                       EII|Ip4|UDP                       4  90 KB
   5  [2001:0db8:0010:0000:0000:0000:0000:0010]:42000  [2001:0db8:0020:0000:0000:0000:0000:0020]:9000  TCP                                                       EII|Ip6|TCP                     284  46.2 KB
   6  192.0.2.180:48180                                198.51.100.180:80                               TCP       HTTP               large-http.example.test      EII|Ip4|TCP                      26  21.2 KB
-  7  192.0.2.44:44024                                 198.51.100.44:443                               TCP       TLS                                             EII|Ip4|TCP                      32  15 KB
+  7  192.0.2.44:44024                                 198.51.100.44:443                               TCP       TLS                edge.microsoft.com           EII|Ip4|TCP                      32  15 KB
   8  192.0.2.72:55070                                 198.51.100.72:443                               UDP       QUIC               web.whatsapp.com             EII|Ip4|UDP                      23  12.3 KB
   9  192.0.2.70:55070                                 198.51.100.70:443                               UDP       QUIC               www.youtube.com              EII|Ip4|UDP                      17  11.8 KB
  10  192.0.2.73:55070                                 198.51.100.73:443                               UDP       QUIC               ep2.adtrafficquality.google  EII|Ip4|UDP                      16  11.7 KB
  11  192.0.2.201:52001                                198.51.100.201:9201                             UDP                                                       EII|Ip4|UDP                       3  8.9 KB
  12  192.0.2.200:52000                                198.51.100.200:9200                             UDP                                                       EII|Ip4|UDP                       4  5.1 KB
 
-Showing 12 of 58 flows.
+Showing 12 of 61 flows.
 ```
 
 The flow table is designed for quick inventory work:
 
-- `No.` is the one-based canonical flow number.
+- `No.` is the one-based Flow number.
 - `Endpoint A` and `Endpoint B` are the oriented flow endpoints stored for the
   flow.
 - `Protocol` is the flow transport/network protocol category shown by the CLI.
@@ -59,9 +59,8 @@ The flow table is designed for quick inventory work:
 - `Packets` is the packet count attributed to the flow.
 - `Original Bytes` is the original byte total attributed to the flow.
 
-The canonical flow number matters because other commands such as `flow-info`
-and `packet-info` use it to identify one flow within the current flow
-inventory.
+The Flow number matters because other commands such as `flow-info` and
+`packet-info` use it to identify one flow within the current Flow inventory.
 
 ## Filter and rank matching flows
 
@@ -77,15 +76,15 @@ pcap-flow-lab flows showcase.idx --filter TLS --sort bytes:desc
 Verified output:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 Flows
 
 No.  Endpoint A         Endpoint B            Protocol  Detected Protocol  Service                     Path                        Packets  Original Bytes
   1  192.0.2.10:41000   198.51.100.10:443     TCP       TLS                bulk-download.example.test  EII|Ip4|TCP                     457  244.5 KB
   2  192.0.2.140:43000  198.51.100.140:443    TCP       TLS                gre-analysis.example.test   EII|Vl|M|M|Ip4|GRE|Ip4|TCP      226  121.7 KB
-  7  192.0.2.44:44024   198.51.100.44:443     TCP       TLS                                            EII|Ip4|TCP                      32  15 KB
+  7  192.0.2.44:44024   198.51.100.44:443     TCP       TLS                edge.microsoft.com          EII|Ip4|TCP                      32  15 KB
  18  192.0.2.42:44020   198.51.100.42:443     TCP       TLS                tls-mini.example.test       EII|Ip4|TCP                       9  630 B
- 31  3.223.63.250:443   192.168.20.251:42644  TCP       TLS                                            EII|Vl|Ip4|TCP                    1  166 B
+ 34  3.223.63.250:443   192.168.20.251:42644  TCP       TLS                                            EII|Vl|Ip4|TCP                    1  166 B
 ```
 
 This is a practical workflow:
@@ -151,6 +150,11 @@ Traffic predicates used by the desktop UI, for example:
 These predicates stay metadata-backed for ordinary flow listing. They do not
 require source-packet rereads or packet rescanning during evaluation.
 
+For the desktop workflow and user-facing meaning of Advanced Filter sections,
+including condition combination, Endpoint A/B directionality, `.filter` files,
+and Smart Export interaction, see
+[Advanced Flow Filter](../ui/advanced-flow-filter.md).
+
 ## Find the busiest flows
 
 Filtering and sorting solve different problems.
@@ -175,11 +179,11 @@ No.  Endpoint A                                       Endpoint B                
   3  192.0.2.30:50000                                 198.51.100.30:7000                              UDP                                                       EII|Vl|Ip4|UDP                  320  104.5 KB
   5  [2001:0db8:0010:0000:0000:0000:0000:0010]:42000  [2001:0db8:0020:0000:0000:0000:0000:0020]:9000  TCP                                                       EII|Ip6|TCP                     284  46.2 KB
   2  192.0.2.140:43000                                198.51.100.140:443                              TCP       TLS                gre-analysis.example.test    EII|Vl|M|M|Ip4|GRE|Ip4|TCP      226  121.7 KB
-  7  192.0.2.44:44024                                 198.51.100.44:443                               TCP       TLS                                             EII|Ip4|TCP                      32  15 KB
+  7  192.0.2.44:44024                                 198.51.100.44:443                               TCP       TLS                edge.microsoft.com           EII|Ip4|TCP                      32  15 KB
   ...
  15  192.0.2.40:44000                                 198.51.100.40:80                                TCP       HTTP               http.example.test            EII|Ip4|TCP                      16  1.1 KB
 
-Showing 10 of 58 flows.
+Showing 10 of 61 flows.
 ```
 
 Here `...` marks documentation truncation rather than literal CLI output.
@@ -189,10 +193,10 @@ This example is useful because it separates two ideas cleanly:
 - `--sort packets:desc` ranks flows by packet count;
 - `--limit 10` trims the logical result to the first ten rows after sorting.
 
-## Select flows by canonical number
+## Select flows by Flow number
 
 If you already know the flows you want, you can select them directly by their
-canonical flow numbers.
+Flow numbers.
 
 Command:
 
@@ -202,21 +206,29 @@ pcap-flow-lab flows showcase.idx --flow-numbers 1-10,24,31-35 --sort number:asc 
 
 Verified facts for this run:
 
-- stdout contains canonical flow numbers `1-10`, `24`, and `31-35`;
-- they are displayed in ascending canonical-number order;
+- stdout contains Flow numbers `1-10`, `24`, and `31-35`;
+- they are displayed in ascending Flow-number order;
 - the selection covers multiple protocol families, including HTTP, TLS, QUIC,
-  BitTorrent, STUN, IPv6, and nested VXLAN traffic;
+  BitTorrent, NTP, STUN, IPv6, and large UDP traffic;
 - the CLI reports:
 
 ```text
 Flows list written to: selected_flows.csv
 ```
 
+The current selected tail includes the newer protocol-demo rows:
+
+```text
+ 33  192.0.2.156:41230  198.51.100.156:123  UDP  NTP   EII|Ip4|UDP     2  180 B
+ 34  3.223.63.250:443   192.168.20.251:42644 TCP  TLS   EII|Vl|Ip4|TCP  1  166 B
+ 35  192.0.2.44:34790   198.51.100.44:3478  UDP  STUN  EII|Ip4|UDP     2  124 B
+```
+
 ### Selection rules
 
 Current production rules are:
 
-- `--flow-number <N>` selects exactly one one-based canonical flow number;
+- `--flow-number <N>` selects exactly one one-based Flow number;
 - `--flow-numbers <ranges>` accepts inclusive ranges and comma-separated values
   such as `1-10,24,31-35`;
 - `--flow-number` and `--flow-numbers` are mutually exclusive;
@@ -226,13 +238,13 @@ Current production rules are:
 The selection pipeline is:
 
 ```text
-explicit canonical selection
+explicit Flow-number selection
 -> text filter
 -> sort
 -> limit
 ```
 
-That matters when you combine options. For example, a selected canonical subset
+That matters when you combine options. For example, a selected Flow subset
 can still be filtered down further before sorting and limiting.
 
 ## Export a flow list
@@ -243,7 +255,7 @@ For `flows`, that means the exported CSV follows the same selection pipeline as
 the command result itself:
 
 ```text
-explicit canonical selection (if any)
+explicit Flow-number selection (if any)
 -> filter (if any)
 -> sort (if any)
 -> limit (if any)
@@ -277,7 +289,7 @@ For the accepted `settings.json` fields, defaults, and validation rules, see
 ### Baseline grouping
 
 With the grouping-related settings left at their default `false` values, the
-following workflow reported `58` flows:
+following workflow reported `61` flows:
 
 ```text
 pcap-flow-lab flows --input pcap_flow_lab_showcase.pcap --settings settings.json --sort service:desc --limit 15
@@ -286,7 +298,7 @@ pcap-flow-lab flows --input pcap_flow_lab_showcase.pcap --settings settings.json
 Observed result:
 
 ```text
-Showing 15 of 58 flows.
+Showing 15 of 61 flows.
 ```
 
 One important GRE-related row appeared as:
@@ -314,10 +326,10 @@ The settings file was then changed to:
 }
 ```
 
-Running the same raw-capture workflow then reported `55` flows instead of `58`:
+Running the same raw-capture workflow then reported `58` flows instead of `61`:
 
 ```text
-Showing 15 of 55 flows.
+Showing 15 of 58 flows.
 ```
 
 The corresponding GRE-related row appeared as:
@@ -340,8 +352,8 @@ The practical meaning is:
 - `--settings` is applied while importing a raw capture;
 - grouping-related settings can change which packets are considered part of the
   same flow inventory;
-- that can change the number of canonical flows;
-- it can also change canonical flow numbers;
+- that can change the number of Flows;
+- it can also change Flow numbers;
 - and it can change the compact Path presentation associated with the grouped
   flow.
 
@@ -362,9 +374,9 @@ flow identity and the resulting flow-path presentation that `flows` renders for
 that grouped result. It should not be read as a general-purpose Path rendering
 toggle independent of import semantics.
 
-Because canonical flow numbers come from the imported or indexed flow
-inventory, you should always interpret a number such as `42` within the
-specific inventory that produced it.
+Because Flow numbers come from the imported or indexed Flow inventory, you
+should always interpret a number such as `42` within the specific inventory
+that produced it.
 
 ### Raw capture versus index
 
@@ -438,7 +450,7 @@ Supported selection and filtering options:
 
 | Option | Meaning |
 | --- | --- |
-| `--flow-number <N>` | Select one one-based canonical flow. |
+| `--flow-number <N>` | Select one one-based Flow. |
 | `--flow-numbers <ranges>` | Select inclusive one-based ranges such as `1-10,24,31-35`. |
 | `--filter <text>` | Apply case-insensitive text matching across the verified flow fields. |
 | `--limit <N>` | Limit the logical result flow count after selection, filtering, and sorting. |
@@ -465,7 +477,7 @@ Supported keys:
 
 | Key | Meaning |
 | --- | --- |
-| `number` | Canonical flow number order. |
+| `number` | Flow number order. |
 | `protocol` | Case-insensitive `Protocol` text order. |
 | `service` | Case-insensitive `Service` text order. |
 | `endpoint-a` | Endpoint A address/port order. |
@@ -473,7 +485,7 @@ Supported keys:
 | `packets` | Packet count order. |
 | `bytes` | Original byte total order. |
 
-Current tie behavior is stable and falls back to canonical flow number order.
+Current tie behavior is stable and falls back to Flow number order.
 
 ### Options
 
@@ -481,7 +493,7 @@ Current tie behavior is stable and falls back to canonical flow number order.
 | --- | --- | --- |
 | `--input` | `<path>` | Provide the input path explicitly instead of using a positional path. |
 | `--settings` | `<settings.json>` | Apply supported raw-import settings during raw capture import. Invalid for index input. |
-| `--flow-number` | `<N>` | Select one one-based canonical flow number. |
+| `--flow-number` | `<N>` | Select one one-based Flow number. |
 | `--flow-numbers` | `<ranges>` | Select one-based inclusive ranges such as `1-10,24,31-35`. |
 | `--filter` | `<text>` | Apply case-insensitive flow-text filtering. |
 | `--sort` | `<field>:<asc\|desc>` | Sort the selected flow set. |
@@ -514,13 +526,13 @@ Important verified rules:
 - `--flow-number` and `--flow-numbers` are mutually exclusive;
 - `--settings` is valid only for raw capture input;
 - `--limit` must be a positive flow count;
-- out-of-range canonical flow numbers fail instead of silently disappearing;
+- out-of-range Flow numbers fail instead of silently disappearing;
 - unknown options are rejected instead of ignored.
 
 Out-of-range selection behaves as an error. Current CLI wording reports:
 
 ```text
-Requested flow number is outside the available canonical flow range
+Requested flow number is outside the available Flow range
 ```
 
 ### Range, duplicate, and overlap behavior
@@ -529,8 +541,8 @@ Current verified behavior for `--flow-numbers`:
 
 - ranges are inclusive;
 - duplicates and overlaps are accepted in the input syntax;
-- the resolved canonical selection is deduplicated before querying;
-- the resolved canonical selection is ordered in ascending canonical-number
+- the resolved Flow-number selection is deduplicated before querying;
+- the resolved Flow-number selection is ordered in ascending Flow-number
   order before later filter/sort/limit stages run.
 
 For example, an input such as:
@@ -539,7 +551,7 @@ For example, an input such as:
 --flow-numbers 1-2,2,4
 ```
 
-resolves to canonical flows `1`, `2`, and `4`.
+resolves to Flows `1`, `2`, and `4`.
 
 ## Notes and limitations
 
@@ -570,6 +582,6 @@ table itself is written to `stdout`.
 After `flows`, the most relevant follow-up commands are:
 
 - `summary` for whole-input overview;
-- `flow-info` for detailed analysis of one canonical flow;
+- `flow-info` for detailed analysis of one Flow;
 - `packet-info` for packet-level inspection;
 - `export-flows` for packet-data export based on flow selection.

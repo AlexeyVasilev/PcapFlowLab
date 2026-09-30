@@ -39,7 +39,7 @@ only the properties present in the file.
 
 | Setting | Type | Default | Affects | Meaning |
 | --- | --- | --- | --- | --- |
-| `ignore_vlan_and_mpls_layers_when_grouping_flows` | boolean | `false` | Flow grouping | Ignore VLAN and MPLS identity layers when building canonical flow identity. |
+| `ignore_vlan_and_mpls_layers_when_grouping_flows` | boolean | `false` | Flow grouping | Ignore VLAN and MPLS identity layers when building Flow identity. |
 | `ignore_gtpu_teids_when_grouping_inner_flows` | boolean | `false` | Flow grouping | Ignore GTP-U TEID identity when grouping otherwise-identical inner flows. |
 | `validate_selected_packet_checksums` | boolean | `false` | Selected-packet inspection | Validate supported packet checksums when inspecting a selected packet. |
 
@@ -48,13 +48,13 @@ only the properties present in the file.
 ### `ignore_vlan_and_mpls_layers_when_grouping_flows`
 
 When this setting is `true`, VLAN and MPLS layers are omitted from the
-canonical flow identity path used for grouping.
+Flow identity path used for grouping.
 
 User-visible effect:
 
-- packets that would otherwise become separate canonical flows can merge;
-- canonical flow count can change;
-- canonical one-based flow numbers can change;
+- packets that would otherwise become separate Flows can merge;
+- Flow count can change;
+- one-based Flow numbers can change;
 - grouped flow Protocol Path identity/presentation can change.
 
 What does **not** change:
@@ -68,15 +68,15 @@ For a real before/after grouping example, see
 
 ### `ignore_gtpu_teids_when_grouping_inner_flows`
 
-When this setting is `true`, the GTP-U TEID no longer contributes to canonical
-inner-flow identity.
+When this setting is `true`, the GTP-U TEID no longer contributes to inner
+Flow identity.
 
 User-visible effect:
 
 - otherwise-identical inner flows carried under different GTP-U TEIDs can be
   grouped together;
-- canonical flow count can change;
-- canonical one-based flow numbers can change;
+- Flow count can change;
+- one-based Flow numbers can change;
 - grouped flow Protocol Path identity/presentation can change.
 
 What does **not** change:
@@ -163,13 +163,13 @@ For raw capture input:
 raw PCAP/PCAPNG
   + settings.json
   -> import / flow construction
-  -> canonical flow inventory
+  -> Flow inventory
 ```
 
 This is why changing grouping settings can change:
 
-- canonical flow count;
-- canonical one-based flow numbers;
+- Flow count;
+- one-based Flow numbers;
 - flow-scoped selection results;
 - grouped flow Protocol Path identity/presentation.
 
@@ -183,10 +183,10 @@ Pcap Flow Lab index
 Because the inventory is already materialized, `--settings` is rejected for
 index input rather than re-grouping the saved inventory.
 
-## Settings and canonical flow numbers
+## Settings and Flow numbers
 
-Canonical flow numbers are one-based identities within the particular imported
-or indexed flow inventory that is currently open.
+Flow numbers are one-based identities within the particular imported or indexed
+Flow inventory that is currently open.
 
 If grouping settings change that inventory, a number such as `Flow 42` must
 not be assumed to identify the same traffic across both imports.

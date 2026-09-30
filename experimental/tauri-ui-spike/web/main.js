@@ -448,10 +448,10 @@
   }
 
   function advancedFlowFilterRulesText() {
-    const configuredRuleCount = configuredAdvancedFlowFilterRuleCount();
-    return configuredRuleCount === 1
+    const activeRuleCount = activeAdvancedFlowFilterRuleCount();
+    return activeRuleCount === 1
       ? "1 rule"
-      : `${formatNumber(configuredRuleCount)} rules`;
+      : `${formatNumber(activeRuleCount)} rules`;
   }
 
   function advancedFlowFilterEvaluationAvailable() {
@@ -2280,7 +2280,7 @@
             </div>
           </div>
           <div class="advanced-filter-group advanced-filter-include-group">
-            <p class="advanced-filter-helper-copy">A -> B is the direction of the first observed packet in the connection. "Only A -> B packets" means no B -> A packets were observed; "Packets in both directions" means at least one packet was observed in each direction.</p>
+            <p class="advanced-filter-helper-copy">A -> B is the direction of the first observed packet in the Flow. "Only A -> B packets" means no B -> A packets were observed; "Packets in both directions" means at least one packet was observed in each direction.</p>
           </div>
           ${renderAdvancedFlowFilterTrafficDistributionBlock(
             "traffic_distribution",

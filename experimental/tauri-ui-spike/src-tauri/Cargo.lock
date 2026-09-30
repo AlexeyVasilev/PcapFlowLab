@@ -2098,7 +2098,7 @@ dependencies = [
 
 [[package]]
 name = "pcap-flow-lab-tauri-spike"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cc",
  "serde",

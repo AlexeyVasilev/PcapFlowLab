@@ -10,17 +10,17 @@ summary
 -> export-flows
 ```
 
-`flows` helps you find the canonical flow numbers you want. `export-flows`
+`flows` helps you find the Flow numbers you want. `export-flows`
 then writes packet data for those selected flows. It also has a separate
 unrecognized-packet mode for packets that were not assigned to a normal flow.
 
-The examples below were captured from the 0.3.0 CLI using the repository
+The examples below were captured from the 0.4.0 CLI using the repository
 showcase raw capture and index. Shell-specific executable prefixes such as
 `.\` are omitted.
 
 ## Export one complete flow
 
-This is the most direct workflow: export one canonical flow as a single PCAP.
+This is the most direct workflow: export one Flow as a single PCAP.
 
 Command:
 
@@ -31,7 +31,7 @@ pcap-flow-lab export-flows pcap_flow_lab_showcase.pcap --flow-number 1 --out flo
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Exporting packets: scanned 0 / 457, wrote 0 of 457.
 Exporting packets: scanned 457 / 457, wrote 457 of 457.
 Exported 1 flows to: flow_1_full.pcap
@@ -39,14 +39,14 @@ Exported 1 flows to: flow_1_full.pcap
 
 What happened here:
 
-- `--flow-number 1` selected one canonical flow.
+- `--flow-number 1` selected one Flow.
 - No explicit packet-retention base mode was supplied.
 - The CLI therefore used the effective default base mode:
   `--all-packets`.
 - All `457` packets attributed to Flow 1 were written to one classic PCAP.
 
-This is the best opening pattern when you already know the canonical flow
-number and want a complete packet-level export.
+This is the best opening pattern when you already know the Flow number and
+want a complete packet-level export.
 
 ## Create a bounded TLS sample
 
@@ -62,7 +62,7 @@ pcap-flow-lab export-flows pcap_flow_lab_showcase.pcap --filter TLS --first-pack
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Smart export: scanned 0 / 1 557 packets, wrote 0 of 103.
 Smart export: scanned 1 557 / 1 557 packets, wrote 103 of 103.
 Exported 5 flows to: tls_sample.pcap
@@ -95,7 +95,7 @@ pcap-flow-lab export-flows showcase.idx --source-capture pcap_flow_lab_showcase.
 Verified output:
 
 ```text
-Opening index: 100% (72.4 KB / 72.4 KB)
+Opening index: 100% (76 KB / 76 KB)
 Preparing per-flow export: prepared 0 / 3 flows.
 Preparing per-flow export: prepared 3 / 3 flows.
 Writing per-flow export: scanned 0 / 1 525 packets, wrote 0.
@@ -106,9 +106,9 @@ Exported 3 flows to: selected_flows
 Generated directory contents:
 
 ```text
-000001_tls_bulk_download_example_test_TCP_192.0.2.10_41000-198.51.100.10_443.pcap
-000002_tls_gre_analysis_example_test_TCP_192.0.2.140_43000-198.51.100.140_443.pcap
-000003_unknown_unknown_UDP_192.0.2.30_50000-198.51.100.30_7000.pcap
+000001_tls_bulk_download_example_test_TCP_192.0.2.10_41000-198.51.100.10_443.pcap  257 688 bytes
+000002_tls_gre_analysis_example_test_TCP_192.0.2.140_43000-198.51.100.140_443.pcap  128 292 bytes
+000003_unknown_unknown_UDP_192.0.2.30_50000-198.51.100.30_7000.pcap                112 152 bytes
 flows_manifest.csv
 ```
 
@@ -147,6 +147,13 @@ Verified first row:
 
 ```text
 1,000001_tls_bulk_download_example_test_TCP_192.0.2.10_41000-198.51.100.10_443.pcap,IPv4,TCP,tls,bulk-download.example.test,192.0.2.10,41000,198.51.100.10,443,457,250352,250352,1774182400.000000,1774182445.750000,45750000,457,250352,250352,"EthernetII->IPv4->TCP"
+```
+
+Verified following rows:
+
+```text
+2,000002_tls_gre_analysis_example_test_TCP_192.0.2.140_43000-198.51.100.140_443.pcap,IPv4,TCP,tls,gre-analysis.example.test,192.0.2.140,43000,198.51.100.140,443,226,124652,124652,1774182420.000000,1774182469.080000,49080000,226,124652,124652,"EthernetII->VLAN(vid=320)->MPLS(label=16010)->MPLS(label=16011)->IPv4->GRE->IPv4->TCP"
+3,000003_unknown_unknown_UDP_192.0.2.30_50000-198.51.100.30_7000.pcap,IPv4,UDP,unknown,unknown,192.0.2.30,50000,198.51.100.30,7000,320,107008,107008,1774182410.000000,1774182512.540000,102540000,320,107008,107008,"EthernetII->VLAN(vid=300)->IPv4->UDP"
 ```
 
 The important distinction is:
@@ -197,7 +204,7 @@ pcap-flow-lab export-flows pcap_flow_lab_showcase.pcap --unrecognized-packets --
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Smart export: scanned 0 / 1 435 packets, wrote 0 of 3.
 Smart export: scanned 1 435 / 1 435 packets, wrote 3 of 3.
 Exported 3 unrecognized packets to: unrecognized_first_3.pcap
@@ -232,7 +239,7 @@ pcap-flow-lab export-flows pcap_flow_lab_showcase.pcap --flow-number 4 --first-o
 Verified output:
 
 ```text
-Opening capture: 100% (728.9 KB / 728.9 KB)
+Opening capture: 100% (729.7 KB / 729.7 KB)
 Smart export: scanned 0 / 524 packets, wrote 0 of 3.
 Smart export: scanned 524 / 524 packets, wrote 3 of 3.
 Exported 1 flows to: flow_4_first_25k.pcap
@@ -330,20 +337,20 @@ Recognized-flow selection currently supports:
 
 Current CLI rules are:
 
-- `--flow-number <N>` selects one positive one-based canonical flow number.
+- `--flow-number <N>` selects one positive one-based Flow number.
 - `--flow-numbers <ranges>` selects inclusive one-based ranges such as
   `1-10,24,31-35`.
 - `--flow-number` and `--flow-numbers` are mutually exclusive.
-- `--all-flows` is mutually exclusive with explicit canonical-number
+- `--all-flows` is mutually exclusive with explicit Flow-number
   selection.
 - `--all-flows` is also mutually exclusive with `--filter`.
-- `--filter` may be combined with explicit canonical-number selection.
+- `--filter` may be combined with explicit Flow-number selection.
 - `--limit <N>` applies after flow selection and filtering.
 
 The current recognized-flow selection pipeline is:
 
 ```text
-explicit canonical selection (optional)
+explicit Flow-number selection (optional)
 -> text filter (optional)
 -> limit (optional)
 ```
@@ -406,7 +413,7 @@ Current CLI behavior:
 
 `--settings <settings.json>` is valid only for raw capture input.
 
-Use it when the canonical flow inventory itself can change under different
+Use it when the Flow inventory itself can change under different
 import/grouping settings. That matters because `export-flows` selects from the
 resulting recognized-flow inventory.
 
