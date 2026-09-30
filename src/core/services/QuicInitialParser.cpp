@@ -156,14 +156,18 @@ std::optional<std::uint64_t> read_varint(std::span<const std::uint8_t> bytes, st
 std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::string_view label) {
     constexpr std::string_view prefix = "tls13 ";
 
-    std::vector<std::uint8_t> info {};
-    info.reserve(2U + 1U + prefix.size() + label.size() + 1U);
-    info.push_back(static_cast<std::uint8_t>((length >> 8U) & 0xFFU));
-    info.push_back(static_cast<std::uint8_t>(length & 0xFFU));
-    info.push_back(static_cast<std::uint8_t>(prefix.size() + label.size()));
-    info.insert(info.end(), prefix.begin(), prefix.end());
-    info.insert(info.end(), label.begin(), label.end());
-    info.push_back(0x00U);
+    std::vector<std::uint8_t> info(2U + 1U + prefix.size() + label.size() + 1U);
+    std::size_t offset = 0U;
+    info[offset++] = static_cast<std::uint8_t>((length >> 8U) & 0xFFU);
+    info[offset++] = static_cast<std::uint8_t>(length & 0xFFU);
+    info[offset++] = static_cast<std::uint8_t>(prefix.size() + label.size());
+    for (const auto byte : prefix) {
+        info[offset++] = static_cast<std::uint8_t>(byte);
+    }
+    for (const auto byte : label) {
+        info[offset++] = static_cast<std::uint8_t>(byte);
+    }
+    info[offset++] = std::uint8_t {0U};
     return info;
 }
 
