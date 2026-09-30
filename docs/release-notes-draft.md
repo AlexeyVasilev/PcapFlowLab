@@ -14,14 +14,18 @@ that can complement deeper packet-based Wireshark inspection.
 
 - Flow-based capture exploration with Protocol Path-aware identity and
   presentation.
+- Structured Advanced Flow Filter workflows with reusable `.filter`
+  documents.
 - Structured selected-packet `Summary` and protocol-aware `Bytes`.
 - Bounded selected-flow Stream inspection with useful structured HTTP,
   DNS/mDNS, TLS, and QUIC cases where supported.
 - Selected-flow Analysis for timing, rates, directionality, distributions, and
   sequence context.
-- Capture/index-wide Statistics including detected protocols, QUIC/TLS
-  summaries, top endpoints/ports, Unrecognized Packets, and Protocol Path
-  aggregation.
+- Capture/index-wide Statistics including packet and flow distributions,
+  IP fragmentation, detected protocols, QUIC/TLS summaries, top flows,
+  top endpoints/ports, Unrecognized Packets, and Protocol Path aggregation.
+- Whole-session Statistics report export as HTML or Markdown from desktop and
+  CLI.
 - A modern CLI built around `summary`, `flows`, `export-flows`, `flow-info`,
   and `packet-info`.
 - Practical export workflows including Smart Export, per-flow output where
@@ -49,6 +53,12 @@ Representative examples include:
 This same context is visible in the user-facing Protocol Path presentation
 across Flows and Statistics, making nested traffic and overlay identity easier
 to understand at both the per-flow and whole-capture levels.
+
+Advanced Flow Filter adds a structured filtering workflow on top of this flow
+model. Users can combine protocol, endpoint, service, time, traffic, Protocol
+Path, and contained-layer predicates, save them as reusable `.filter`
+documents, and apply the same backend semantics from the desktop UI or CLI
+where supported.
 
 ## Packet and Stream inspection
 
@@ -81,16 +91,29 @@ for one selected flow.
 Statistics is the capture-wide or index-wide quantitative workspace. Important
 current capabilities include:
 
+- capture overview and capture time
 - transport and IP-family summary
-- packet and flow distributions
-- detected protocol summaries
-- QUIC and TLS summaries
-- top endpoints and ports
 - Unrecognized Packets tracking
-- Protocol Path aggregation
+- packet size distribution
+- flows by packet count, duration, and data size
+- IP fragmentation
+- Protocol Path tree/statistics
+- detected protocol hints
+- capture metrics and flow characteristics
+- direction distribution and TCP flags
+- QUIC and TLS summaries
+- top flows by original bytes
+- top endpoints and ports
 
 Together, Analysis and Statistics give both the local flow view and the global
 capture view without forcing every expensive computation into capture-open time.
+
+Statistics can also be exported as complete whole-session reports:
+
+- desktop: `Statistics -> Export Statistics as HTML...` and
+  `Statistics -> Export Statistics as Markdown...`
+- CLI: `summary --out-statistics-html <path>` and
+  `summary --out-statistics-markdown <path>`
 
 ## CLI and export
 
@@ -106,6 +129,11 @@ set is:
 The release also includes practical export workflows across the shared backend,
 including Smart Export, per-flow output where supported, flow metadata export,
 and selected byte export from the interactive inspection surfaces.
+
+CLI workflows support raw captures and compatible indexes, filtering and
+sorting, Advanced `.filter` documents through `flows --adv-filter`, Statistics
+HTML/Markdown report export through `summary`, per-flow export, and
+unrecognized-packet export.
 
 Each prebuilt desktop archive also includes the `pcap-flow-lab` CLI and a short
 package-oriented `README.md`.
@@ -127,12 +155,17 @@ Representative supported families now include:
 - DNS and mDNS
 - TLS
 - QUIC
+- MQTT, AMQP, and NTP recognition
 - additional supported control, link, and tunnel protocol families from the
   current protocol catalog
 
 Support depth varies by protocol. Recognition, flow identity, structured Packet
 Summary, Stream semantics, and service metadata are not identical for every
-protocol family.
+protocol family. MQTT, AMQP, and NTP are recognition-oriented additions in this
+release rather than full deep protocol analyzers.
+
+ERF Ethernet capture support is treated as capture/link-layer input support,
+not as an application protocol.
 
 ## Large captures and reusable indexes
 
@@ -185,11 +218,11 @@ Release artifacts remain manually assembled and manually verified.
 ## Compatibility
 
 Pcap Flow Lab currently uses exact-version index loading. The current capture
-index format version is `14`.
+index revision is `19`.
 
-Indexes produced by older releases may not be compatible with 0.3.0. When an
-older index is rejected, rebuild it from the original PCAP or PCAPNG rather
-than expecting automatic migration.
+Revision 18 and older full indexes require rebuild from the original PCAP or
+PCAPNG for full load. When an older index is rejected, rebuild it from the
+source capture rather than expecting automatic migration.
 
 ## Current limitations
 
@@ -217,11 +250,12 @@ Users who need source-build instructions can use:
 Pcap Flow Lab 0.3.0 is a substantial release for flow-based packet-capture
 analysis. It adds Protocol Path-aware identity and presentation, structured
 Packet Details `Summary` / `Bytes`, bounded selected-flow Stream inspection,
-selected-flow Analysis, capture-wide Statistics, a modern CLI, practical export
-workflows, reusable indexes, and a versioned showcase capture. Pcap Flow Lab
-complements Wireshark rather than replacing it, and remains explicit about
-bounds around TCP recovery, full session reconstruction, and broad QUIC
-decryption.
+selected-flow Analysis, expanded capture-wide Statistics with HTML/Markdown
+report export, structured Advanced Flow Filter workflows, a modern CLI,
+practical export workflows, reusable revision-19 indexes, and a versioned
+showcase capture. Pcap Flow Lab complements Wireshark rather than replacing it,
+and remains explicit about bounds around TCP recovery, full session
+reconstruction, protocol-support depth, and broad QUIC decryption.
 
 ## Repository metadata suggestion
 

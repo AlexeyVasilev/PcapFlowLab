@@ -31,6 +31,8 @@ Use this as the compact publication-day pass for the actual GitHub release.
 - [ ] Older-index compatibility wording is present and clear.
 - [ ] Packet Details wording is current: `Summary` / `Bytes`.
 - [ ] Stream Item Details wording is current: `Summary` / `Item Data`.
+- [ ] Advanced Flow Filter and Statistics report export are mentioned where
+      appropriate.
 
 ## Package-content checks
 

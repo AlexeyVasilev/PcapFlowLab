@@ -25,7 +25,16 @@ every Qt workflow perfectly.
 ```sh
 pcap-flow-lab summary capture.pcap
 pcap-flow-lab flows capture.pcap --filter TLS --sort bytes:desc
+pcap-flow-lab summary capture.pcap --out-statistics-html statistics.html
 ```
+
+The CLI also supports reusable indexes, Advanced `.filter` documents for the
+`flows` command, and packet export workflows such as `export-flows`.
+
+## Saved indexes
+
+Pcap Flow Lab 0.3.0 writes current revision-19 indexes. Older incompatible
+indexes should be rebuilt from the original source capture.
 
 ## Try the showcase capture
 
