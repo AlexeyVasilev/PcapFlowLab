@@ -448,10 +448,10 @@
   }
 
   function advancedFlowFilterRulesText() {
-    const configuredRuleCount = configuredAdvancedFlowFilterRuleCount();
-    return configuredRuleCount === 1
+    const activeRuleCount = activeAdvancedFlowFilterRuleCount();
+    return activeRuleCount === 1
       ? "1 rule"
-      : `${formatNumber(configuredRuleCount)} rules`;
+      : `${formatNumber(activeRuleCount)} rules`;
   }
 
   function advancedFlowFilterEvaluationAvailable() {
