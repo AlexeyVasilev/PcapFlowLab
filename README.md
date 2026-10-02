@@ -301,6 +301,8 @@ cargo tauri build
 - [Desktop UI guide](user_docs/ui/README.md)
 - [CLI guide](user_docs/cli/README.md)
 - [Settings reference](user_docs/reference/settings.md)
+- [Technical documentation](docs/README.md)
+- [Capture open performance benchmark (PFL 0.4.0)](docs/benchmarks/capture-open-performance.md)
 
 ## License
 

@@ -74,6 +74,9 @@ different responsibilities.
 
 ## Performance And Scalability
 
+- [Capture open performance benchmark (PFL 0.4.0)](benchmarks/capture-open-performance.md)
+  Practical capture-open, memory, large-capture, and reusable-index benchmark
+  notes for the 0.4.0 release series.
 - [Large-Capture Performance Guidelines](large-capture-performance-guidelines.md)
   Current guidance for bounded large-capture and selected-flow behavior.
 - [Selected-Flow Packet Cache Reference](selected-flow-packet-cache-rfc.md)
