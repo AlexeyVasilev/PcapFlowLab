@@ -43,6 +43,7 @@ add_library(
     pcap_flow_lab_core
     src/core/domain/FlowKey.cpp
     src/core/domain/ProtocolPath.cpp
+    src/core/domain/NonTerminalIpContext.cpp
     src/core/domain/ConnectionKey.cpp
     src/core/domain/Flow.cpp
     src/core/domain/Connection.cpp
@@ -378,6 +379,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectDissectionTestSupport.cpp
         tests/unit/DissectionImportAdapterTests.cpp
         tests/unit/DissectionImportRegressionTests.cpp
+        tests/unit/NonTerminalIpContextTests.cpp
         tests/unit/CommonDirectCoreDissectionTests.cpp
         tests/unit/CommonDirectRegistryEngineTests.cpp
         tests/unit/CommonDirectCollectorTests.cpp
