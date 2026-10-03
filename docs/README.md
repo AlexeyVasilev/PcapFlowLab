@@ -92,6 +92,9 @@ different responsibilities.
   and shared UI semantics reference.
 - [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
   Current compact per-connection aggregate metadata and PacketRef foundation.
+- [Non-Terminal IP Flow Identity RFC](features/non-terminal-ip-flow-identity-rfc.md)
+  Pre-implementation contract for future Flow grouping by canonical ordered
+  non-terminal IP endpoint context.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
   Previous stable v15 container/header and rebuild-required compatibility
   boundary.
