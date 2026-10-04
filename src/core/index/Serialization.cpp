@@ -250,6 +250,10 @@ bool read_flow_protocol_hint(std::istream& stream, FlowProtocolHint& hint) {
 }
 
 bool write_flow_key(std::ostream& stream, const FlowKeyV4& key) {
+    if (key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+
     return write_u32(stream, key.src_addr) &&
            write_u32(stream, key.dst_addr) &&
            write_u16(stream, key.src_port) &&
@@ -259,6 +263,10 @@ bool write_flow_key(std::ostream& stream, const FlowKeyV4& key) {
 }
 
 bool write_flow_key(std::ostream& stream, const FlowKeyV6& key) {
+    if (key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+
     const auto source = std::span<const std::uint8_t>(key.src_addr.data(), key.src_addr.size());
     const auto destination = std::span<const std::uint8_t>(key.dst_addr.data(), key.dst_addr.size());
     return write_bytes(stream, source) &&
@@ -300,6 +308,10 @@ bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV4& key) {
+    if (key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+
     return write_endpoint_key(stream, key.first) &&
            write_endpoint_key(stream, key.second) &&
            write_protocol_id(stream, key.protocol) &&
@@ -307,6 +319,10 @@ bool write_connection_key(std::ostream& stream, const ConnectionKeyV4& key) {
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV6& key) {
+    if (key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+
     return write_endpoint_key(stream, key.first) &&
            write_endpoint_key(stream, key.second) &&
            write_protocol_id(stream, key.protocol) &&
@@ -808,8 +824,11 @@ bool read_packet_ref(std::istream& stream, PacketRef& packet) {
     return true;
 }
 
-bool write_flow(std::ostream& stream, const FlowV4& flow) {
-    if (!write_flow_key(stream, flow.key) ||
+bool write_flow(std::ostream& stream, const ConnectionKeyV4& connection_key, const FlowV4& flow) {
+    if (connection_key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+    if (!write_flow_key(stream, make_flow_key(connection_key, flow.key)) ||
         !write_u64(stream, flow.packet_count) ||
         !write_u64(stream, flow.total_bytes) ||
         !write_u64(stream, static_cast<std::uint64_t>(flow.packets.size()))) {
@@ -825,8 +844,11 @@ bool write_flow(std::ostream& stream, const FlowV4& flow) {
     return true;
 }
 
-bool write_flow(std::ostream& stream, const FlowV6& flow) {
-    if (!write_flow_key(stream, flow.key) ||
+bool write_flow(std::ostream& stream, const ConnectionKeyV6& connection_key, const FlowV6& flow) {
+    if (connection_key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+    if (!write_flow_key(stream, make_flow_key(connection_key, flow.key)) ||
         !write_u64(stream, flow.packet_count) ||
         !write_u64(stream, flow.total_bytes) ||
         !write_u64(stream, static_cast<std::uint64_t>(flow.packets.size()))) {
@@ -842,15 +864,20 @@ bool write_flow(std::ostream& stream, const FlowV6& flow) {
     return true;
 }
 
-template <typename Flow>
+template <typename Flow, typename ConnectionKey>
 bool write_flow_with_progress(
     std::ostream& stream,
+    const ConnectionKey& connection_key,
     const Flow& flow,
     std::uint64_t& packets_processed,
     const std::uint64_t total_packets,
     const SerializationProgressCallback& progress_callback
 ) {
-    if (!write_flow_key(stream, flow.key) ||
+    if (connection_key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId) {
+        return false;
+    }
+
+    if (!write_flow_key(stream, make_flow_key(connection_key, flow.key)) ||
         !write_u64(stream, flow.packet_count) ||
         !write_u64(stream, flow.total_bytes) ||
         !write_u64(stream, static_cast<std::uint64_t>(flow.packets.size()))) {
@@ -872,25 +899,37 @@ bool write_flow_with_progress(
     return true;
 }
 
-bool read_flow(std::istream& stream, FlowV4& flow) {
-    if (!read_flow_key(stream, flow.key) ||
+bool read_flow(std::istream& stream, const ConnectionKeyV4& connection_key, FlowV4& flow) {
+    FlowKeyV4 wire_key {};
+    if (!read_flow_key(stream, wire_key) ||
         !read_u64(stream, flow.packet_count) ||
         !read_u64(stream, flow.total_bytes) ||
         !read_packet_refs(stream, flow.packets)) {
         return false;
     }
 
+    if (make_connection_key(wire_key) != connection_key) {
+        return false;
+    }
+
+    flow.key = directional_endpoint_key(wire_key);
     return true;
 }
 
-bool read_flow(std::istream& stream, FlowV6& flow) {
-    if (!read_flow_key(stream, flow.key) ||
+bool read_flow(std::istream& stream, const ConnectionKeyV6& connection_key, FlowV6& flow) {
+    FlowKeyV6 wire_key {};
+    if (!read_flow_key(stream, wire_key) ||
         !read_u64(stream, flow.packet_count) ||
         !read_u64(stream, flow.total_bytes) ||
         !read_packet_refs(stream, flow.packets)) {
         return false;
     }
 
+    if (make_connection_key(wire_key) != connection_key) {
+        return false;
+    }
+
+    flow.key = directional_endpoint_key(wire_key);
     return true;
 }
 
@@ -973,11 +1012,11 @@ bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
         return false;
     }
 
-    if (connection.has_flow_a && !write_flow(stream, connection.flow_a)) {
+    if (connection.has_flow_a && !write_flow(stream, connection.key, connection.flow_a)) {
         return false;
     }
 
-    if (connection.has_flow_b && !write_flow(stream, connection.flow_b)) {
+    if (connection.has_flow_b && !write_flow(stream, connection.key, connection.flow_b)) {
         return false;
     }
 
@@ -989,11 +1028,11 @@ bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
         return false;
     }
 
-    if (connection.has_flow_a && !write_flow(stream, connection.flow_a)) {
+    if (connection.has_flow_a && !write_flow(stream, connection.key, connection.flow_a)) {
         return false;
     }
 
-    if (connection.has_flow_b && !write_flow(stream, connection.flow_b)) {
+    if (connection.has_flow_b && !write_flow(stream, connection.key, connection.flow_b)) {
         return false;
     }
 
@@ -1009,11 +1048,11 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
         return false;
     }
 
-    if (connection.has_flow_a && !read_flow(stream, connection.flow_a)) {
+    if (connection.has_flow_a && !read_flow(stream, connection.key, connection.flow_a)) {
         return false;
     }
 
-    if (connection.has_flow_b && !read_flow(stream, connection.flow_b)) {
+    if (connection.has_flow_b && !read_flow(stream, connection.key, connection.flow_b)) {
         return false;
     }
 
@@ -1029,11 +1068,11 @@ bool read_connection(std::istream& stream, ConnectionV6& connection) {
         return false;
     }
 
-    if (connection.has_flow_a && !read_flow(stream, connection.flow_a)) {
+    if (connection.has_flow_a && !read_flow(stream, connection.key, connection.flow_a)) {
         return false;
     }
 
-    if (connection.has_flow_b && !read_flow(stream, connection.flow_b)) {
+    if (connection.has_flow_b && !read_flow(stream, connection.key, connection.flow_b)) {
         return false;
     }
 
@@ -1101,12 +1140,12 @@ bool write_connection_table(
         }
 
         if (connection->has_flow_a &&
-            !write_flow_with_progress(stream, connection->flow_a, processed_packets, total_packets, progress_callback)) {
+            !write_flow_with_progress(stream, connection->key, connection->flow_a, processed_packets, total_packets, progress_callback)) {
             return false;
         }
 
         if (connection->has_flow_b &&
-            !write_flow_with_progress(stream, connection->flow_b, processed_packets, total_packets, progress_callback)) {
+            !write_flow_with_progress(stream, connection->key, connection->flow_b, processed_packets, total_packets, progress_callback)) {
             return false;
         }
     }
@@ -1140,12 +1179,12 @@ bool write_connection_table(
         }
 
         if (connection->has_flow_a &&
-            !write_flow_with_progress(stream, connection->flow_a, processed_packets, total_packets, progress_callback)) {
+            !write_flow_with_progress(stream, connection->key, connection->flow_a, processed_packets, total_packets, progress_callback)) {
             return false;
         }
 
         if (connection->has_flow_b &&
-            !write_flow_with_progress(stream, connection->flow_b, processed_packets, total_packets, progress_callback)) {
+            !write_flow_with_progress(stream, connection->key, connection->flow_b, processed_packets, total_packets, progress_callback)) {
             return false;
         }
     }

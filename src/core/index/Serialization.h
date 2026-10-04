@@ -499,10 +499,10 @@ bool read_protocol_path_display_statistics(
 bool write_packet_ref(std::ostream& stream, const PacketRef& packet);
 bool read_packet_ref(std::istream& stream, PacketRef& packet);
 
-bool write_flow(std::ostream& stream, const FlowV4& flow);
-bool write_flow(std::ostream& stream, const FlowV6& flow);
-bool read_flow(std::istream& stream, FlowV4& flow);
-bool read_flow(std::istream& stream, FlowV6& flow);
+bool write_flow(std::ostream& stream, const ConnectionKeyV4& connection_key, const FlowV4& flow);
+bool write_flow(std::ostream& stream, const ConnectionKeyV6& connection_key, const FlowV6& flow);
+bool read_flow(std::istream& stream, const ConnectionKeyV4& connection_key, FlowV4& flow);
+bool read_flow(std::istream& stream, const ConnectionKeyV6& connection_key, FlowV6& flow);
 
 bool write_connection(std::ostream& stream, const ConnectionV4& connection);
 bool write_connection(std::ostream& stream, const ConnectionV6& connection);

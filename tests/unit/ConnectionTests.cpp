@@ -138,7 +138,7 @@ void run_connection_tests() {
     connection_v4.add_packet(flow_v4_ab, packet_ref(1, 100));
     PFL_EXPECT(connection_v4.has_flow_a);
     PFL_EXPECT(!connection_v4.has_flow_b);
-    PFL_EXPECT(connection_v4.flow_a.key == flow_v4_ab);
+    PFL_EXPECT(connection_v4.flow_a.key == directional_endpoint_key(flow_v4_ab));
     PFL_EXPECT(connection_v4.flow_a.packet_count == 1);
 
     connection_v4.add_packet(flow_v4_ab, packet_ref(2, 110));
@@ -147,7 +147,7 @@ void run_connection_tests() {
 
     connection_v4.add_packet(flow_v4_ba, packet_ref(3, 120));
     PFL_EXPECT(connection_v4.has_flow_b);
-    PFL_EXPECT(connection_v4.flow_b.key == flow_v4_ba);
+    PFL_EXPECT(connection_v4.flow_b.key == directional_endpoint_key(flow_v4_ba));
     PFL_EXPECT(connection_v4.flow_b.packet_count == 1);
 
     connection_v4.add_packet(flow_v4_ba, packet_ref(4, 130));
@@ -218,8 +218,8 @@ void run_connection_tests() {
 
     PFL_EXPECT(connection_v6.has_flow_a);
     PFL_EXPECT(connection_v6.has_flow_b);
-    PFL_EXPECT(connection_v6.flow_a.key == flow_v6_ab);
-    PFL_EXPECT(connection_v6.flow_b.key == flow_v6_ba);
+    PFL_EXPECT(connection_v6.flow_a.key == directional_endpoint_key(flow_v6_ab));
+    PFL_EXPECT(connection_v6.flow_b.key == directional_endpoint_key(flow_v6_ba));
     PFL_EXPECT(connection_v6.flow_a.packet_count == 1);
     PFL_EXPECT(connection_v6.flow_b.packet_count == 2);
     PFL_EXPECT(connection_v6.packet_count == 3);

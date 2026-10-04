@@ -134,12 +134,12 @@ template <typename Connection, typename FlowKey>
     switch (pending_tls_client_hello_flow_slot(connection.hint_search_state)) {
     case ConnectionFlowSlot::flow_a:
         if (connection.has_flow_a) {
-            return connection.flow_a.key;
+            return make_flow_key(connection.key, connection.flow_a.key);
         }
         return std::nullopt;
     case ConnectionFlowSlot::flow_b:
         if (connection.has_flow_b) {
-            return connection.flow_b.key;
+            return make_flow_key(connection.key, connection.flow_b.key);
         }
         return std::nullopt;
     case ConnectionFlowSlot::none:

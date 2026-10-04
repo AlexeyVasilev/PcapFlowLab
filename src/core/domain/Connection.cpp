@@ -92,41 +92,41 @@ void update_aggregate_stats(Connection& connection,
 }
 
 void append_packet(FlowV4& flow, const FlowKeyV4& packet_key, const PacketRef& packet) {
-    flow.key = packet_key;
+    flow.key = directional_endpoint_key(packet_key);
     flow.packets.push_back(packet);
     ++flow.packet_count;
     flow.total_bytes += packet.original_length;
 }
 
 void append_packet(FlowV6& flow, const FlowKeyV6& packet_key, const PacketRef& packet) {
-    flow.key = packet_key;
+    flow.key = directional_endpoint_key(packet_key);
     flow.packets.push_back(packet);
     ++flow.packet_count;
     flow.total_bytes += packet.original_length;
 }
 
-[[nodiscard]] EndpointKeyV4 endpoint_a_for_flow_key(const FlowKeyV4& key) noexcept {
+[[nodiscard]] EndpointKeyV4 endpoint_a_for_flow_key(const DirectionalEndpointKeyV4& key) noexcept {
     return EndpointKeyV4 {
         .addr = key.src_addr,
         .port = key.src_port,
     };
 }
 
-[[nodiscard]] EndpointKeyV4 endpoint_b_for_flow_key(const FlowKeyV4& key) noexcept {
+[[nodiscard]] EndpointKeyV4 endpoint_b_for_flow_key(const DirectionalEndpointKeyV4& key) noexcept {
     return EndpointKeyV4 {
         .addr = key.dst_addr,
         .port = key.dst_port,
     };
 }
 
-[[nodiscard]] EndpointKeyV6 endpoint_a_for_flow_key(const FlowKeyV6& key) noexcept {
+[[nodiscard]] EndpointKeyV6 endpoint_a_for_flow_key(const DirectionalEndpointKeyV6& key) noexcept {
     return EndpointKeyV6 {
         .addr = key.src_addr,
         .port = key.src_port,
     };
 }
 
-[[nodiscard]] EndpointKeyV6 endpoint_b_for_flow_key(const FlowKeyV6& key) noexcept {
+[[nodiscard]] EndpointKeyV6 endpoint_b_for_flow_key(const DirectionalEndpointKeyV6& key) noexcept {
     return EndpointKeyV6 {
         .addr = key.dst_addr,
         .port = key.dst_port,
@@ -250,7 +250,7 @@ template <typename Connection>
     if (connection.flow_a.packets.empty() ||
         connection.flow_a.packets.size() != connection.flow_a.packet_count ||
         connection.flow_a.packet_count == 0U ||
-        make_connection_key(connection.flow_a.key) != connection.key) {
+        make_connection_key(make_flow_key(connection.key, connection.flow_a.key)) != connection.key) {
         return false;
     }
 
@@ -266,7 +266,7 @@ template <typename Connection>
         connection.flow_b.packets.size() == connection.flow_b.packet_count &&
         connection.flow_b.packet_count > 0U &&
         connection.flow_b.key != connection.flow_a.key &&
-        make_connection_key(connection.flow_b.key) == connection.key &&
+        make_connection_key(make_flow_key(connection.key, connection.flow_b.key)) == connection.key &&
         connection.packet_count == connection.flow_a.packet_count + connection.flow_b.packet_count &&
         connection.total_bytes == connection.flow_a.total_bytes + connection.flow_b.total_bytes;
 }
@@ -334,69 +334,97 @@ void clear_pending_tls_client_hello(ConnectionHintSearchState& state) noexcept {
 }
 
 ConnectionFlowSlot connection_flow_slot(const ConnectionV4& connection, const FlowKeyV4& key) noexcept {
-    if (connection.has_flow_a && connection.flow_a.key == key) {
+    const auto directional_key = directional_endpoint_key(key);
+    if (connection.has_flow_a && connection.flow_a.key == directional_key) {
         return ConnectionFlowSlot::flow_a;
     }
-    if (connection.has_flow_b && connection.flow_b.key == key) {
+    if (connection.has_flow_b && connection.flow_b.key == directional_key) {
         return ConnectionFlowSlot::flow_b;
     }
     return ConnectionFlowSlot::none;
 }
 
 ConnectionFlowSlot connection_flow_slot(const ConnectionV6& connection, const FlowKeyV6& key) noexcept {
-    if (connection.has_flow_a && connection.flow_a.key == key) {
+    const auto directional_key = directional_endpoint_key(key);
+    if (connection.has_flow_a && connection.flow_a.key == directional_key) {
         return ConnectionFlowSlot::flow_a;
     }
-    if (connection.has_flow_b && connection.flow_b.key == key) {
+    if (connection.has_flow_b && connection.flow_b.key == directional_key) {
         return ConnectionFlowSlot::flow_b;
     }
     return ConnectionFlowSlot::none;
+}
+
+FlowKeyV4 make_flow_key(
+    const ConnectionKeyV4& connection_key,
+    const DirectionalEndpointKeyV4& directional_key
+) noexcept {
+    return FlowKeyV4 {
+        .src_addr = directional_key.src_addr,
+        .dst_addr = directional_key.dst_addr,
+        .src_port = directional_key.src_port,
+        .dst_port = directional_key.dst_port,
+        .protocol = connection_key.protocol,
+        .protocol_path_id = connection_key.protocol_path_id,
+        .non_terminal_ip_context_id = connection_key.non_terminal_ip_context_id,
+    };
+}
+
+FlowKeyV6 make_flow_key(
+    const ConnectionKeyV6& connection_key,
+    const DirectionalEndpointKeyV6& directional_key
+) noexcept {
+    return FlowKeyV6 {
+        .src_addr = directional_key.src_addr,
+        .dst_addr = directional_key.dst_addr,
+        .src_port = directional_key.src_port,
+        .dst_port = directional_key.dst_port,
+        .protocol = connection_key.protocol,
+        .protocol_path_id = connection_key.protocol_path_id,
+        .non_terminal_ip_context_id = connection_key.non_terminal_ip_context_id,
+    };
 }
 
 std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept {
     if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return connection.flow_a.key;
+    return make_flow_key(connection.key, connection.flow_a.key);
 }
 
 std::optional<FlowKeyV6> first_observed_flow_key(const ConnectionV6& connection) noexcept {
     if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return connection.flow_a.key;
+    return make_flow_key(connection.key, connection.flow_a.key);
 }
 
 std::optional<EndpointKeyV4> first_observed_endpoint_a(const ConnectionV4& connection) noexcept {
-    const auto key = first_observed_flow_key(connection);
-    if (!key.has_value()) {
+    if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return endpoint_a_for_flow_key(*key);
+    return endpoint_a_for_flow_key(connection.flow_a.key);
 }
 
 std::optional<EndpointKeyV4> first_observed_endpoint_b(const ConnectionV4& connection) noexcept {
-    const auto key = first_observed_flow_key(connection);
-    if (!key.has_value()) {
+    if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return endpoint_b_for_flow_key(*key);
+    return endpoint_b_for_flow_key(connection.flow_a.key);
 }
 
 std::optional<EndpointKeyV6> first_observed_endpoint_a(const ConnectionV6& connection) noexcept {
-    const auto key = first_observed_flow_key(connection);
-    if (!key.has_value()) {
+    if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return endpoint_a_for_flow_key(*key);
+    return endpoint_a_for_flow_key(connection.flow_a.key);
 }
 
 std::optional<EndpointKeyV6> first_observed_endpoint_b(const ConnectionV6& connection) noexcept {
-    const auto key = first_observed_flow_key(connection);
-    if (!key.has_value()) {
+    if (!connection.has_flow_a) {
         return std::nullopt;
     }
-    return endpoint_b_for_flow_key(*key);
+    return endpoint_b_for_flow_key(connection.flow_a.key);
 }
 
 bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept {
@@ -420,7 +448,9 @@ void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& pack
         return;
     }
 
-    if (packet_key == flow_a.key) {
+    const auto directional_key = directional_endpoint_key(packet_key);
+
+    if (directional_key == flow_a.key) {
         append_packet(flow_a, packet_key, packet);
         return;
     }
@@ -431,7 +461,7 @@ void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& pack
         return;
     }
 
-    if (packet_key == flow_b.key) {
+    if (directional_key == flow_b.key) {
         append_packet(flow_b, packet_key, packet);
         return;
     }
@@ -468,7 +498,9 @@ void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& pack
         return;
     }
 
-    if (packet_key == flow_a.key) {
+    const auto directional_key = directional_endpoint_key(packet_key);
+
+    if (directional_key == flow_a.key) {
         append_packet(flow_a, packet_key, packet);
         return;
     }
@@ -479,7 +511,7 @@ void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& pack
         return;
     }
 
-    if (packet_key == flow_b.key) {
+    if (directional_key == flow_b.key) {
         append_packet(flow_b, packet_key, packet);
         return;
     }

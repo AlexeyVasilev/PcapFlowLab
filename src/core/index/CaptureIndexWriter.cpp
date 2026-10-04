@@ -299,6 +299,24 @@ template <typename Connection>
            serialized_u32_size();
 }
 
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const DirectionalEndpointKeyV4&) noexcept {
+    return serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const DirectionalEndpointKeyV6&) noexcept {
+    return 16U +
+           16U +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
 [[nodiscard]] constexpr std::uint64_t serialized_connection_key_size(const ConnectionKeyV4& key) noexcept {
     return serialized_endpoint_key_size(key.first) +
            serialized_endpoint_key_size(key.second) +

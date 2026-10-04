@@ -318,6 +318,7 @@ void run_index_tests() {
         PFL_REQUIRE(detail::read_connection(one_direction_stream, decoded_one_direction));
         PFL_EXPECT(decoded_one_direction.has_flow_a);
         PFL_EXPECT(!decoded_one_direction.has_flow_b);
+        PFL_EXPECT(decoded_one_direction.flow_a.key == directional_endpoint_key(one_direction_flow));
         PFL_EXPECT(first_observed_endpoint_a(decoded_one_direction)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_one_direction)->addr == one_direction_flow.dst_addr);
 
@@ -350,8 +351,14 @@ void run_index_tests() {
         PFL_REQUIRE(detail::read_connection(bidirectional_stream, decoded_bidirectional));
         PFL_EXPECT(decoded_bidirectional.has_flow_a);
         PFL_EXPECT(decoded_bidirectional.has_flow_b);
+        PFL_EXPECT(decoded_bidirectional.flow_a.key == directional_endpoint_key(one_direction_flow));
         PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
+
+        auto nonzero_context_connection = bidirectional_connection;
+        nonzero_context_connection.key.non_terminal_ip_context_id = 7U;
+        std::stringstream nonzero_context_stream(std::ios::in | std::ios::out | std::ios::binary);
+        PFL_EXPECT(!detail::write_connection(nonzero_context_stream, nonzero_context_connection));
         PFL_EXPECT(kCaptureIndexVersion == 19U);
     }
     {

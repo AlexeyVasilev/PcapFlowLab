@@ -99,6 +99,14 @@ struct ConnectionV6 {
 
 [[nodiscard]] std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept;
 [[nodiscard]] std::optional<FlowKeyV6> first_observed_flow_key(const ConnectionV6& connection) noexcept;
+[[nodiscard]] FlowKeyV4 make_flow_key(
+    const ConnectionKeyV4& connection_key,
+    const DirectionalEndpointKeyV4& directional_key
+) noexcept;
+[[nodiscard]] FlowKeyV6 make_flow_key(
+    const ConnectionKeyV6& connection_key,
+    const DirectionalEndpointKeyV6& directional_key
+) noexcept;
 [[nodiscard]] ConnectionFlowSlot connection_flow_slot(const ConnectionV4& connection, const FlowKeyV4& key) noexcept;
 [[nodiscard]] ConnectionFlowSlot connection_flow_slot(const ConnectionV6& connection, const FlowKeyV6& key) noexcept;
 [[nodiscard]] std::optional<EndpointKeyV4> first_observed_endpoint_a(const ConnectionV4& connection) noexcept;

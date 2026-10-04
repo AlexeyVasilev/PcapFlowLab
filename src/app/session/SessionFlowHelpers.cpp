@@ -3483,7 +3483,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
             if (row.has_flow_a) {
                 row.flow_a = CaptureIndexV16DirectionalFlowMetadataV4 {
-                    .key = connection.ipv4->flow_a.key,
+                    .key = make_flow_key(connection.ipv4->key, connection.ipv4->flow_a.key),
                     .packet_count = connection.ipv4->flow_a.packet_count,
                     .original_byte_count = connection.ipv4->flow_a.total_bytes,
                 };
@@ -3494,7 +3494,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
             if (row.has_flow_b) {
                 row.flow_b = CaptureIndexV16DirectionalFlowMetadataV4 {
-                    .key = connection.ipv4->flow_b.key,
+                    .key = make_flow_key(connection.ipv4->key, connection.ipv4->flow_b.key),
                     .packet_count = connection.ipv4->flow_b.packet_count,
                     .original_byte_count = connection.ipv4->flow_b.total_bytes,
                 };
@@ -3529,7 +3529,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
         if (row.has_flow_a) {
             row.flow_a = CaptureIndexV16DirectionalFlowMetadataV6 {
-                .key = connection.ipv6->flow_a.key,
+                .key = make_flow_key(connection.ipv6->key, connection.ipv6->flow_a.key),
                 .packet_count = connection.ipv6->flow_a.packet_count,
                 .original_byte_count = connection.ipv6->flow_a.total_bytes,
             };
@@ -3540,7 +3540,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
         if (row.has_flow_b) {
             row.flow_b = CaptureIndexV16DirectionalFlowMetadataV6 {
-                .key = connection.ipv6->flow_b.key,
+                .key = make_flow_key(connection.ipv6->key, connection.ipv6->flow_b.key),
                 .packet_count = connection.ipv6->flow_b.packet_count,
                 .original_byte_count = connection.ipv6->flow_b.total_bytes,
             };
