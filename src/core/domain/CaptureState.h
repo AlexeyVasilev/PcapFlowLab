@@ -7,6 +7,7 @@
 #include "core/domain/CaptureImportSettings.h"
 #include "core/domain/CaptureSummary.h"
 #include "core/domain/ConnectionTable.h"
+#include "core/domain/NonTerminalIpContext.h"
 #include "core/domain/PacketRef.h"
 #include "core/domain/ProtocolPath.h"
 
@@ -28,6 +29,7 @@ struct CaptureState {
     std::vector<UnrecognizedPacketRecord> unrecognized_packets {};
     std::vector<CapturePacketLocatorEntry> packet_locator {};
     ProtocolPathRegistry protocol_path_registry {};
+    NonTerminalIpContextRegistry non_terminal_ip_context_registry {};
     CapturePacketStatistics packet_statistics {};
     CaptureImportSettingsSnapshot capture_import_settings {};
     CaptureSummary summary {};
