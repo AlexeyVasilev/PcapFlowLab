@@ -270,23 +270,33 @@ bool write_flow_key(std::ostream& stream, const FlowKeyV6& key) {
 }
 
 bool read_flow_key(std::istream& stream, FlowKeyV4& key) {
-    return read_u32(stream, key.src_addr) &&
-           read_u32(stream, key.dst_addr) &&
-           read_u16(stream, key.src_port) &&
-           read_u16(stream, key.dst_port) &&
-           read_protocol_id(stream, key.protocol) &&
-           read_u32(stream, key.protocol_path_id);
+    if (!read_u32(stream, key.src_addr) ||
+        !read_u32(stream, key.dst_addr) ||
+        !read_u16(stream, key.src_port) ||
+        !read_u16(stream, key.dst_port) ||
+        !read_protocol_id(stream, key.protocol) ||
+        !read_u32(stream, key.protocol_path_id)) {
+        return false;
+    }
+
+    key.non_terminal_ip_context_id = kEmptyNonTerminalIpContextId;
+    return true;
 }
 
 bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
     auto source = std::span<std::uint8_t>(key.src_addr.data(), key.src_addr.size());
     auto destination = std::span<std::uint8_t>(key.dst_addr.data(), key.dst_addr.size());
-    return read_bytes(stream, source) &&
-           read_bytes(stream, destination) &&
-           read_u16(stream, key.src_port) &&
-           read_u16(stream, key.dst_port) &&
-           read_protocol_id(stream, key.protocol) &&
-           read_u32(stream, key.protocol_path_id);
+    if (!read_bytes(stream, source) ||
+        !read_bytes(stream, destination) ||
+        !read_u16(stream, key.src_port) ||
+        !read_u16(stream, key.dst_port) ||
+        !read_protocol_id(stream, key.protocol) ||
+        !read_u32(stream, key.protocol_path_id)) {
+        return false;
+    }
+
+    key.non_terminal_ip_context_id = kEmptyNonTerminalIpContextId;
+    return true;
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV4& key) {
@@ -304,17 +314,27 @@ bool write_connection_key(std::ostream& stream, const ConnectionKeyV6& key) {
 }
 
 bool read_connection_key(std::istream& stream, ConnectionKeyV4& key) {
-    return read_endpoint_key(stream, key.first) &&
-           read_endpoint_key(stream, key.second) &&
-           read_protocol_id(stream, key.protocol) &&
-           read_u32(stream, key.protocol_path_id);
+    if (!read_endpoint_key(stream, key.first) ||
+        !read_endpoint_key(stream, key.second) ||
+        !read_protocol_id(stream, key.protocol) ||
+        !read_u32(stream, key.protocol_path_id)) {
+        return false;
+    }
+
+    key.non_terminal_ip_context_id = kEmptyNonTerminalIpContextId;
+    return true;
 }
 
 bool read_connection_key(std::istream& stream, ConnectionKeyV6& key) {
-    return read_endpoint_key(stream, key.first) &&
-           read_endpoint_key(stream, key.second) &&
-           read_protocol_id(stream, key.protocol) &&
-           read_u32(stream, key.protocol_path_id);
+    if (!read_endpoint_key(stream, key.first) ||
+        !read_endpoint_key(stream, key.second) ||
+        !read_protocol_id(stream, key.protocol) ||
+        !read_u32(stream, key.protocol_path_id)) {
+        return false;
+    }
+
+    key.non_terminal_ip_context_id = kEmptyNonTerminalIpContextId;
+    return true;
 }
 
 bool read_packet_refs(std::istream& stream, std::vector<PacketRef>& packets) {

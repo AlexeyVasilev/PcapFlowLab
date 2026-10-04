@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "TestSupport.h"
+#include "core/domain/ConnectionKey.h"
 #include "core/domain/NonTerminalIpContext.h"
 
 namespace pfl::tests {

@@ -1,5 +1,7 @@
 #include "core/domain/NonTerminalIpContext.h"
 
+#include "core/domain/ConnectionKey.h"
+
 #include <algorithm>
 #include <utility>
 

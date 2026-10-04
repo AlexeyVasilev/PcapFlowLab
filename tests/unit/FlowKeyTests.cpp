@@ -92,6 +92,29 @@ void run_flow_key_tests() {
     PFL_EXPECT(make_connection_key(flow_v4_path_1) == make_connection_key(reverse_flow_v4_path_1));
     PFL_EXPECT(make_connection_key(flow_v4_path_1) != make_connection_key(flow_v4_path_2));
 
+    PFL_EXPECT(flow_v4_path_1.non_terminal_ip_context_id == kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(make_connection_key(flow_v4_path_1).non_terminal_ip_context_id == kEmptyNonTerminalIpContextId);
+
+    auto flow_v4_context_1 = flow_v4_path_1;
+    flow_v4_context_1.non_terminal_ip_context_id = 100U;
+    auto flow_v4_context_1_copy = flow_v4_path_1_copy;
+    flow_v4_context_1_copy.non_terminal_ip_context_id = 100U;
+    auto flow_v4_context_2 = flow_v4_path_1;
+    flow_v4_context_2.non_terminal_ip_context_id = 200U;
+    auto reverse_flow_v4_context_1 = reverse_flow_v4_path_1;
+    reverse_flow_v4_context_1.non_terminal_ip_context_id = 100U;
+
+    PFL_EXPECT(flow_v4_context_1 == flow_v4_context_1_copy);
+    PFL_EXPECT(flow_v4_context_1 != flow_v4_context_2);
+    PFL_EXPECT(make_connection_key(flow_v4_context_1).non_terminal_ip_context_id == 100U);
+    PFL_EXPECT(make_connection_key(flow_v4_context_1) == make_connection_key(reverse_flow_v4_context_1));
+    PFL_EXPECT(make_connection_key(flow_v4_context_1) != make_connection_key(flow_v4_context_2));
+    PFL_EXPECT(std::hash<FlowKeyV4> {}(flow_v4_context_1) == std::hash<FlowKeyV4> {}(flow_v4_context_1_copy));
+    PFL_EXPECT(
+        std::hash<ConnectionKeyV4> {}(make_connection_key(flow_v4_context_1)) ==
+        std::hash<ConnectionKeyV4> {}(make_connection_key(reverse_flow_v4_context_1))
+    );
+
     const auto arp_request = FlowKeyV4 {
         .src_addr = ipv4(192, 168, 1, 10),
         .dst_addr = ipv4(192, 168, 1, 1),
@@ -188,6 +211,29 @@ void run_flow_key_tests() {
     PFL_EXPECT(flow_v6_path_1 != flow_v6_path_2);
     PFL_EXPECT(make_connection_key(flow_v6_path_1) == make_connection_key(reverse_flow_v6_path_1));
     PFL_EXPECT(make_connection_key(flow_v6_path_1) != make_connection_key(flow_v6_path_2));
+
+    PFL_EXPECT(flow_v6_path_1.non_terminal_ip_context_id == kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(make_connection_key(flow_v6_path_1).non_terminal_ip_context_id == kEmptyNonTerminalIpContextId);
+
+    auto flow_v6_context_1 = flow_v6_path_1;
+    flow_v6_context_1.non_terminal_ip_context_id = 101U;
+    auto flow_v6_context_1_copy = flow_v6_path_1;
+    flow_v6_context_1_copy.non_terminal_ip_context_id = 101U;
+    auto flow_v6_context_2 = flow_v6_path_1;
+    flow_v6_context_2.non_terminal_ip_context_id = 201U;
+    auto reverse_flow_v6_context_1 = reverse_flow_v6_path_1;
+    reverse_flow_v6_context_1.non_terminal_ip_context_id = 101U;
+
+    PFL_EXPECT(flow_v6_context_1 == flow_v6_context_1_copy);
+    PFL_EXPECT(flow_v6_context_1 != flow_v6_context_2);
+    PFL_EXPECT(make_connection_key(flow_v6_context_1).non_terminal_ip_context_id == 101U);
+    PFL_EXPECT(make_connection_key(flow_v6_context_1) == make_connection_key(reverse_flow_v6_context_1));
+    PFL_EXPECT(make_connection_key(flow_v6_context_1) != make_connection_key(flow_v6_context_2));
+    PFL_EXPECT(std::hash<FlowKeyV6> {}(flow_v6_context_1) == std::hash<FlowKeyV6> {}(flow_v6_context_1_copy));
+    PFL_EXPECT(
+        std::hash<ConnectionKeyV6> {}(make_connection_key(flow_v6_context_1)) ==
+        std::hash<ConnectionKeyV6> {}(make_connection_key(reverse_flow_v6_context_1))
+    );
 
     const auto flow_v4_hash_1 = std::hash<FlowKeyV4> {}(flow_v4_ab);
     const auto flow_v4_hash_2 = std::hash<FlowKeyV4> {}(flow_v4_ab);

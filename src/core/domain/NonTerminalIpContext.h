@@ -10,10 +10,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
 
 namespace pfl {
+
+struct EndpointKeyV4;
+struct EndpointKeyV6;
 
 using NonTerminalIpContextId = std::uint32_t;
 inline constexpr NonTerminalIpContextId kEmptyNonTerminalIpContextId = 0U;

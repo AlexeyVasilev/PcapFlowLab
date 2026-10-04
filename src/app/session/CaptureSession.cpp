@@ -1164,6 +1164,7 @@ std::optional<FlowDirectionalKey> directional_flow_key(
             .dst_port = destination.port,
             .protocol = flow.protocol,
             .protocol_path_id = flow.protocol_path_id,
+            .non_terminal_ip_context_id = kEmptyNonTerminalIpContextId,
         }};
     }
 
@@ -1181,6 +1182,7 @@ std::optional<FlowDirectionalKey> directional_flow_key(
         .dst_port = destination.port,
         .protocol = flow.protocol,
         .protocol_path_id = flow.protocol_path_id,
+        .non_terminal_ip_context_id = kEmptyNonTerminalIpContextId,
     }};
 }
 
