@@ -361,6 +361,137 @@ bool non_terminal_ip_context_payload_size_can_fit(
     return context_count == 0U || maximum_level_count >= context_count;
 }
 
+std::optional<std::uint64_t> max_non_terminal_ip_context_registry_payload_size(
+    const std::uint64_t context_count
+) noexcept {
+    std::uint64_t max_level_payload {0};
+    std::uint64_t max_context_payload {0};
+    std::uint64_t max_registry_payload {0};
+    if (!checked_multiply_u64(
+            static_cast<std::uint64_t>(kMaxNonTerminalIpContextLevels),
+            kNonTerminalIpContextLevelEncodedBytes,
+            max_level_payload) ||
+        !checked_add_u64(8U, max_level_payload, max_context_payload) ||
+        !checked_multiply_u64(context_count, max_context_payload, max_registry_payload) ||
+        !checked_add_u64(8U, max_registry_payload, max_registry_payload)) {
+        return std::nullopt;
+    }
+    return max_registry_payload;
+}
+
+bool read_non_terminal_ip_context_registry_body(
+    std::istream& stream,
+    const std::uint64_t context_count,
+    NonTerminalIpContextRegistry& registry
+) {
+    NonTerminalIpContextRegistry decoded {};
+    for (std::uint64_t context_index = 0U; context_index < context_count; ++context_index) {
+        std::uint64_t level_count {0};
+        if (!read_u64(stream, level_count) ||
+            level_count == 0U ||
+            level_count > static_cast<std::uint64_t>(kMaxNonTerminalIpContextLevels) ||
+            level_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+            registry = {};
+            return false;
+        }
+
+        std::vector<NonTerminalIpLevel> levels {};
+        levels.reserve(static_cast<std::size_t>(level_count));
+        for (std::uint64_t level_index = 0U; level_index < level_count; ++level_index) {
+            NonTerminalIpLevel level {};
+            if (!read_non_terminal_ip_context_level(stream, level)) {
+                registry = {};
+                return false;
+            }
+            levels.push_back(level);
+        }
+
+        const auto expected_id = static_cast<NonTerminalIpContextId>(context_index + 1U);
+        if (decoded.intern(NonTerminalIpContext {std::move(levels)}) != expected_id) {
+            registry = {};
+            return false;
+        }
+    }
+
+    registry = std::move(decoded);
+    return true;
+}
+
+bool read_bounded_non_terminal_ip_context_registry_payload(
+    std::istream& stream,
+    const std::uint64_t payload_size,
+    NonTerminalIpContextRegistry& registry
+) {
+    if (payload_size < 8U) {
+        return false;
+    }
+
+    std::uint64_t context_count {0};
+    if (!read_u64(stream, context_count) ||
+        context_count > static_cast<std::uint64_t>((std::numeric_limits<NonTerminalIpContextId>::max)())) {
+        return false;
+    }
+
+    const auto max_payload_size = max_non_terminal_ip_context_registry_payload_size(context_count);
+    if (!max_payload_size.has_value() ||
+        payload_size > *max_payload_size ||
+        !non_terminal_ip_context_payload_size_can_fit(payload_size, context_count)) {
+        return false;
+    }
+
+    std::uint64_t remaining_payload_size = payload_size - 8U;
+    NonTerminalIpContextRegistry decoded {};
+    for (std::uint64_t context_index = 0U; context_index < context_count; ++context_index) {
+        if (remaining_payload_size < 8U) {
+            registry = {};
+            return false;
+        }
+
+        std::uint64_t level_count {0};
+        if (!read_u64(stream, level_count) ||
+            level_count == 0U ||
+            level_count > static_cast<std::uint64_t>(kMaxNonTerminalIpContextLevels) ||
+            level_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+            registry = {};
+            return false;
+        }
+        remaining_payload_size -= 8U;
+
+        std::uint64_t level_payload_size {0};
+        if (!checked_multiply_u64(level_count, kNonTerminalIpContextLevelEncodedBytes, level_payload_size) ||
+            remaining_payload_size < level_payload_size) {
+            registry = {};
+            return false;
+        }
+
+        std::vector<NonTerminalIpLevel> levels {};
+        levels.reserve(static_cast<std::size_t>(level_count));
+        for (std::uint64_t level_index = 0U; level_index < level_count; ++level_index) {
+            NonTerminalIpLevel level {};
+            if (!read_non_terminal_ip_context_level(stream, level)) {
+                registry = {};
+                return false;
+            }
+            levels.push_back(level);
+            remaining_payload_size -= kNonTerminalIpContextLevelEncodedBytes;
+        }
+
+        const auto expected_id = static_cast<NonTerminalIpContextId>(context_index + 1U);
+        if (decoded.intern(NonTerminalIpContext {std::move(levels)}) != expected_id) {
+            registry = {};
+            return false;
+        }
+    }
+
+    if (remaining_payload_size != 0U) {
+        registry = {};
+        return false;
+    }
+
+    registry = std::move(decoded);
+    return true;
+}
+
 bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
     auto source = std::span<std::uint8_t>(key.src_addr.data(), key.src_addr.size());
     auto destination = std::span<std::uint8_t>(key.dst_addr.data(), key.dst_addr.size());
@@ -1784,37 +1915,7 @@ bool read_non_terminal_ip_context_registry(
         return false;
     }
 
-    NonTerminalIpContextRegistry decoded {};
-    for (std::uint64_t context_index = 0U; context_index < context_count; ++context_index) {
-        std::uint64_t level_count {0};
-        if (!read_u64(stream, level_count) ||
-            level_count == 0U ||
-            level_count > static_cast<std::uint64_t>(kMaxNonTerminalIpContextLevels) ||
-            level_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-            registry = {};
-            return false;
-        }
-
-        std::vector<NonTerminalIpLevel> levels {};
-        levels.reserve(static_cast<std::size_t>(level_count));
-        for (std::uint64_t level_index = 0U; level_index < level_count; ++level_index) {
-            NonTerminalIpLevel level {};
-            if (!read_non_terminal_ip_context_level(stream, level)) {
-                registry = {};
-                return false;
-            }
-            levels.push_back(level);
-        }
-
-        const auto expected_id = static_cast<NonTerminalIpContextId>(context_index + 1U);
-        if (decoded.intern(NonTerminalIpContext {std::move(levels)}) != expected_id) {
-            registry = {};
-            return false;
-        }
-    }
-
-    registry = std::move(decoded);
-    return true;
+    return read_non_terminal_ip_context_registry_body(stream, context_count, registry);
 }
 
 bool write_v20_non_terminal_ip_context_registry_section(
@@ -1871,44 +1972,16 @@ NonTerminalIpContextRegistrySectionReadResult read_v20_non_terminal_ip_context_r
         return result;
     }
 
-    std::vector<std::uint8_t> payload {};
-    if (!read_bounded_section_payload(
-            stream,
-            result.section_header.payload_size,
-            static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)()),
-            payload)) {
+    if (result.section_header.payload_size < 8U) {
         result.status = NonTerminalIpContextRegistrySectionReadStatus::truncated_payload;
-        return result;
-    }
-
-    if (payload.size() < 8U) {
-        result.status = NonTerminalIpContextRegistrySectionReadStatus::truncated_payload;
-        return result;
-    }
-
-    const auto context_count =
-        static_cast<std::uint64_t>(payload[0]) |
-        (static_cast<std::uint64_t>(payload[1]) << 8U) |
-        (static_cast<std::uint64_t>(payload[2]) << 16U) |
-        (static_cast<std::uint64_t>(payload[3]) << 24U) |
-        (static_cast<std::uint64_t>(payload[4]) << 32U) |
-        (static_cast<std::uint64_t>(payload[5]) << 40U) |
-        (static_cast<std::uint64_t>(payload[6]) << 48U) |
-        (static_cast<std::uint64_t>(payload[7]) << 56U);
-    if (!non_terminal_ip_context_payload_size_can_fit(
-            static_cast<std::uint64_t>(payload.size()),
-            context_count)) {
-        result.status = NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload;
         return result;
     }
 
     NonTerminalIpContextRegistry decoded {};
-    std::istringstream payload_stream(
-        std::string(payload.begin(), payload.end()),
-        std::ios::binary | std::ios::in
-    );
-    if (!read_non_terminal_ip_context_registry(payload_stream, decoded) ||
-        payload_stream.peek() != std::char_traits<char>::eof()) {
+    if (!read_bounded_non_terminal_ip_context_registry_payload(
+            stream,
+            result.section_header.payload_size,
+            decoded)) {
         result.status = NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload;
         return result;
     }

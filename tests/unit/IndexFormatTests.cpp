@@ -489,6 +489,41 @@ bool decode_non_terminal_ip_context_registry_payload(
     return detail::read_non_terminal_ip_context_registry(stream, registry);
 }
 
+std::vector<std::uint8_t> serialize_non_terminal_ip_context_registry_section_bytes(
+    const std::vector<std::uint8_t>& payload,
+    const std::uint64_t declared_payload_size
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry),
+        .section_schema_version = detail::kCaptureIndexStableNonTerminalIpContextRegistrySectionSchemaVersion,
+        .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+        .payload_size = declared_payload_size,
+    }));
+    PFL_REQUIRE(detail::write_bytes(stream, payload));
+    return stream_bytes(stream);
+}
+
+std::vector<std::uint8_t> serialize_non_terminal_ip_context_registry_section_bytes(
+    const std::vector<std::uint8_t>& payload
+) {
+    return serialize_non_terminal_ip_context_registry_section_bytes(
+        payload,
+        static_cast<std::uint64_t>(payload.size())
+    );
+}
+
+detail::NonTerminalIpContextRegistrySectionReadResult decode_non_terminal_ip_context_registry_section_bytes(
+    const std::vector<std::uint8_t>& section_bytes,
+    NonTerminalIpContextRegistry& registry
+) {
+    std::istringstream stream(
+        std::string(section_bytes.begin(), section_bytes.end()),
+        std::ios::binary | std::ios::in
+    );
+    return detail::read_v20_non_terminal_ip_context_registry_section(stream, registry);
+}
+
 void expect_matching_protocol_path_display_statistics(
     const ProtocolPathDisplayStatistics& left,
     const ProtocolPathDisplayStatistics& right
@@ -1664,6 +1699,91 @@ void run_index_format_tests() {
                 );
             PFL_EXPECT(truncated_section_result.status ==
                 detail::NonTerminalIpContextRegistrySectionReadStatus::invalid_section_framing);
+
+            {
+                NonTerminalIpContextRegistry empty_section_registry {};
+                const auto empty_section_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(
+                        serialize_non_terminal_ip_context_registry_payload(empty_registry)
+                    ),
+                    empty_section_registry
+                );
+                PFL_REQUIRE(static_cast<bool>(empty_section_result));
+                PFL_EXPECT(empty_section_registry.size() == 0U);
+            }
+
+            {
+                NonTerminalIpContextRegistry absurd_declared_registry {};
+                const auto absurd_declared_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(
+                        serialize_non_terminal_ip_context_registry_payload(empty_registry),
+                        (std::numeric_limits<std::uint64_t>::max)()
+                    ),
+                    absurd_declared_registry
+                );
+                PFL_EXPECT(absurd_declared_result.status ==
+                    detail::NonTerminalIpContextRegistrySectionReadStatus::invalid_section_framing);
+            }
+
+            {
+                std::ostringstream excessive_level_count_payload(std::ios::binary | std::ios::out);
+                PFL_REQUIRE(detail::write_u64(excessive_level_count_payload, 1U));
+                PFL_REQUIRE(detail::write_u64(
+                    excessive_level_count_payload,
+                    static_cast<std::uint64_t>(kMaxNonTerminalIpContextLevels) + 1U
+                ));
+                NonTerminalIpContextRegistry excessive_level_count_registry {};
+                const auto excessive_level_count_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(stream_bytes(excessive_level_count_payload)),
+                    excessive_level_count_registry
+                );
+                PFL_EXPECT(excessive_level_count_result.status ==
+                    detail::NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload);
+            }
+
+            {
+                std::ostringstream invalid_family_payload(std::ios::binary | std::ios::out);
+                PFL_REQUIRE(detail::write_u64(invalid_family_payload, 1U));
+                PFL_REQUIRE(detail::write_u64(invalid_family_payload, 1U));
+                PFL_REQUIRE(detail::write_u8(invalid_family_payload, 99U));
+                PFL_REQUIRE(detail::write_bytes(invalid_family_payload, std::array<std::uint8_t, 32> {}));
+                NonTerminalIpContextRegistry invalid_family_registry {};
+                const auto invalid_family_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(stream_bytes(invalid_family_payload)),
+                    invalid_family_registry
+                );
+                PFL_EXPECT(invalid_family_result.status ==
+                    detail::NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload);
+            }
+
+            {
+                std::ostringstream truncated_context_payload(std::ios::binary | std::ios::out);
+                PFL_REQUIRE(detail::write_u64(truncated_context_payload, 1U));
+                PFL_REQUIRE(detail::write_u64(truncated_context_payload, 1U));
+                PFL_REQUIRE(detail::write_u8(
+                    truncated_context_payload,
+                    static_cast<std::uint8_t>(NonTerminalIpAddressFamily::ipv4)
+                ));
+                NonTerminalIpContextRegistry truncated_context_registry {};
+                const auto truncated_context_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(stream_bytes(truncated_context_payload)),
+                    truncated_context_registry
+                );
+                PFL_EXPECT(truncated_context_result.status ==
+                    detail::NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload);
+            }
+
+            {
+                auto trailing_payload = serialize_non_terminal_ip_context_registry_payload(empty_registry);
+                trailing_payload.push_back(0U);
+                NonTerminalIpContextRegistry trailing_registry {};
+                const auto trailing_result = decode_non_terminal_ip_context_registry_section_bytes(
+                    serialize_non_terminal_ip_context_registry_section_bytes(trailing_payload),
+                    trailing_registry
+                );
+                PFL_EXPECT(trailing_result.status ==
+                    detail::NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload);
+            }
         }
 
         const ConnectionKeyV4 v4_key {
