@@ -2,10 +2,10 @@
 
 Status: current stable production index architecture.
 
-Current production writes stable revision 19 indexes using the v16
-metadata/detail architecture described here. Stable revision 18 and older full
-payload load is rebuild-required after the current Statistics/provenance schema
-revision bump.
+Current production writes stable revision 20 indexes using the v16
+metadata/detail architecture described here. Stable revision 19 and older full
+payload load is rebuild-required after the current non-terminal IP Flow
+identity revision bump.
 
 Related RFCs:
 
@@ -36,20 +36,22 @@ The stable outer container remains:
 
 - magic: `PFLIDXV1`
 - `container_format_version = 1`
-- `index_revision = 19`
+- `index_revision = 20`
 
 ### Why the stable revision changes
 
 Although the container header and v16 physical architecture remain the same,
-revision 19 intentionally extends the fast Statistics/provenance tier:
+revision 20 intentionally extends the stable identity/provenance tier:
 
-- `capture_statistics_snapshot` advances to schema `2`
-- flow-duration and flow-original-byte histograms are now persisted
-- capture-wide IP fragmentation counters are now persisted
-- `capture_import_settings` records immutable import-setting provenance
+- revision 19 added the current Statistics/provenance fast-tier foundation;
+- revision 20 adds the `NonTerminalIpContextRegistry`;
+- shared Flow identity persists `NonTerminalIpContextId`;
+- `capture_import_settings` records immutable import-setting provenance,
+  including the non-terminal IP endpoint grouping setting.
 
-For that reason, revision 19 uses a deliberate rebuild-required stable
-revision boundary rather than treating older fast-tier payloads as current.
+For that reason, revision 20 uses a deliberate rebuild-required stable
+revision boundary rather than treating older identity/provenance payloads as
+current.
 
 ### Compatibility policy
 
@@ -704,9 +706,9 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC records the current stable revision 19 layout using the v16 physical
+This RFC records the current stable revision 20 layout using the v16 physical
 architecture and the migration boundary:
 
-- current production writes and loads stable revision 19
-- stable revision 18 and older full payload load is rebuild-required
+- current production writes and loads stable revision 20
+- stable revision 19 and older full payload load is rebuild-required
 - header inspection remains independent of full payload compatibility

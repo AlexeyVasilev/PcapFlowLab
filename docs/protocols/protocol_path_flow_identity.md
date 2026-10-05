@@ -213,7 +213,7 @@ Current compatibility policy:
   rebuild-required diagnostic;
 - stable revision 17 and 18 indexes are recognized but rejected for full load with a
   rebuild-required diagnostic;
-- stable revision 19 indexes load when their required section schemas remain
+- stable revision 20 indexes load when their required section schemas remain
   supported;
 - reopening an index preserves the grouping semantics already stored in that
   index;
@@ -304,8 +304,12 @@ Current v1 boundaries:
 
 - outer tunnel source/destination endpoints are not part of
   `protocol_path_id`;
-- identical inner tuples can therefore still merge when the current namespace
-  identifiers match but outer carrier endpoints differ;
+- concrete non-terminal IP endpoint context is a separate Flow-identity
+  dimension, not a `ProtocolPath` identifier;
+- by default, identical inner tuples split into different Flows when their
+  non-terminal IP endpoint paths differ;
+- enabling `Ignore non-terminal IP endpoints when grouping flows` restores the
+  previous inner-centric merge behavior for those endpoint paths;
 - application-layer protocols such as TLS, HTTP, DNS, and QUIC remain outside
   flow identity;
 - malformed or truncated namespace identifiers must not fabricate identity.
@@ -316,8 +320,9 @@ Current examples of intentional tradeoffs:
   GTP-U TEID normalization mode;
 - different VLAN VIDs and MPLS labels split by default and may merge only under
   the explicit VLAN/MPLS normalization mode;
-- same VNI / same inner tuple / different outer carrier endpoints may still
-  merge in v1 because outer tunnel endpoints are excluded from identity.
+- same structural namespace and same inner tuple split by default when
+  concrete non-terminal IP endpoint paths differ, but may merge under the
+  explicit non-terminal IP endpoint normalization mode.
 
 ## Historical Design Context
 

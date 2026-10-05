@@ -467,7 +467,7 @@ Current verified Markdown report metadata includes:
 | Version | 0.4.0 |
 | Client | CLI |
 | Statistics scope | Complete |
-| Index revision | 19 |
+| Index revision | 20 |
 ```
 
 The report includes sections such as Report Information, Input, Capture Import

@@ -1,15 +1,13 @@
 # Non-Terminal IP Flow Identity RFC
 
-Status: Pre-implementation RFC.
+Status: implemented current contract.
 
-This document specifies the intended next-generation Pcap Flow Lab Flow
-grouping model for non-terminal IP endpoint identity. It is not implemented in
-the current production code.
-
-Current implemented behavior remains documented in
+This document specifies the implemented Pcap Flow Lab Flow grouping model for
+non-terminal IP endpoint identity. The concise current behavior summary remains
+documented in
 [`docs/protocols/protocol_path_flow_identity.md`](../protocols/protocol_path_flow_identity.md).
-This RFC defines the future target contract so implementation, tests,
-indexing, and documentation do not drift.
+This RFC records the architectural contract so implementation, tests, indexing,
+and documentation do not drift.
 
 ## Purpose
 
@@ -33,11 +31,10 @@ paths such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, GTP-U TEID, GRE key,
 AH SPI, and ESP SPI. It intentionally keeps concrete IP addresses and transport
 ports out of `ProtocolPath`.
 
-The remaining gap is that packets can have the same terminal tuple and the
-same normalized `ProtocolPathId`, but different concrete non-terminal IP
-endpoint paths. In the current model those packets may merge into one
-user-visible Flow. The future default behavior MUST distinguish those
-observed carrier/tunnel IP endpoint paths.
+The feature addresses packets that have the same terminal tuple and the same
+normalized `ProtocolPathId`, but different concrete non-terminal IP endpoint
+paths. The current default behavior distinguishes those observed
+carrier/tunnel IP endpoint paths.
 
 Example packet set A:
 
@@ -61,7 +58,7 @@ EthernetII
 -> TCP 50123 -> 443
 ```
 
-Under the future default, A and B are different Flows because the concrete
+Under the current default, A and B are different Flows because the concrete
 non-terminal IP endpoint context differs. Users who want logical inner-flow
 grouping independent of carrier IP endpoints MUST be able to opt into that
 relaxed behavior through an import setting.
@@ -94,9 +91,9 @@ Current import settings already support identity normalization:
 The new design follows that philosophy: strict identity by default, with an
 explicit import-time relaxation setting.
 
-## Future Grouping Contract
+## Grouping Contract
 
-Future default recognized-flow identity is conceptually:
+Default recognized-flow identity is conceptually:
 
 ```text
 terminal tuple
@@ -110,8 +107,7 @@ The conceptual ID type is:
 using NonTerminalIpContextId = std::uint32_t;
 ```
 
-The exact production declaration may be adjusted during implementation, but the
-semantic contract is a compact capture-local integer ID.
+The production declaration is a compact capture-local integer ID.
 
 `NonTerminalIpContextId = 0` is reserved as the empty/default identity. It means
 there are no identity-significant non-terminal IP endpoint levels for this
@@ -477,7 +473,7 @@ Implementation requirements:
   later filtering;
 - no extra full terminal-tuple hash lookup beyond what the final architecture
   requires;
-- measure capture-open performance before and after implementation.
+- monitor capture-open performance when changing this path.
 
 Performance measurements SHOULD use the methodology documented in
 [`docs/benchmarks/capture-open-performance.md`](../benchmarks/capture-open-performance.md),
@@ -485,17 +481,15 @@ including comparison against benchmark ID `CAPOPEN-2026-10-03-01` where useful.
 
 ## Transient Identity Versus Retained Directional State
 
-Current `FlowKey` serves two roles:
+The current implementation separates the two roles that earlier `FlowKey`
+designs combined:
 
 1. packet/import directional identity;
 2. retained directional state inside `Connection.flow_a` / `Connection.flow_b`.
 
-Future architecture SHOULD separate those roles.
-
 ### Full Transient Flow Identity Key
 
-A full directional identity object, likely still named `FlowKeyV4` /
-`FlowKeyV6`, carries:
+A full directional identity object, `FlowKeyV4` / `FlowKeyV6`, carries:
 
 - terminal directional source/destination IP;
 - terminal directional source/destination port;
@@ -525,8 +519,6 @@ DirectionalEndpointKeyV4
 DirectionalEndpointKeyV6
 ```
 
-Final naming may be decided during implementation.
-
 Shared identity fields remain authoritative in the parent `Connection`:
 
 - `ProtocolId`;
@@ -540,9 +532,9 @@ Current `FlowHintService` has stateful `FlowKey`-keyed maps for at least:
 - QUIC Initial processing;
 - retained/split TLS ClientHello processing.
 
-Future packets with the same terminal tuple and same `ProtocolPathId` but
-different `NonTerminalIpContextId` must not share this state, because they are
-different future user-visible Flows/Connections.
+Packets with the same terminal tuple and same `ProtocolPathId` but different
+`NonTerminalIpContextId` must not share this state, because they are different
+user-visible Flows/Connections.
 
 Therefore:
 
@@ -554,7 +546,7 @@ context ID in retained directional endpoint state: no
 
 ## ConnectionKey Contract
 
-Future `ConnectionKeyV4` / `ConnectionKeyV6` SHOULD contain:
+`ConnectionKeyV4` / `ConnectionKeyV6` contain:
 
 - canonical terminal endpoints;
 - `ProtocolId`;
@@ -619,7 +611,7 @@ Expected direct retained structure saving:
 These are direct structure calculations using decimal MB arithmetic. They MUST
 NOT be presented as exact total RSS savings.
 
-## Measured Future ID Layout Cost
+## Measured ID Layout Cost
 
 The local layout probe showed that adding one `std::uint32_t` context ID to
 full keys increases:
@@ -636,8 +628,8 @@ Simple field reordering did not eliminate this growth. There is no free padding
 in the current keys sufficient to absorb the context ID.
 
 This is one reason the context ID MUST NOT also be duplicated into retained
-`flow_a` and `flow_b` directional state. Exact full-container/RSS impact must
-be measured in a real implementation.
+`flow_a` and `flow_b` directional state. Exact full-container/RSS impact should
+be measured with the normal benchmark methodology when this path changes.
 
 ## Deferred Connection.key Duplication
 
@@ -657,12 +649,10 @@ Reasons:
 
 ## Index Revision Implications
 
-This feature changes grouping identity and persistent metadata. It should be
-implemented as a new incompatible stable index revision. Current production is
-revision `19`; revision `20` is the expected next revision if no other
-incompatible index feature lands first.
+This feature changes grouping identity and persistent metadata. It is
+implemented as incompatible stable index revision `20`.
 
-Conceptual future index shape:
+Current index shape:
 
 ```text
 Connection shared identity
@@ -687,10 +677,9 @@ Do not continue serializing shared `protocol`, `ProtocolPathId`, or context ID
 inside each directional Flow merely to mimic revision 19.
 
 First-observed orientation remains reconstructable from `flow_a` directional
-endpoints. Exact binary serialization layout is open until implementation.
-Index compatibility rules remain consistent with current project behavior:
-older incompatible stable revisions are rejected with rebuild-required
-diagnostics rather than silently reinterpreted.
+endpoints. Index compatibility rules remain consistent with current project
+behavior: older incompatible stable revisions are rejected with
+rebuild-required diagnostics rather than silently reinterpreted.
 
 ## Grouping Setting Interactions
 
@@ -741,10 +730,9 @@ ESP cases MUST remain conservative according to what the current parser can
 actually expose. The implementation must not invent inner endpoint visibility
 for encrypted or opaque payloads.
 
-## Correctness Fixture Requirements
+## Correctness Fixture Coverage
 
-Before implementation is complete, synthetic tests MUST cover at least the
-following cases.
+The implemented test suite covers these contract cases.
 
 Basic split:
 
@@ -949,7 +937,7 @@ This RFC explicitly defers:
 
 Future work may revisit some of these separately.
 
-## Open Implementation Questions
+## Implementation Notes And Deferred Optimizations
 
 Frozen product decisions in this RFC:
 
@@ -961,18 +949,19 @@ Frozen product decisions in this RFC:
 - context ID belongs in full transient `FlowKey` and `ConnectionKey`;
 - context ID does not belong in retained directional Flow state.
 
-Open implementation details:
+Current implementation decisions:
 
-- exact context registry storage/container;
-- exact fixed-size temporary builder representation;
+- the context registry is capture-scoped and vector-backed with hashed lookup;
+- temporary import collection uses a fixed-size builder;
+- context canonicalization happens before registry interning;
+- revision 20 persists the registry and shared connection context id;
+- retained directional Flow state stores compact directional endpoints only.
+
+Deferred optimization questions:
+
 - optimal context hash implementation;
-- exact type/member names;
-- exact index binary layout;
-- whether context canonicalization happens before or during interning;
 - whether a specialized fast path avoids constructing a full context view for
-  common one-level tunnels;
-- exact placement/order of new `std::uint32_t` fields after prototype layout
-  measurements.
+  common one-level tunnels.
 
 ## Decision Summary
 

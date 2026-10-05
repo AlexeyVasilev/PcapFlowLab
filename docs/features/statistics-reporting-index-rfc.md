@@ -2,10 +2,12 @@
 
 Status: design freeze for `feature/statistics-reporting-improvements`.
 
-Current production behavior uses stable revision 19 on top of the v16
-physical architecture defined in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
-Stable revision 18 and older full payload load is now a rebuild-required
-compatibility boundary.
+The Statistics/reporting layout was introduced with stable revision 19 on top
+of the v16 physical architecture defined in the companion
+[Index v16 Container RFC](index-v16-container-rfc.md). Current production now
+writes stable revision 20 on the same v16 physical architecture; stable
+revision 19 and older full payload load is a rebuild-required compatibility
+boundary.
 
 Related current references:
 
@@ -378,17 +380,18 @@ This project decision remains explicit:
 - Stage 4 performs one deliberate format/layout migration after the
   Statistics and Analysis data requirements have been validated
 
-The stable production target is now revision 19 using the v16 payload
+The Statistics/reporting production target was revision 19 using the v16 payload
 topology defined in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
+Current production index revision is now 20.
 
 ## Index Version And Compatibility Policy
 
-Current production uses stable revision 19 with the v16 physical architecture:
+Current production uses stable revision 20 with the v16 physical architecture:
 
 - stable magic remains `PFLIDXV1`
 - `container_format_version` remains `1`
-- `index_revision = 19`
-- rebuild-required behavior for stable revision 18 and older full-payload indexes is
+- `index_revision = 20`
+- rebuild-required behavior for stable revision 19 and older full-payload indexes is
   acceptable
 - stable-header inspection remains independent of full payload compatibility
 
@@ -457,11 +460,12 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC records the implemented stable revision 19 layout using the v16
-physical architecture while preserving the key migration boundary:
+This RFC records the implemented Statistics/reporting layout introduced in
+stable revision 19 using the v16 physical architecture while preserving the key
+migration boundary:
 
-- current production is stable revision 19
-- stable revision 18 and older full payload load is rebuild-required
+- current production is stable revision 20
+- stable revision 19 and older full payload load is rebuild-required
 - Stage 4I fast Statistics-only CLI loading is implemented for compatible
   v16 index-backed `summary` invocations
 - Qt/Tauri session/frontend staged loading remains future work
