@@ -297,6 +297,7 @@ extern "C" {
         use_possible_tls_quic: c_uchar,
         ignore_vlan_and_mpls_layers_when_grouping_flows: c_uchar,
         ignore_gtpu_teids_when_grouping_inner_flows: c_uchar,
+        ignore_non_terminal_ip_endpoints_when_grouping_flows: c_uchar,
         show_wireshark_filter_for_selected_flow: c_uchar,
         validate_selected_packet_checksums: c_uchar,
     ) -> *mut c_char;
@@ -1208,6 +1209,7 @@ impl CppFrontendSessionAdapter {
         use_possible_tls_quic: bool,
         ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
         ignore_gtpu_teids_when_grouping_inner_flows: bool,
+        ignore_non_terminal_ip_endpoints_when_grouping_flows: bool,
         show_wireshark_filter_for_selected_flow: bool,
         validate_selected_packet_checksums: bool,
     ) -> Result<SettingsDto, String> {
@@ -1218,6 +1220,7 @@ impl CppFrontendSessionAdapter {
                 if use_possible_tls_quic { 1 } else { 0 },
                 if ignore_vlan_and_mpls_layers_when_grouping_flows { 1 } else { 0 },
                 if ignore_gtpu_teids_when_grouping_inner_flows { 1 } else { 0 },
+                if ignore_non_terminal_ip_endpoints_when_grouping_flows { 1 } else { 0 },
                 if show_wireshark_filter_for_selected_flow { 1 } else { 0 },
                 if validate_selected_packet_checksums { 1 } else { 0 },
             )

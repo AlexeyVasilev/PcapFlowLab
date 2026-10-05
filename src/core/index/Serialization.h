@@ -69,7 +69,7 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
 [[nodiscard]] constexpr std::uint64_t max_capture_statistics_snapshot_payload_size_bytes() noexcept {
     constexpr std::uint64_t kWorstCaseEndpointIdentityBytes = 1U + 18U;
     constexpr std::uint64_t kWorstCaseEndpointIdentityForFamilyBytes = 18U;
-    constexpr std::uint64_t kWorstCaseConnectionKeyBytes = 41U;
+    constexpr std::uint64_t kWorstCaseConnectionKeyBytes = 45U;
     constexpr std::uint64_t kProtocolCountersRowBytes = 1U + (4U * 8U);
     constexpr std::uint64_t kPacketSizeDistributionBytes =
         8U + 4U + (static_cast<std::uint64_t>(kCapturePacketSizeStatisticsBucketCount) * 8U);
@@ -277,6 +277,7 @@ struct CaptureIndexV16FastStatisticsTier {
     CaptureStatisticsSnapshot capture_statistics_snapshot {};
     CaptureImportSettingsSnapshot capture_import_settings {};
     ProtocolPathRegistry protocol_path_registry {};
+    NonTerminalIpContextRegistry non_terminal_ip_context_registry {};
     ProtocolPathDisplayStatistics protocol_path_display_statistics {};
 
     [[nodiscard]] friend bool operator==(
@@ -295,6 +296,8 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     duplicate_capture_import_settings_section,
     missing_protocol_path_registry_early_section,
     duplicate_protocol_path_registry_early_section,
+    missing_non_terminal_ip_context_registry_section,
+    duplicate_non_terminal_ip_context_registry_section,
     missing_protocol_path_terminal_aggregates_section,
     wrong_fast_section_order,
     invalid_fast_section_framing,
@@ -305,6 +308,7 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     malformed_capture_import_settings_payload,
     capture_import_settings_semantic_inconsistency,
     malformed_protocol_path_registry_payload,
+    malformed_non_terminal_ip_context_registry_payload,
     malformed_protocol_path_terminal_aggregates_payload,
     protocol_path_terminal_aggregates_semantic_inconsistency,
     fast_tier_cross_section_inconsistency,

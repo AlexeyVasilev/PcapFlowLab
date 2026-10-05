@@ -216,6 +216,7 @@ detail::CaptureIndexV16FastStatisticsTier make_v16_fast_tier(const CaptureState&
             CaptureStatisticsScope::complete),
         .capture_import_settings = make_capture_import_settings_snapshot(AnalysisSettings {}),
         .protocol_path_registry = state.protocol_path_registry,
+        .non_terminal_ip_context_registry = state.non_terminal_ip_context_registry,
         .protocol_path_display_statistics =
             session_detail::build_protocol_path_display_statistics(state, connections),
     };

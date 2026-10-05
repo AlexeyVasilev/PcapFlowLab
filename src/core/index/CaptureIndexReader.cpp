@@ -171,6 +171,10 @@ constexpr char kFutureStableIndexRevisionMessage[] =
         return "missing v16 protocol path registry section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section:
         return "duplicate v16 protocol path registry section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_non_terminal_ip_context_registry_section:
+        return "missing v20 non-terminal IP context registry section";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_non_terminal_ip_context_registry_section:
+        return "duplicate v20 non-terminal IP context registry section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section:
         return "missing v16 protocol path terminal aggregates section";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order:
@@ -191,6 +195,8 @@ constexpr char kFutureStableIndexRevisionMessage[] =
         return "invalid v16 capture import settings";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload:
         return "malformed v16 protocol path registry payload";
+    case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_non_terminal_ip_context_registry_payload:
+        return "malformed v20 non-terminal IP context registry payload";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_terminal_aggregates_payload:
         return "malformed v16 protocol path terminal aggregates payload";
     case detail::CaptureIndexV16FastStatisticsTierReadStatus::protocol_path_terminal_aggregates_semantic_inconsistency:

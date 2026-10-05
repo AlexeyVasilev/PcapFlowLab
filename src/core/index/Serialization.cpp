@@ -20,9 +20,9 @@ constexpr std::uint64_t kEndpointKeyV6EncodedBytes = 18U;
 constexpr std::uint64_t kLayerKeyEncodedBytes = 2U + 1U + 8U;
 constexpr std::uint64_t kNonTerminalIpContextLevelEncodedBytes = 1U + 16U + 16U;
 constexpr std::uint64_t kConnectionKeyV4EncodedBytes =
-    kEndpointKeyV4EncodedBytes + kEndpointKeyV4EncodedBytes + 1U + 4U;
+    kEndpointKeyV4EncodedBytes + kEndpointKeyV4EncodedBytes + 1U + 4U + 4U;
 constexpr std::uint64_t kConnectionKeyV6EncodedBytes =
-    kEndpointKeyV6EncodedBytes + kEndpointKeyV6EncodedBytes + 1U + 4U;
+    kEndpointKeyV6EncodedBytes + kEndpointKeyV6EncodedBytes + 1U + 4U + 4U;
 constexpr std::uint64_t kConnectionAggregateStatsEncodedBytes = (7U * 8U) + (2U * 4U);
 constexpr std::uint64_t kV16DirectionalFlowMetadataV4EncodedBytes =
     kConnectionKeyV4EncodedBytes + 8U + 8U;
@@ -292,6 +292,26 @@ bool read_flow_key(std::istream& stream, FlowKeyV4& key) {
     return true;
 }
 
+bool write_v20_flow_key(std::ostream& stream, const FlowKeyV4& key) {
+    return write_u32(stream, key.src_addr) &&
+           write_u32(stream, key.dst_addr) &&
+           write_u16(stream, key.src_port) &&
+           write_u16(stream, key.dst_port) &&
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id) &&
+           write_u32(stream, key.non_terminal_ip_context_id);
+}
+
+bool read_v20_flow_key(std::istream& stream, FlowKeyV4& key) {
+    return read_u32(stream, key.src_addr) &&
+           read_u32(stream, key.dst_addr) &&
+           read_u16(stream, key.src_port) &&
+           read_u16(stream, key.dst_port) &&
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id) &&
+           read_u32(stream, key.non_terminal_ip_context_id);
+}
+
 bool ipv4_address_representation_is_canonical(const std::array<std::uint8_t, 16>& address) noexcept {
     return std::all_of(address.begin() + 4, address.end(), [](const std::uint8_t byte) {
         return byte == 0U;
@@ -355,6 +375,30 @@ bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
 
     key.non_terminal_ip_context_id = kEmptyNonTerminalIpContextId;
     return true;
+}
+
+bool write_v20_flow_key(std::ostream& stream, const FlowKeyV6& key) {
+    const auto source = std::span<const std::uint8_t>(key.src_addr.data(), key.src_addr.size());
+    const auto destination = std::span<const std::uint8_t>(key.dst_addr.data(), key.dst_addr.size());
+    return write_bytes(stream, source) &&
+           write_bytes(stream, destination) &&
+           write_u16(stream, key.src_port) &&
+           write_u16(stream, key.dst_port) &&
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id) &&
+           write_u32(stream, key.non_terminal_ip_context_id);
+}
+
+bool read_v20_flow_key(std::istream& stream, FlowKeyV6& key) {
+    auto source = std::span<std::uint8_t>(key.src_addr.data(), key.src_addr.size());
+    auto destination = std::span<std::uint8_t>(key.dst_addr.data(), key.dst_addr.size());
+    return read_bytes(stream, source) &&
+           read_bytes(stream, destination) &&
+           read_u16(stream, key.src_port) &&
+           read_u16(stream, key.dst_port) &&
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id) &&
+           read_u32(stream, key.non_terminal_ip_context_id);
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV4& key) {
@@ -2196,11 +2240,11 @@ bool write_connection_key_for_capture_statistics_family(
 ) {
     if (family == CaptureStatisticsAddressFamily::ipv4) {
         return std::holds_alternative<ConnectionKeyV4>(connection_key) &&
-               write_connection_key(stream, std::get<ConnectionKeyV4>(connection_key));
+               write_v20_connection_key(stream, std::get<ConnectionKeyV4>(connection_key));
     }
 
     return std::holds_alternative<ConnectionKeyV6>(connection_key) &&
-           write_connection_key(stream, std::get<ConnectionKeyV6>(connection_key));
+           write_v20_connection_key(stream, std::get<ConnectionKeyV6>(connection_key));
 }
 
 bool read_connection_key_for_capture_statistics_family(
@@ -2210,7 +2254,7 @@ bool read_connection_key_for_capture_statistics_family(
 ) {
     if (family == CaptureStatisticsAddressFamily::ipv4) {
         ConnectionKeyV4 key {};
-        if (!read_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
+        if (!read_v20_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
             return false;
         }
         connection_key = key;
@@ -2218,7 +2262,7 @@ bool read_connection_key_for_capture_statistics_family(
     }
 
     ConnectionKeyV6 key {};
-    if (!read_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
+    if (!read_v20_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
         return false;
     }
     connection_key = key;
@@ -3387,6 +3431,9 @@ CaptureIndexV16FastStatisticsTierReadResult map_registry_section_failure(
         } else if (section_result.section_header.section_id ==
                    static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)) {
             result.status = CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::non_terminal_ip_context_registry)) {
+            result.status = CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order;
         } else {
             result.status =
                 CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
@@ -3405,6 +3452,57 @@ CaptureIndexV16FastStatisticsTierReadResult map_registry_section_failure(
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload;
         break;
     case ProtocolPathRegistrySectionReadStatus::ok:
+        break;
+    }
+
+    return result;
+}
+
+CaptureIndexV16FastStatisticsTierReadResult map_non_terminal_registry_section_failure(
+    const NonTerminalIpContextRegistrySectionReadResult& section_result
+) {
+    CaptureIndexV16FastStatisticsTierReadResult result {};
+    result.failed_section_header = section_result.section_header;
+
+    switch (section_result.status) {
+    case NonTerminalIpContextRegistrySectionReadStatus::invalid_section_header:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::wrong_section_id:
+        if (section_result.section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::capture_import_settings)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_import_settings_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)) {
+            result.status = CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order;
+        } else {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::missing_non_terminal_ip_context_registry_section;
+        }
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::invalid_section_framing:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::unsupported_schema_version:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema;
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::truncated_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload;
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::malformed_non_terminal_ip_context_registry_payload:
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::malformed_non_terminal_ip_context_registry_payload;
+        break;
+    case NonTerminalIpContextRegistrySectionReadStatus::ok:
         break;
     }
 
@@ -3434,6 +3532,10 @@ CaptureIndexV16FastStatisticsTierReadResult map_display_section_failure(
                    static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
             result.status =
                 CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section;
+        } else if (section_result.section_header.section_id ==
+                   static_cast<std::uint32_t>(CaptureIndexSectionId::non_terminal_ip_context_registry)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_non_terminal_ip_context_registry_section;
         } else {
             result.status =
                 CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
@@ -3580,6 +3682,10 @@ bool write_v16_fast_statistics_tier(
            write_v16_capture_statistics_snapshot_section(stream, tier.capture_statistics_snapshot) &&
            write_v16_capture_import_settings_section(stream, tier.capture_import_settings) &&
            write_v16_protocol_path_registry_early_section(stream, tier.protocol_path_registry) &&
+           write_v20_non_terminal_ip_context_registry_section(
+               stream,
+               tier.non_terminal_ip_context_registry
+           ) &&
            write_v16_protocol_path_terminal_aggregates_section(
                stream,
                tier.protocol_path_display_statistics
@@ -3711,6 +3817,25 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
 
     if (stream.peek() == std::char_traits<char>::eof()) {
         result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::missing_non_terminal_ip_context_registry_section;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    const auto non_terminal_registry_result = read_v20_non_terminal_ip_context_registry_section(
+        stream,
+        tier.non_terminal_ip_context_registry
+    );
+    if (!non_terminal_registry_result) {
+        result = map_non_terminal_registry_section_failure(non_terminal_registry_result);
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    if (stream.peek() == std::char_traits<char>::eof()) {
+        result.status =
             CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
         result.header = stable_header;
         tier = {};
@@ -3782,6 +3907,16 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
             static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
             result.status =
                 CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section;
+            result.failed_section_header = next_section_header;
+            result.header = stable_header;
+            tier = {};
+            return result;
+        }
+
+        if (next_section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::non_terminal_ip_context_registry)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_non_terminal_ip_context_registry_section;
             result.failed_section_header = next_section_header;
             result.header = stable_header;
             tier = {};
@@ -3967,14 +4102,14 @@ std::optional<std::uint64_t> max_v16_packetref_directory_payload_size(
 
 template <typename DirectionalMetadata>
 bool write_v16_directional_flow_metadata(std::ostream& stream, const DirectionalMetadata& row) {
-    return write_flow_key(stream, row.key) &&
+    return write_v20_flow_key(stream, row.key) &&
            write_u64(stream, row.packet_count) &&
            write_u64(stream, row.original_byte_count);
 }
 
 template <typename DirectionalMetadata>
 bool read_v16_directional_flow_metadata(std::istream& stream, DirectionalMetadata& row) {
-    return read_flow_key(stream, row.key) &&
+    return read_v20_flow_key(stream, row.key) &&
            read_u64(stream, row.packet_count) &&
            read_u64(stream, row.original_byte_count);
 }
@@ -3990,7 +4125,7 @@ bool write_v16_connection_metadata_payload(
 
     for (const auto& row : rows) {
         if (!write_u32(stream, row.canonical_connection_ordinal) ||
-            !write_connection_key(stream, row.key) ||
+            !write_v20_connection_key(stream, row.key) ||
             !write_flow_protocol_hint(stream, row.protocol_hint) ||
             !write_bounded_string(stream, row.service_hint, kMaxCaptureStatisticsSnapshotServiceHintBytes) ||
             !write_u8(stream, static_cast<std::uint8_t>(row.quic_version)) ||
@@ -4025,6 +4160,7 @@ bool read_v16_connection_metadata_payload(
     const std::uint64_t payload_size,
     const std::uint64_t max_row_count,
     const std::uint64_t minimum_row_bytes,
+    const NonTerminalIpContextRegistry& registry,
     const CaptureIndexV16ReadControl* const read_control
 ) {
     std::uint64_t row_count {0};
@@ -4051,7 +4187,7 @@ bool read_v16_connection_metadata_payload(
         std::uint8_t has_flow_b {0};
 
         if (!read_u32(stream, row.canonical_connection_ordinal) ||
-            !read_connection_key(stream, row.key) ||
+            !read_v20_connection_key(stream, row.key) ||
             !read_flow_protocol_hint(stream, row.protocol_hint) ||
             !read_bounded_string(stream, row.service_hint, kMaxCaptureStatisticsSnapshotServiceHintBytes) ||
             !read_u8(stream, raw_quic_version) ||
@@ -4067,6 +4203,9 @@ bool read_v16_connection_metadata_payload(
         row.tls_version = static_cast<TlsVersionHint>(raw_tls_version);
         row.has_fragmented_packets = has_fragmented_packets != 0U;
         row.has_flow_a = has_flow_a != 0U;
+        if (!validate_v20_connection_key_context_reference(row.key, registry)) {
+            return false;
+        }
 
         if (row.has_flow_a && !read_v16_directional_flow_metadata(stream, row.flow_a)) {
             return false;
@@ -4453,6 +4592,7 @@ bool decode_v16_connection_metadata_section(
     const std::uint16_t expected_schema_version,
     std::vector<Row>& rows,
     const std::uint64_t total_flow_count,
+    const NonTerminalIpContextRegistry& registry,
     const CaptureIndexV16ReadControl* const read_control
 ) {
     if (section_header.section_id != static_cast<std::uint32_t>(expected_id) ||
@@ -4483,6 +4623,7 @@ bool decode_v16_connection_metadata_section(
         expected_id == CaptureIndexSectionId::ipv6_flow_metadata
             ? kV16ConnectionMetadataV6MinimumEncodedRowBytes
             : kV16ConnectionMetadataV4MinimumEncodedRowBytes,
+        registry,
         read_control
     );
 }
@@ -5336,6 +5477,7 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
                     kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion,
                     rows,
                     total_flow_count,
+                    result.fast_statistics_tier.non_terminal_ip_context_registry,
                     read_control
                 );
             },
@@ -5359,6 +5501,7 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
                     kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion,
                     rows,
                     total_flow_count,
+                    result.fast_statistics_tier.non_terminal_ip_context_registry,
                     read_control
                 );
             },

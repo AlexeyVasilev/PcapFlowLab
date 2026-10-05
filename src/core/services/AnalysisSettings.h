@@ -7,6 +7,7 @@ struct AnalysisSettings {
     bool use_possible_tls_quic {false};
     bool ignore_vlan_and_mpls_layers_when_grouping_flows {false};
     bool ignore_gtpu_teids_when_grouping_inner_flows {false};
+    bool ignore_non_terminal_ip_endpoints_when_grouping_flows {false};
 };
 
 }  // namespace pfl

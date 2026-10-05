@@ -8,6 +8,7 @@
 
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/dissection/DissectionEngine.h"
+#include "core/domain/ConnectionKey.h"
 #include "core/services/PacketDetailsService.h"
 
 namespace pfl {
@@ -75,6 +76,61 @@ namespace {
     }
 
     return ProtocolPath {std::move(normalized_layers)};
+}
+
+[[nodiscard]] std::optional<NonTerminalIpContextId> resolve_non_terminal_ip_context_id_for_flow_identity(
+    CaptureState& state,
+    const NonTerminalIpContextBuilder& builder,
+    const FlowKeyV4& flow_key,
+    const AnalysisSettings& settings
+) {
+    if (settings.ignore_non_terminal_ip_endpoints_when_grouping_flows || builder.empty()) {
+        return kEmptyNonTerminalIpContextId;
+    }
+    if (builder.overflowed()) {
+        return std::nullopt;
+    }
+
+    auto context = canonicalize_non_terminal_ip_context(
+        builder.view(),
+        EndpointKeyV4 {.addr = flow_key.src_addr, .port = flow_key.src_port},
+        EndpointKeyV4 {.addr = flow_key.dst_addr, .port = flow_key.dst_port}
+    );
+    return state.non_terminal_ip_context_registry.intern(std::move(context));
+}
+
+[[nodiscard]] std::optional<NonTerminalIpContextId> resolve_non_terminal_ip_context_id_for_flow_identity(
+    CaptureState& state,
+    const NonTerminalIpContextBuilder& builder,
+    const FlowKeyV6& flow_key,
+    const AnalysisSettings& settings
+) {
+    if (settings.ignore_non_terminal_ip_endpoints_when_grouping_flows || builder.empty()) {
+        return kEmptyNonTerminalIpContextId;
+    }
+    if (builder.overflowed()) {
+        return std::nullopt;
+    }
+
+    auto context = canonicalize_non_terminal_ip_context(
+        builder.view(),
+        EndpointKeyV6 {.addr = flow_key.src_addr, .port = flow_key.src_port},
+        EndpointKeyV6 {.addr = flow_key.dst_addr, .port = flow_key.dst_port}
+    );
+    return state.non_terminal_ip_context_registry.intern(std::move(context));
+}
+
+void apply_unrecognized_packet_import_with_reason(
+    const RawPcapPacket& packet,
+    CaptureState& state,
+    std::string reason_text
+) {
+    const auto packet_ref = packet_ref_from_raw_packet(packet);
+    state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
+        .packet = packet_ref,
+        .reason_text = std::move(reason_text),
+    });
+    observe_capture_packet_statistics(state.packet_statistics, packet_ref, false);
 }
 
 [[nodiscard]] dissection::PacketSlice make_import_root_slice(const RawPcapPacket& packet) {
@@ -846,6 +902,17 @@ bool apply_decoded_packet_import(
         decoded.ipv4->packet_ref = packet_ref_from_raw_packet(packet);
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
+        const auto non_terminal_ip_context_id = resolve_non_terminal_ip_context_id_for_flow_identity(
+            state,
+            decoded.non_terminal_ip_context_builder,
+            decoded.ipv4->flow_key,
+            hint_service.settings()
+        );
+        if (!non_terminal_ip_context_id.has_value()) {
+            apply_unrecognized_packet_import_with_reason(packet, state, "Non-terminal IP context overflow");
+            return true;
+        }
+        decoded.ipv4->flow_key.non_terminal_ip_context_id = *non_terminal_ip_context_id;
         auto& connection = ingestor.ingest(*decoded.ipv4);
         if (!apply_decoded_flow_import(
             packet,
@@ -866,6 +933,17 @@ bool apply_decoded_packet_import(
         decoded.ipv6->packet_ref = packet_ref_from_raw_packet(packet);
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
+        const auto non_terminal_ip_context_id = resolve_non_terminal_ip_context_id_for_flow_identity(
+            state,
+            decoded.non_terminal_ip_context_builder,
+            decoded.ipv6->flow_key,
+            hint_service.settings()
+        );
+        if (!non_terminal_ip_context_id.has_value()) {
+            apply_unrecognized_packet_import_with_reason(packet, state, "Non-terminal IP context overflow");
+            return true;
+        }
+        decoded.ipv6->flow_key.non_terminal_ip_context_id = *non_terminal_ip_context_id;
         auto& connection = ingestor.ingest(*decoded.ipv6);
         if (!apply_decoded_flow_import(
             packet,

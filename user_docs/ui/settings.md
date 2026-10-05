@@ -165,6 +165,29 @@ Lifecycle:
 - it does not regroup the current already-imported raw session;
 - opening an index keeps that index's stored grouping.
 
+### Non-terminal IP endpoint grouping
+
+`Ignore non-terminal IP endpoints when grouping flows` controls how nested IP
+captures are grouped.
+
+By default, non-terminal IPv4 and IPv6 endpoint pairs are part of recognized
+flow identity. This keeps otherwise-identical inner flows separate when they
+are carried through different outer IP endpoints.
+
+When enabled:
+
+- terminal endpoints and ports still participate in grouping;
+- normalized Protocol Path identity still participates in grouping;
+- non-terminal IP endpoint pairs are ignored for grouping;
+- otherwise-identical inner flows carried through different outer IP endpoints
+  can merge into one canonical grouped flow.
+
+Lifecycle:
+
+- it applies on raw capture import or reopen;
+- it does not regroup the current already-imported raw session;
+- opening an index keeps that index's stored grouping.
+
 ## Example: ignoring VLAN during flow grouping
 
 ![Before reopening with VLAN/MPLS grouping enabled](images/settings/settings-vlan-before.png)

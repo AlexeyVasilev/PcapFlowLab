@@ -346,6 +346,7 @@ private:
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
     Q_PROPERTY(bool ignoreVlanAndMplsLayersWhenGroupingFlows READ ignoreVlanAndMplsLayersWhenGroupingFlows WRITE setIgnoreVlanAndMplsLayersWhenGroupingFlows NOTIFY ignoreVlanAndMplsLayersWhenGroupingFlowsChanged)
     Q_PROPERTY(bool ignoreGtpuTeidsWhenGroupingInnerFlows READ ignoreGtpuTeidsWhenGroupingInnerFlows WRITE setIgnoreGtpuTeidsWhenGroupingInnerFlows NOTIFY ignoreGtpuTeidsWhenGroupingInnerFlowsChanged)
+    Q_PROPERTY(bool ignoreNonTerminalIpEndpointsWhenGroupingFlows READ ignoreNonTerminalIpEndpointsWhenGroupingFlows WRITE setIgnoreNonTerminalIpEndpointsWhenGroupingFlows NOTIFY ignoreNonTerminalIpEndpointsWhenGroupingFlowsChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
@@ -654,6 +655,7 @@ public:
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
     [[nodiscard]] bool ignoreVlanAndMplsLayersWhenGroupingFlows() const noexcept;
     [[nodiscard]] bool ignoreGtpuTeidsWhenGroupingInnerFlows() const noexcept;
+    [[nodiscard]] bool ignoreNonTerminalIpEndpointsWhenGroupingFlows() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
@@ -798,6 +800,7 @@ public:
     void setUsePossibleTlsQuic(bool enabled);
     void setIgnoreVlanAndMplsLayersWhenGroupingFlows(bool enabled);
     void setIgnoreGtpuTeidsWhenGroupingInnerFlows(bool enabled);
+    void setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(bool enabled);
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
@@ -831,6 +834,7 @@ signals:
     void usePossibleTlsQuicChanged();
     void ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
     void ignoreGtpuTeidsWhenGroupingInnerFlowsChanged();
+    void ignoreNonTerminalIpEndpointsWhenGroupingFlowsChanged();
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();

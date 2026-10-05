@@ -41,6 +41,7 @@ only the properties present in the file.
 | --- | --- | --- | --- | --- |
 | `ignore_vlan_and_mpls_layers_when_grouping_flows` | boolean | `false` | Flow grouping | Ignore VLAN and MPLS identity layers when building Flow identity. |
 | `ignore_gtpu_teids_when_grouping_inner_flows` | boolean | `false` | Flow grouping | Ignore GTP-U TEID identity when grouping otherwise-identical inner flows. |
+| `ignore_non_terminal_ip_endpoints_when_grouping_flows` | boolean | `false` | Flow grouping | Ignore non-terminal IPv4/IPv6 endpoint identity when grouping otherwise-identical inner flows. |
 | `validate_selected_packet_checksums` | boolean | `false` | Selected-packet inspection | Validate supported packet checksums when inspecting a selected packet. |
 
 ## Flow grouping settings

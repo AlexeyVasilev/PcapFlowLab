@@ -27,6 +27,7 @@ struct CanonicalFlowMetadata {
     FlowEndpointIdentity endpoint_a {EndpointKeyV4 {}};
     FlowEndpointIdentity endpoint_b {EndpointKeyV4 {}};
     ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    NonTerminalIpContextId non_terminal_ip_context_id {kEmptyNonTerminalIpContextId};
     ProtocolId protocol {ProtocolId::unknown};
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};

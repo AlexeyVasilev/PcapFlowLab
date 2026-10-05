@@ -83,12 +83,13 @@ Current implementation facts:
   `ProtocolPathId`.
 - `ConnectionKeyV4` / `ConnectionKeyV6` currently contains canonical terminal
   endpoints plus `ProtocolId` and `ProtocolPathId`.
-- Current stable index revision is `19`.
+- Current stable index revision is `20`.
 
 Current import settings already support identity normalization:
 
 - `Ignore VLAN and MPLS layers when grouping flows`
 - `Ignore GTP-U TEIDs when grouping inner flows`
+- `Ignore non-terminal IP endpoints when grouping flows`
 
 The new design follows that philosophy: strict identity by default, with an
 explicit import-time relaxation setting.
@@ -310,15 +311,13 @@ The setting is analogous to the existing settings:
 
 - `Ignore VLAN and MPLS layers when grouping flows`
 - `Ignore GTP-U TEIDs when grouping inner flows`
+- `Ignore non-terminal IP endpoints when grouping flows`
 
-Based on current stable-key naming, the likely internal stable setting key is:
+The internal stable setting key is:
 
 ```text
 ignore_non_terminal_ip_endpoints_when_grouping_flows
 ```
-
-Implementation should verify final naming against the settings DTO, frontend
-bridge, CLI JSON, and index provenance code before changing production.
 
 Because outer-IP filtering is not part of this RFC, the relaxed setting does
 not require retaining ignored non-terminal endpoint contexts for later Flow

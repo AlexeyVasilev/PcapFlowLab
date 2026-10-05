@@ -97,6 +97,7 @@ includes:
 - possible TLS/QUIC hint behavior;
 - `Ignore VLAN and MPLS layers when grouping flows`;
 - `Ignore GTP-U TEIDs when grouping inner flows`;
+- `Ignore non-terminal IP endpoints when grouping flows`;
 - Packet Details checksum validation;
 - selected-flow Wireshark-filter visibility;
 - Protocol Path column visibility.
@@ -125,6 +126,7 @@ The capture-processing grouping settings are:
 
 - `Ignore VLAN and MPLS layers when grouping flows`
 - `Ignore GTP-U TEIDs when grouping inner flows`
+- `Ignore non-terminal IP endpoints when grouping flows`
 
 Shared semantic meaning:
 

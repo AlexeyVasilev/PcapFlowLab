@@ -1038,6 +1038,7 @@ detail::CaptureIndexV16FastStatisticsTier make_valid_v16_fast_statistics_tier() 
         .capture_statistics_snapshot = std::move(snapshot),
         .capture_import_settings = make_capture_import_settings_snapshot(AnalysisSettings {}),
         .protocol_path_registry = registry,
+        .non_terminal_ip_context_registry = NonTerminalIpContextRegistry {},
         .protocol_path_display_statistics = statistics,
     };
 }
@@ -1257,6 +1258,7 @@ detail::CaptureIndexV16FastStatisticsTier build_v16_metadata_fast_statistics_tie
         ),
         .capture_import_settings = capture_import_settings,
         .protocol_path_registry = state.protocol_path_registry,
+        .non_terminal_ip_context_registry = state.non_terminal_ip_context_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
 }
@@ -1463,8 +1465,8 @@ void run_index_format_tests() {
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
         PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 19U);
-        PFL_EXPECT(kCaptureIndexVersion == 19U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 20U);
+        PFL_EXPECT(kCaptureIndexVersion == 20U);
         PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::amqp) == 20U);
         PFL_EXPECT(static_cast<std::uint8_t>(FlowProtocolHint::ntp) == 21U);
 
@@ -2309,11 +2311,12 @@ void run_index_format_tests() {
         const auto tier = make_valid_v16_fast_statistics_tier();
         const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
         const auto sections = parse_sections(base_bytes);
-        PFL_REQUIRE(sections.size() == 4U);
+        PFL_REQUIRE(sections.size() == 5U);
         PFL_EXPECT(sections[0].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot));
         PFL_EXPECT(sections[1].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_import_settings));
         PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early));
-        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry));
+        PFL_EXPECT(sections[4].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
 
         std::istringstream read_stream(
             std::string(base_bytes.begin(), base_bytes.end()),
@@ -2326,6 +2329,10 @@ void run_index_format_tests() {
         PFL_EXPECT(decoded_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
         PFL_EXPECT(decoded_tier.capture_import_settings == tier.capture_import_settings);
         expect_matching_protocol_path_registries(decoded_tier.protocol_path_registry, tier.protocol_path_registry);
+        expect_matching_non_terminal_ip_context_registries(
+            decoded_tier.non_terminal_ip_context_registry,
+            tier.non_terminal_ip_context_registry
+        );
         expect_matching_protocol_path_display_statistics(
             decoded_tier.protocol_path_display_statistics,
             tier.protocol_path_display_statistics
@@ -2361,13 +2368,18 @@ void run_index_format_tests() {
             stream,
             tier.protocol_path_registry
         ));
+        PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+            stream,
+            tier.non_terminal_ip_context_registry
+        ));
         PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, first_chunk));
         PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, second_chunk));
         const auto chunked_bytes = stream_bytes(stream);
         const auto sections = parse_sections(chunked_bytes);
-        PFL_REQUIRE(sections.size() == 5U);
-        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_REQUIRE(sections.size() == 6U);
+        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry));
         PFL_EXPECT(sections[4].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_EXPECT(sections[5].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
 
         std::istringstream read_stream(
             std::string(chunked_bytes.begin(), chunked_bytes.end()),
@@ -2453,6 +2465,10 @@ void run_index_format_tests() {
         PFL_EXPECT(file_read.header.index_revision == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(file_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
         expect_matching_protocol_path_registries(file_tier.protocol_path_registry, tier.protocol_path_registry);
+        expect_matching_non_terminal_ip_context_registries(
+            file_tier.non_terminal_ip_context_registry,
+            tier.non_terminal_ip_context_registry
+        );
         expect_matching_protocol_path_display_statistics(
             file_tier.protocol_path_display_statistics,
             tier.protocol_path_display_statistics
@@ -2463,9 +2479,9 @@ void run_index_format_tests() {
         const auto tier = make_valid_v16_fast_statistics_tier();
         const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
         const auto sections = parse_sections(base_bytes);
-        PFL_REQUIRE(sections.size() == 4U);
+        PFL_REQUIRE(sections.size() == 5U);
         const auto registry_payload_offset = sections[2].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
-        const auto display_payload_offset = sections[3].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto display_payload_offset = sections[4].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
 
         auto expect_fast_tier_status =
             [&](std::vector<std::uint8_t> bytes,
@@ -2481,6 +2497,7 @@ void run_index_format_tests() {
                 PFL_EXPECT(decoded_tier.capture_statistics_snapshot == CaptureStatisticsSnapshot {});
                 PFL_EXPECT(decoded_tier.capture_import_settings == CaptureImportSettingsSnapshot {});
                 PFL_EXPECT(decoded_tier.protocol_path_registry.size() == 0U);
+                PFL_EXPECT(decoded_tier.non_terminal_ip_context_registry.size() == 0U);
                 PFL_EXPECT(decoded_tier.protocol_path_display_statistics.terminal_path_aggregates.empty());
                 if (protocol_path_error.has_value()) {
                     PFL_REQUIRE(read_result.protocol_path_validation_error.has_value());
@@ -2532,6 +2549,10 @@ void run_index_format_tests() {
             );
             missing_registry_bytes = remove_section(
                 missing_registry_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry)
+            );
+            missing_registry_bytes = remove_section(
+                missing_registry_bytes,
                 static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates)
             );
             expect_fast_tier_status(
@@ -2548,6 +2569,21 @@ void run_index_format_tests() {
             expect_fast_tier_status(
                 std::move(missing_display_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section
+            );
+        }
+
+        {
+            auto missing_non_terminal_registry_bytes = remove_section(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry)
+            );
+            missing_non_terminal_registry_bytes = remove_section(
+                missing_non_terminal_registry_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates)
+            );
+            expect_fast_tier_status(
+                std::move(missing_non_terminal_registry_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_non_terminal_ip_context_registry_section
             );
         }
 
@@ -2595,6 +2631,10 @@ void run_index_format_tests() {
                 duplicate_snapshot_stream,
                 tier.protocol_path_registry
             ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                duplicate_snapshot_stream,
+                tier.non_terminal_ip_context_registry
+            ));
             PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
                 duplicate_snapshot_stream,
                 tier.protocol_path_display_statistics
@@ -2623,6 +2663,10 @@ void run_index_format_tests() {
             PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
                 duplicate_settings_stream,
                 tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                duplicate_settings_stream,
+                tier.non_terminal_ip_context_registry
             ));
             PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
                 duplicate_settings_stream,
@@ -2653,6 +2697,10 @@ void run_index_format_tests() {
                 duplicate_registry_stream,
                 tier.protocol_path_registry
             ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                duplicate_registry_stream,
+                tier.non_terminal_ip_context_registry
+            ));
             PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
                 duplicate_registry_stream,
                 tier.protocol_path_display_statistics
@@ -2660,6 +2708,42 @@ void run_index_format_tests() {
             expect_fast_tier_status(
                 stream_bytes(duplicate_registry_stream),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section
+            );
+        }
+
+        {
+            std::ostringstream duplicate_non_terminal_registry_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(
+                duplicate_non_terminal_registry_stream,
+                make_v16_stable_header()
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                duplicate_non_terminal_registry_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                duplicate_non_terminal_registry_stream,
+                tier.capture_import_settings
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                duplicate_non_terminal_registry_stream,
+                tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                duplicate_non_terminal_registry_stream,
+                tier.non_terminal_ip_context_registry
+            ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                duplicate_non_terminal_registry_stream,
+                tier.non_terminal_ip_context_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                duplicate_non_terminal_registry_stream,
+                tier.protocol_path_display_statistics
+            ));
+            expect_fast_tier_status(
+                stream_bytes(duplicate_non_terminal_registry_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_non_terminal_ip_context_registry_section
             );
         }
 
@@ -2685,6 +2769,19 @@ void run_index_format_tests() {
             );
             expect_fast_tier_status(
                 std::move(oversized_registry_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload
+            );
+        }
+
+        {
+            auto malformed_non_terminal_registry_bytes = replace_section_payload(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::non_terminal_ip_context_registry),
+                0U,
+                1U
+            );
+            expect_fast_tier_status(
+                std::move(malformed_non_terminal_registry_bytes),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload
             );
         }
@@ -2743,6 +2840,10 @@ void run_index_format_tests() {
             PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
                 inconsistent_stream,
                 inconsistent_tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                inconsistent_stream,
+                inconsistent_tier.non_terminal_ip_context_registry
             ));
             PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
                 inconsistent_stream,
@@ -4059,6 +4160,7 @@ void run_index_format_tests() {
     for (const auto v16_section_id : {
              detail::CaptureIndexSectionId::capture_statistics_snapshot,
              detail::CaptureIndexSectionId::protocol_path_registry_early,
+             detail::CaptureIndexSectionId::non_terminal_ip_context_registry,
              detail::CaptureIndexSectionId::protocol_path_terminal_aggregates,
              detail::CaptureIndexSectionId::ipv4_flow_metadata,
              detail::CaptureIndexSectionId::ipv6_flow_metadata,

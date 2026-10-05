@@ -2004,7 +2004,7 @@ void expect_capture_packet_size_statistics_survives_index_roundtrip() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_capture_packet_size_roundtrip.idx";
     std::filesystem::remove(index_path);
     PFL_REQUIRE(session.save_index(index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 19U);
+    PFL_EXPECT(kCaptureIndexVersion == 20U);
 
     CaptureSession loaded_session {};
     PFL_REQUIRE(loaded_session.load_index(index_path));
@@ -2449,18 +2449,24 @@ void expect_frontend_revision19_statistics_projection_helpers() {
                 .value_text = "false",
             },
             CaptureImportSettingRecord {
+                .stable_key = std::string(kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows),
+                .display_name = "Ignore non-terminal IP endpoints when grouping flows",
+                .value_text = "false",
+            },
+            CaptureImportSettingRecord {
                 .stable_key = "future_capture_mode",
                 .display_name = "Future capture mode",
                 .value_text = "aggressive",
             },
         },
     });
-    PFL_REQUIRE(import_settings.size() == 4U);
+    PFL_REQUIRE(import_settings.size() == 5U);
     PFL_EXPECT(import_settings[0].display_value == "No");
     PFL_EXPECT(import_settings[1].display_value == "Yes");
     PFL_EXPECT(import_settings[2].display_value == "No");
-    PFL_EXPECT(import_settings[3].display_name == "Future capture mode");
-    PFL_EXPECT(import_settings[3].display_value == "aggressive");
+    PFL_EXPECT(import_settings[3].display_value == "No");
+    PFL_EXPECT(import_settings[4].display_name == "Future capture mode");
+    PFL_EXPECT(import_settings[4].display_value == "aggressive");
 
     CaptureIpFragmentationStatistics fragmentation {};
     fragmentation.effective_ipv4_packet_count = 10U;
@@ -3479,6 +3485,10 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_EXPECT(contains_text(
         raw_report,
         "| Ignore GTP-U TEIDs when grouping inner flows | No |"
+    ));
+    PFL_EXPECT(contains_text(
+        raw_report,
+        "| Ignore non-terminal IP endpoints when grouping flows | No |"
     ));
 
     const auto source_capture_file_size = static_cast<std::uint64_t>(std::filesystem::file_size(capture_path));

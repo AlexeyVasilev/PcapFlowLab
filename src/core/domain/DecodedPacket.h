@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "core/domain/IngestedPacket.h"
+#include "core/domain/NonTerminalIpContext.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/domain/TerminalTransportPayloadBounds.h"
 
@@ -12,6 +13,7 @@ struct DecodedPacket {
     std::optional<IngestedPacketV4> ipv4 {};
     std::optional<IngestedPacketV6> ipv6 {};
     ProtocolPathBuilder protocol_path_builder {};
+    NonTerminalIpContextBuilder non_terminal_ip_context_builder {};
     std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
 
     [[nodiscard]] bool has_value() const noexcept {

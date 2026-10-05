@@ -134,7 +134,7 @@ registry-driven dissection path.
 
 ## Grouping Normalization Settings
 
-Protocol-path-aware grouping has two independent import-time normalization
+Protocol-path-aware grouping has three independent import-time normalization
 settings.
 
 ### Ignore VLAN And MPLS Layers When Grouping Flows
@@ -171,15 +171,33 @@ capture import:
 This is deterministic identity normalization only. It is not tunnel
 correlation, GTP-C tracking, or PFCP-aware session joining.
 
+### Ignore Non-Terminal IP Endpoints When Grouping Flows
+
+When `ignore_non_terminal_ip_endpoints_when_grouping_flows` is enabled during
+raw capture import:
+
+- non-terminal IPv4 and IPv6 endpoint pairs are omitted from flow identity;
+- terminal endpoints, terminal ports, protocol, and normalized Protocol Path
+  identity remain significant;
+- Packet Summary, Packet Details, and Packet Bytes still show actual packet
+  layers from the selected packet;
+- the mode preserves the legacy inner-centric grouping behavior for captures
+  with nested IP layers.
+
+The default is strict: non-terminal IP endpoint context is part of recognized
+flow identity.
+
 ## Index And Persistence Contract
 
-Current stable index revision is `19`.
+Current stable index revision is `20`.
 
 Current persistence facts verified from code:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 19`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 20`;
 - the stable index stores flow and connection `protocol_path_id` values;
 - the stable index stores one capture-level `ProtocolPathRegistry` table;
+- the stable index stores one capture-level non-terminal IP context registry
+  table and stores per-flow references to that registry;
 - packet records do not store full protocol paths or per-packet
   `protocol_path_id`;
 - runtime protocol-path statistics trees are not persisted as precomputed

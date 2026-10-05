@@ -234,6 +234,7 @@
       use_possible_tls_quic: false,
       ignore_vlan_and_mpls_layers_when_grouping_flows: false,
       ignore_gtpu_teids_when_grouping_inner_flows: false,
+      ignore_non_terminal_ip_endpoints_when_grouping_flows: false,
       show_wireshark_filter_for_selected_flow: true,
       validate_selected_packet_checksums: false,
     },
@@ -3347,6 +3348,7 @@
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsIgnoreVlanAndMplsLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanAndMplsLayersWhenGroupingFlows"),
     settingsIgnoreGtpuTeidsWhenGroupingInnerFlows: document.getElementById("settingsIgnoreGtpuTeidsWhenGroupingInnerFlows"),
+    settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows: document.getElementById("settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
     settingsShowFragmentedPacketCountColumn: document.getElementById("settingsShowFragmentedPacketCountColumn"),
@@ -4681,6 +4683,8 @@
       byte_backed_inspection_available: Boolean(sourceAvailability?.byte_backed_inspection_available),
       flow_grouping_ignores_vlan_and_mpls_layers: Boolean(sourceAvailability?.flow_grouping_ignores_vlan_and_mpls_layers),
       flow_grouping_ignores_gtpu_teids: Boolean(sourceAvailability?.flow_grouping_ignores_gtpu_teids),
+      flow_grouping_ignores_non_terminal_ip_endpoints:
+        Boolean(sourceAvailability?.flow_grouping_ignores_non_terminal_ip_endpoints),
       active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
       expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
     };
@@ -6961,6 +6965,11 @@
     if (elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows) {
       elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows.checked = Boolean(state.settings.ignore_gtpu_teids_when_grouping_inner_flows);
       elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows.disabled = dialogDisabled;
+    }
+    if (elements.settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows) {
+      elements.settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows.checked =
+        Boolean(state.settings.ignore_non_terminal_ip_endpoints_when_grouping_flows);
+      elements.settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows.disabled = dialogDisabled;
     }
     if (elements.settingsShowWiresharkFilterForSelectedFlow) {
       elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
@@ -11837,6 +11846,8 @@
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
         ignore_gtpu_teids_when_grouping_inner_flows: Boolean(settings?.ignore_gtpu_teids_when_grouping_inner_flows),
+        ignore_non_terminal_ip_endpoints_when_grouping_flows:
+          Boolean(settings?.ignore_non_terminal_ip_endpoints_when_grouping_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -11949,6 +11960,8 @@
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
     const ignoreVlanAndMplsLayersWhenGroupingFlows = Boolean(elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows?.checked);
     const ignoreGtpuTeidsWhenGroupingInnerFlows = Boolean(elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows?.checked);
+    const ignoreNonTerminalIpEndpointsWhenGroupingFlows =
+      Boolean(elements.settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
     const showFragmentedPacketCountColumn = Boolean(elements.settingsShowFragmentedPacketCountColumn?.checked);
@@ -11958,6 +11971,8 @@
       use_possible_tls_quic: Boolean(state.settings.use_possible_tls_quic),
       ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows),
       ignore_gtpu_teids_when_grouping_inner_flows: Boolean(state.settings.ignore_gtpu_teids_when_grouping_inner_flows),
+      ignore_non_terminal_ip_endpoints_when_grouping_flows:
+        Boolean(state.settings.ignore_non_terminal_ip_endpoints_when_grouping_flows),
     };
 
     state.settingsSaveInProgress = true;
@@ -11970,6 +11985,7 @@
         use_possible_tls_quic: usePossibleTlsQuic,
         ignore_vlan_and_mpls_layers_when_grouping_flows: ignoreVlanAndMplsLayersWhenGroupingFlows,
         ignore_gtpu_teids_when_grouping_inner_flows: ignoreGtpuTeidsWhenGroupingInnerFlows,
+        ignore_non_terminal_ip_endpoints_when_grouping_flows: ignoreNonTerminalIpEndpointsWhenGroupingFlows,
         show_wireshark_filter_for_selected_flow: showWiresharkFilterForSelectedFlow,
         validate_selected_packet_checksums: validateSelectedPacketChecksums,
       });
@@ -11979,6 +11995,8 @@
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
         ignore_gtpu_teids_when_grouping_inner_flows: Boolean(settings?.ignore_gtpu_teids_when_grouping_inner_flows),
+        ignore_non_terminal_ip_endpoints_when_grouping_flows:
+          Boolean(settings?.ignore_non_terminal_ip_endpoints_when_grouping_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -12016,7 +12034,9 @@
       const captureProcessingSettingsChanged =
         previousSettings.http_use_path_as_service_hint !== state.settings.http_use_path_as_service_hint ||
         previousSettings.ignore_vlan_and_mpls_layers_when_grouping_flows !== state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows ||
-        previousSettings.ignore_gtpu_teids_when_grouping_inner_flows !== state.settings.ignore_gtpu_teids_when_grouping_inner_flows;
+        previousSettings.ignore_gtpu_teids_when_grouping_inner_flows !== state.settings.ignore_gtpu_teids_when_grouping_inner_flows ||
+        previousSettings.ignore_non_terminal_ip_endpoints_when_grouping_flows !==
+          state.settings.ignore_non_terminal_ip_endpoints_when_grouping_flows;
       const availability = currentSourceAvailability();
       if (
         state.openState === "opened" &&
@@ -12030,6 +12050,13 @@
         state.settings.ignore_gtpu_teids_when_grouping_inner_flows !== availability.flow_grouping_ignores_gtpu_teids
       ) {
         setStatus("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting.", "success");
+      } else if (
+        state.openState === "opened" &&
+        !state.currentSessionOpenedFromIndex &&
+        state.settings.ignore_non_terminal_ip_endpoints_when_grouping_flows !==
+          availability.flow_grouping_ignores_non_terminal_ip_endpoints
+      ) {
+        setStatus("Reopen the current raw capture to apply the non-terminal IP endpoint flow-grouping setting.", "success");
       } else if (captureProcessingSettingsChanged) {
         setStatus("Settings updated. Capture-processing changes apply when a raw capture is opened.", "success");
       } else {

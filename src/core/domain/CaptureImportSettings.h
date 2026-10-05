@@ -16,6 +16,8 @@ inline constexpr std::string_view kCaptureImportSettingIgnoreVlanAndMplsLayersWh
     "ignore_vlan_and_mpls_layers_when_grouping_flows";
 inline constexpr std::string_view kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows =
     "ignore_gtpu_teids_when_grouping_inner_flows";
+inline constexpr std::string_view kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows =
+    "ignore_non_terminal_ip_endpoints_when_grouping_flows";
 
 inline constexpr std::uint32_t kCaptureImportSettingsMaxEntryCount = 64U;
 inline constexpr std::uint32_t kCaptureImportSettingsMaxStableKeyBytes = 256U;

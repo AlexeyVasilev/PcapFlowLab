@@ -104,7 +104,8 @@ std::uint64_t checked_add_or_max(const std::uint64_t left, const std::uint64_t r
 bool is_known_bool_capture_import_setting(const std::string_view stable_key) noexcept {
     return stable_key == kCaptureImportSettingHttpUsePathAsServiceHint ||
         stable_key == kCaptureImportSettingIgnoreVlanAndMplsLayersWhenGroupingFlows ||
-        stable_key == kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows;
+        stable_key == kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows ||
+        stable_key == kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows;
 }
 
 std::string display_capture_import_setting_value(const CaptureImportSettingRecord& record) {

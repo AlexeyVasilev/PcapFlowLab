@@ -9,6 +9,7 @@ Item {
     property bool usePossibleTlsQuic: false
     property bool ignoreVlanAndMplsLayersWhenGroupingFlows: false
     property bool ignoreGtpuTeidsWhenGroupingInnerFlows: false
+    property bool ignoreNonTerminalIpEndpointsWhenGroupingFlows: false
     property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
     property bool showProtocolPathColumn: true
@@ -18,6 +19,7 @@ Item {
     signal usePossibleTlsQuicChangedByUser(bool enabled)
     signal ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(bool enabled)
     signal ignoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser(bool enabled)
+    signal ignoreNonTerminalIpEndpointsWhenGroupingFlowsChangedByUser(bool enabled)
     signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
     signal showProtocolPathColumnChangedByUser(bool enabled)
@@ -334,6 +336,29 @@ Item {
 
                         Label {
                             objectName: "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText"
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 28
+                            wrapMode: Text.WordWrap
+                            color: "#64748b"
+                            font.pixelSize: 12
+                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        CheckBox {
+                            objectName: "ignoreNonTerminalIpEndpointsWhenGroupingFlowsCheckBox"
+                            Layout.fillWidth: true
+                            text: "Ignore non-terminal IP endpoints when grouping flows"
+                            checked: root.ignoreNonTerminalIpEndpointsWhenGroupingFlows
+                            onToggled: root.ignoreNonTerminalIpEndpointsWhenGroupingFlowsChangedByUser(checked)
+                        }
+
+                        Label {
+                            objectName: "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText"
                             Layout.fillWidth: true
                             Layout.leftMargin: 28
                             wrapMode: Text.WordWrap

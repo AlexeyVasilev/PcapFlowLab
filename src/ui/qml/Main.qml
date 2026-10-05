@@ -403,6 +403,7 @@ ApplicationWindow {
         property bool draftUsePossibleTlsQuic: false
         property bool draftIgnoreVlanAndMplsLayersWhenGroupingFlows: false
         property bool draftIgnoreGtpuTeidsWhenGroupingInnerFlows: false
+        property bool draftIgnoreNonTerminalIpEndpointsWhenGroupingFlows: false
         property bool draftValidateSelectedPacketChecksums: false
         property bool draftShowWiresharkFilterForSelectedFlow: true
         property bool draftShowProtocolPathColumn: true
@@ -413,6 +414,7 @@ ApplicationWindow {
             draftUsePossibleTlsQuic = mainController.usePossibleTlsQuic
             draftIgnoreVlanAndMplsLayersWhenGroupingFlows = mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
             draftIgnoreGtpuTeidsWhenGroupingInnerFlows = mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
+            draftIgnoreNonTerminalIpEndpointsWhenGroupingFlows = mainController.ignoreNonTerminalIpEndpointsWhenGroupingFlows
             draftValidateSelectedPacketChecksums = mainController.validateSelectedPacketChecksums
             draftShowWiresharkFilterForSelectedFlow = mainController.showWiresharkFilterForSelectedFlow
             draftShowProtocolPathColumn = mainController.showProtocolPathColumn
@@ -424,6 +426,7 @@ ApplicationWindow {
             mainController.usePossibleTlsQuic = draftUsePossibleTlsQuic
             mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = draftIgnoreVlanAndMplsLayersWhenGroupingFlows
             mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = draftIgnoreGtpuTeidsWhenGroupingInnerFlows
+            mainController.ignoreNonTerminalIpEndpointsWhenGroupingFlows = draftIgnoreNonTerminalIpEndpointsWhenGroupingFlows
             mainController.validateSelectedPacketChecksums = draftValidateSelectedPacketChecksums
             mainController.showWiresharkFilterForSelectedFlow = draftShowWiresharkFilterForSelectedFlow
             mainController.showProtocolPathColumn = draftShowProtocolPathColumn
@@ -445,6 +448,7 @@ ApplicationWindow {
             usePossibleTlsQuic: settingsDialog.draftUsePossibleTlsQuic
             ignoreVlanAndMplsLayersWhenGroupingFlows: settingsDialog.draftIgnoreVlanAndMplsLayersWhenGroupingFlows
             ignoreGtpuTeidsWhenGroupingInnerFlows: settingsDialog.draftIgnoreGtpuTeidsWhenGroupingInnerFlows
+            ignoreNonTerminalIpEndpointsWhenGroupingFlows: settingsDialog.draftIgnoreNonTerminalIpEndpointsWhenGroupingFlows
             validateSelectedPacketChecksums: settingsDialog.draftValidateSelectedPacketChecksums
             showWiresharkFilterForSelectedFlow: settingsDialog.draftShowWiresharkFilterForSelectedFlow
             showProtocolPathColumn: settingsDialog.draftShowProtocolPathColumn
@@ -460,6 +464,9 @@ ApplicationWindow {
             }
             onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
                 settingsDialog.draftIgnoreGtpuTeidsWhenGroupingInnerFlows = enabled
+            }
+            onIgnoreNonTerminalIpEndpointsWhenGroupingFlowsChangedByUser: function(enabled) {
+                settingsDialog.draftIgnoreNonTerminalIpEndpointsWhenGroupingFlows = enabled
             }
             onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
                 settingsDialog.draftValidateSelectedPacketChecksums = enabled

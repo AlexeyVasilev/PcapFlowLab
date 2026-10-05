@@ -13,7 +13,7 @@ struct KnownCaptureImportSettingDefinition {
     std::string_view display_name;
 };
 
-constexpr std::array<KnownCaptureImportSettingDefinition, 3> kKnownCaptureImportSettings {{
+constexpr std::array<KnownCaptureImportSettingDefinition, 4> kKnownCaptureImportSettings {{
     {
         kCaptureImportSettingHttpUsePathAsServiceHint,
         "HTTP: use request path as service hint when Host is missing",
@@ -25,6 +25,10 @@ constexpr std::array<KnownCaptureImportSettingDefinition, 3> kKnownCaptureImport
     {
         kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows,
         "Ignore GTP-U TEIDs when grouping inner flows",
+    },
+    {
+        kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows,
+        "Ignore non-terminal IP endpoints when grouping flows",
     },
 }};
 
@@ -75,6 +79,11 @@ CaptureImportSettingsSnapshot make_capture_import_settings_snapshot(const Analys
                 .stable_key = std::string(kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows),
                 .display_name = "Ignore GTP-U TEIDs when grouping inner flows",
                 .value_text = bool_text(settings.ignore_gtpu_teids_when_grouping_inner_flows),
+            },
+            CaptureImportSettingRecord {
+                .stable_key = std::string(kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows),
+                .display_name = "Ignore non-terminal IP endpoints when grouping flows",
+                .value_text = bool_text(settings.ignore_non_terminal_ip_endpoints_when_grouping_flows),
             },
         },
     };

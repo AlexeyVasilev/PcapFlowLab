@@ -20,6 +20,7 @@ struct FrontendSourceAvailabilityDto {
     bool byte_backed_inspection_available {false};
     bool flow_grouping_ignores_vlan_and_mpls_layers {false};
     bool flow_grouping_ignores_gtpu_teids {false};
+    bool flow_grouping_ignores_non_terminal_ip_endpoints {false};
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
 };
@@ -78,6 +79,7 @@ struct FrontendSettingsDto {
     bool use_possible_tls_quic {false};
     bool ignore_vlan_and_mpls_layers_when_grouping_flows {false};
     bool ignore_gtpu_teids_when_grouping_inner_flows {false};
+    bool ignore_non_terminal_ip_endpoints_when_grouping_flows {false};
     bool show_wireshark_filter_for_selected_flow {true};
     bool validate_selected_packet_checksums {false};
 };

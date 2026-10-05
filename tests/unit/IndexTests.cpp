@@ -359,7 +359,7 @@ void run_index_tests() {
         nonzero_context_connection.key.non_terminal_ip_context_id = 7U;
         std::stringstream nonzero_context_stream(std::ios::in | std::ios::out | std::ios::binary);
         PFL_EXPECT(!detail::write_connection(nonzero_context_stream, nonzero_context_connection));
-        PFL_EXPECT(kCaptureIndexVersion == 19U);
+        PFL_EXPECT(kCaptureIndexVersion == 20U);
     }
     {
         OpenContext ctx {};

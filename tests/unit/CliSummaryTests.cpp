@@ -1544,6 +1544,11 @@ void expect_statistics_report_revision19_sections_render_in_markdown_and_html() 
             .display_value = "No",
         },
         FrontendCaptureImportSettingDto {
+            .stable_key = std::string(kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows),
+            .display_name = "Ignore non-terminal IP endpoints when grouping flows",
+            .display_value = "No",
+        },
+        FrontendCaptureImportSettingDto {
             .stable_key = "future_capture_mode",
             .display_name = "Future capture mode",
             .display_value = "aggressive <fast>",
