@@ -91,6 +91,44 @@ void expect_empty_context_uses_reserved_id() {
     PFL_EXPECT(registry.find(kEmptyNonTerminalIpContextId) == nullptr);
 }
 
+void expect_default_context_view_is_safe_empty_range() {
+    const NonTerminalIpContextView view {};
+    PFL_EXPECT(view.data() == nullptr);
+    PFL_EXPECT(view.begin() == nullptr);
+    PFL_EXPECT(view.end() == nullptr);
+    PFL_EXPECT(view.begin() == view.end());
+    PFL_EXPECT(view.size() == 0U);
+    PFL_EXPECT(view.empty());
+
+    std::size_t iteration_count {0};
+    for ([[maybe_unused]] const auto& level : view) {
+        ++iteration_count;
+    }
+    PFL_EXPECT(iteration_count == 0U);
+}
+
+void expect_default_context_view_canonicalizes_to_empty_context() {
+    const NonTerminalIpContextView view {};
+
+    const auto ipv4_context = canonicalize_non_terminal_ip_context(
+        view,
+        endpoint4(ip4(10, 0, 0, 1), 1234U),
+        endpoint4(ip4(10, 0, 0, 2), 443U)
+    );
+    PFL_EXPECT(ipv4_context.empty());
+
+    const auto ipv6_context = canonicalize_non_terminal_ip_context(
+        view,
+        endpoint6(ip6(1), 1234U),
+        endpoint6(ip6(2), 443U)
+    );
+    PFL_EXPECT(ipv6_context.empty());
+
+    NonTerminalIpContextRegistry registry {};
+    PFL_EXPECT(registry.intern(view) == kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(registry.size() == 0U);
+}
+
 void expect_basic_ipv4_context_interns_once() {
     NonTerminalIpContextRegistry registry {};
     NonTerminalIpContextBuilder builder {};
@@ -329,6 +367,8 @@ void expect_hash_matches_equality_contract() {
 
 void run_non_terminal_ip_context_tests() {
     expect_empty_context_uses_reserved_id();
+    expect_default_context_view_is_safe_empty_range();
+    expect_default_context_view_canonicalizes_to_empty_context();
     expect_basic_ipv4_context_interns_once();
     expect_basic_ipv6_context_interns_once();
     expect_mixed_nested_context_retains_order_and_family();

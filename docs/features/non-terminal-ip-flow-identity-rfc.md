@@ -77,9 +77,10 @@ Current implementation facts:
   and is not UI Endpoint A/B.
 - `FlowKeyV4` / `FlowKeyV6` currently contains terminal directional source and
   destination IP, terminal source and destination port, `ProtocolId`, and
-  `ProtocolPathId`.
+  `ProtocolPathId`, and `NonTerminalIpContextId`.
 - `ConnectionKeyV4` / `ConnectionKeyV6` currently contains canonical terminal
-  endpoints plus `ProtocolId` and `ProtocolPathId`.
+  endpoints plus `ProtocolId`, `ProtocolPathId`, and
+  `NonTerminalIpContextId`.
 - Current stable index revision is `20`.
 
 Current import settings already support identity normalization:

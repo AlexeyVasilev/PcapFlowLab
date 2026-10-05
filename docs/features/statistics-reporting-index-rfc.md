@@ -395,7 +395,7 @@ Current production uses stable revision 20 with the v16 physical architecture:
   acceptable
 - stable-header inspection remains independent of full payload compatibility
 
-`kCaptureIndexStableIndexRevision` and `kCaptureIndexVersion` are now `19`.
+`kCaptureIndexStableIndexRevision` and `kCaptureIndexVersion` are now `20`.
 
 ## Frozen Stage 4 Decisions
 

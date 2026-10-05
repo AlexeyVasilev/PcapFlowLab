@@ -97,6 +97,9 @@ public:
     }
 
     [[nodiscard]] constexpr const NonTerminalIpLevel* end() const noexcept {
+        if (size_ == 0U) {
+            return levels_;
+        }
         return levels_ + size_;
     }
 

@@ -2457,7 +2457,42 @@ void run_index_format_tests() {
             decoded_tier.protocol_path_display_statistics,
             tier.protocol_path_display_statistics
         );
+        PFL_EXPECT(
+            std::get<ConnectionKeyV4>(
+                decoded_tier.capture_statistics_snapshot.top_flows[0].connection_key
+            ).non_terminal_ip_context_id == kEmptyNonTerminalIpContextId
+        );
         PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == base_bytes.size());
+    }
+
+    {
+        auto tier = make_valid_v16_fast_statistics_tier();
+        const auto context_id = tier.non_terminal_ip_context_registry.intern(NonTerminalIpContext {
+            NonTerminalIpLevel::ipv4(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20)),
+        });
+        PFL_REQUIRE(context_id == 1U);
+        std::get<ConnectionKeyV4>(
+            tier.capture_statistics_snapshot.top_flows[0].connection_key
+        ).non_terminal_ip_context_id = context_id;
+        PFL_REQUIRE(validate_capture_statistics_snapshot(tier.capture_statistics_snapshot).ok);
+
+        const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
+        std::istringstream read_stream(
+            std::string(base_bytes.begin(), base_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+        const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(
+            std::get<ConnectionKeyV4>(
+                decoded_tier.capture_statistics_snapshot.top_flows[0].connection_key
+            ).non_terminal_ip_context_id == context_id
+        );
+        expect_matching_non_terminal_ip_context_registries(
+            decoded_tier.non_terminal_ip_context_registry,
+            tier.non_terminal_ip_context_registry
+        );
     }
 
     {
@@ -2972,6 +3007,66 @@ void run_index_format_tests() {
             expect_fast_tier_status(
                 stream_bytes(inconsistent_stream),
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency
+            );
+        }
+
+        {
+            auto inconsistent_tier = tier;
+            std::get<ConnectionKeyV4>(
+                inconsistent_tier.capture_statistics_snapshot.top_flows[0].connection_key
+            ).non_terminal_ip_context_id = 99U;
+            PFL_REQUIRE(validate_capture_statistics_snapshot(
+                inconsistent_tier.capture_statistics_snapshot
+            ).ok);
+
+            std::ostringstream rejected_writer_stream(std::ios::binary | std::ios::out);
+            PFL_EXPECT(!detail::write_v16_fast_statistics_tier(
+                rejected_writer_stream,
+                make_v16_stable_header(),
+                inconsistent_tier
+            ));
+
+            std::ostringstream inconsistent_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(
+                inconsistent_stream,
+                make_v16_stable_header()
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                inconsistent_stream,
+                inconsistent_tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_import_settings_section(
+                inconsistent_stream,
+                inconsistent_tier.capture_import_settings
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                inconsistent_stream,
+                inconsistent_tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v20_non_terminal_ip_context_registry_section(
+                inconsistent_stream,
+                inconsistent_tier.non_terminal_ip_context_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                inconsistent_stream,
+                inconsistent_tier.protocol_path_display_statistics
+            ));
+
+            const auto inconsistent_bytes = stream_bytes(inconsistent_stream);
+            std::istringstream read_stream(
+                std::string(inconsistent_bytes.begin(), inconsistent_bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+            const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+            PFL_EXPECT(
+                read_result.status ==
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency
+            );
+            PFL_EXPECT(
+                read_result.error_detail.find(
+                    "references a non-terminal IP context that is unavailable in the registry"
+                ) != std::string::npos
             );
         }
     }

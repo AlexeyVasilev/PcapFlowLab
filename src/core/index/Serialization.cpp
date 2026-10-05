@@ -3413,6 +3413,23 @@ bool validate_fast_statistics_tier_cross_section_consistency(
                 " references a protocol path that is unavailable in the early registry";
             return false;
         }
+
+        const auto context_reference_is_valid =
+            std::holds_alternative<ConnectionKeyV4>(row.connection_key)
+                ? validate_v20_connection_key_context_reference(
+                      std::get<ConnectionKeyV4>(row.connection_key),
+                      tier.non_terminal_ip_context_registry
+                  )
+                : validate_v20_connection_key_context_reference(
+                      std::get<ConnectionKeyV6>(row.connection_key),
+                      tier.non_terminal_ip_context_registry
+                  );
+        if (!context_reference_is_valid) {
+            error_detail =
+                "top flow row " + std::to_string(index) +
+                " references a non-terminal IP context that is unavailable in the registry";
+            return false;
+        }
     }
 
     return true;
