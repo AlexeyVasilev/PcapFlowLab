@@ -7,6 +7,7 @@
 #include "../../core/open_context.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/Serialization.h"
@@ -66,6 +67,28 @@ void expect_matching_stream_rows(const std::vector<StreamItemRow>& left, const s
         PFL_EXPECT(left[index].packet_count == right[index].packet_count);
         PFL_EXPECT(left[index].packet_indices == right[index].packet_indices);
     }
+}
+
+void expect_matching_non_terminal_ip_context_registries(
+    const NonTerminalIpContextRegistry& left,
+    const NonTerminalIpContextRegistry& right
+) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0U; index < left.size(); ++index) {
+        const auto id = static_cast<NonTerminalIpContextId>(index + 1U);
+        const auto* left_context = left.find(id);
+        const auto* right_context = right.find(id);
+        PFL_REQUIRE(left_context != nullptr);
+        PFL_REQUIRE(right_context != nullptr);
+        PFL_EXPECT(*left_context == *right_context);
+    }
+}
+
+NonTerminalIpContextId flow_row_non_terminal_ip_context_id(const FlowRow& row) {
+    if (const auto* key = std::get_if<ConnectionKeyV4>(&row.key)) {
+        return key->non_terminal_ip_context_id;
+    }
+    return std::get<ConnectionKeyV6>(row.key).non_terminal_ip_context_id;
 }
 
 void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
@@ -128,6 +151,73 @@ void expect_index_roundtrip_preserves_protocol_path_identity(
         const auto loaded_packets = loaded_session.flow_packets(flow_index);
         PFL_REQUIRE(loaded_packets.has_value());
         expect_matching_packets(*loaded_packets, original_packets_by_flow[flow_index]);
+    }
+}
+
+void expect_index_roundtrip_preserves_non_terminal_ip_context_identity() {
+    const auto relative_fixture_path =
+        std::filesystem::path("parsing/vxlan/22_vxlan_identity_outer_carrier_variation_same_flow.pcap");
+    const auto index_path =
+        std::filesystem::temp_directory_path() / "pfl_non_terminal_ip_context_roundtrip_vxlan22.idx";
+    std::filesystem::remove(index_path);
+
+    CaptureSession original_session {};
+    PFL_REQUIRE(original_session.open_capture(fixture_path(relative_fixture_path)));
+    PFL_EXPECT(!original_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+    const auto original_rows = original_session.list_flows();
+    PFL_REQUIRE(original_rows.size() == 2U);
+    PFL_EXPECT(original_session.state().protocol_path_registry.size() == 1U);
+    PFL_EXPECT(original_session.state().non_terminal_ip_context_registry.size() == 2U);
+    PFL_EXPECT(original_rows[0].protocol_path_id == original_rows[1].protocol_path_id);
+
+    const auto first_context_id = flow_row_non_terminal_ip_context_id(original_rows[0]);
+    const auto second_context_id = flow_row_non_terminal_ip_context_id(original_rows[1]);
+    PFL_EXPECT(first_context_id != kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(second_context_id != kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(first_context_id != second_context_id);
+    PFL_EXPECT(original_session.state().non_terminal_ip_context_registry.find(first_context_id) != nullptr);
+    PFL_EXPECT(original_session.state().non_terminal_ip_context_registry.find(second_context_id) != nullptr);
+
+    for (const auto& row : original_rows) {
+        PFL_EXPECT(row.packet_count == 2U);
+        PFL_EXPECT(row.address_a == "10.70.0.10");
+        PFL_EXPECT(row.port_a == 56000U);
+        PFL_EXPECT(row.address_b == "10.70.0.20");
+        PFL_EXPECT(row.port_b == 443U);
+        PFL_EXPECT(row.protocol_text == "TCP");
+    }
+
+    const auto original_connections = session_detail::list_connections(original_session.state());
+    PFL_REQUIRE(original_connections.size() == original_rows.size());
+    for (const auto& connection : original_connections) {
+        PFL_REQUIRE(connection.family == FlowAddressFamily::ipv4);
+        PFL_REQUIRE(connection.ipv4 != nullptr);
+        PFL_EXPECT(connection.ipv4->key.non_terminal_ip_context_id != kEmptyNonTerminalIpContextId);
+        PFL_EXPECT(
+            original_session.state().non_terminal_ip_context_registry.find(
+                connection.ipv4->key.non_terminal_ip_context_id
+            ) != nullptr
+        );
+    }
+
+    PFL_REQUIRE(original_session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    PFL_EXPECT(loaded_session.opened_from_index());
+    PFL_EXPECT(!loaded_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+    expect_matching_non_terminal_ip_context_registries(
+        loaded_session.state().non_terminal_ip_context_registry,
+        original_session.state().non_terminal_ip_context_registry
+    );
+
+    const auto loaded_rows = loaded_session.list_flows();
+    PFL_EXPECT(loaded_rows.size() == original_rows.size());
+    expect_matching_rows(loaded_rows, original_rows);
+    for (const auto& row : loaded_rows) {
+        const auto context_id = flow_row_non_terminal_ip_context_id(row);
+        PFL_EXPECT(context_id != kEmptyNonTerminalIpContextId);
+        PFL_EXPECT(loaded_session.state().non_terminal_ip_context_registry.find(context_id) != nullptr);
     }
 }
 }  // namespace
@@ -600,6 +690,7 @@ void run_index_tests() {
         std::filesystem::path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
         2U
     );
+    expect_index_roundtrip_preserves_non_terminal_ip_context_identity();
 
     {
         auto truncated_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});

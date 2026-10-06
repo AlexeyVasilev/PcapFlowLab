@@ -199,6 +199,18 @@ private:
     const EndpointKeyV6& terminal_source,
     const EndpointKeyV6& terminal_destination
 );
+[[nodiscard]] NonTerminalIpContextId intern_canonical_non_terminal_ip_context(
+    NonTerminalIpContextRegistry& registry,
+    NonTerminalIpContextView observed,
+    const EndpointKeyV4& terminal_source,
+    const EndpointKeyV4& terminal_destination
+);
+[[nodiscard]] NonTerminalIpContextId intern_canonical_non_terminal_ip_context(
+    NonTerminalIpContextRegistry& registry,
+    NonTerminalIpContextView observed,
+    const EndpointKeyV6& terminal_source,
+    const EndpointKeyV6& terminal_destination
+);
 
 constexpr NonTerminalIpAddress NonTerminalIpAddress::ipv4(const std::uint32_t address) noexcept {
     return NonTerminalIpAddress {

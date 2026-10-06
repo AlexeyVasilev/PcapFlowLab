@@ -300,6 +300,89 @@ void expect_mixed_ipv4_ipv6_canonicalization_matches_reverse() {
     PFL_EXPECT(registry.intern(forward_context) == registry.intern(reverse_context));
 }
 
+void expect_canonical_view_interning_matches_owning_canonicalization() {
+    NonTerminalIpContextBuilder forward {};
+    PFL_REQUIRE(forward.push_ipv4(ip4(203, 0, 113, 1), ip4(203, 0, 113, 2)));
+    PFL_REQUIRE(forward.push_ipv6(ip6(30), ip6(40)));
+
+    NonTerminalIpContextBuilder reverse {};
+    PFL_REQUIRE(reverse.push_ipv4(ip4(203, 0, 113, 2), ip4(203, 0, 113, 1)));
+    PFL_REQUIRE(reverse.push_ipv6(ip6(40), ip6(30)));
+
+    NonTerminalIpContextRegistry registry {};
+    const auto forward_id = intern_canonical_non_terminal_ip_context(
+        registry,
+        forward.view(),
+        endpoint4(ip4(10, 0, 0, 1), 1111U),
+        endpoint4(ip4(10, 0, 0, 2), 2222U)
+    );
+    PFL_REQUIRE(forward_id != kEmptyNonTerminalIpContextId);
+    const auto* forward_context = registry.find(forward_id);
+    PFL_REQUIRE(forward_context != nullptr);
+    PFL_EXPECT(*forward_context == canonicalize_ipv4(
+        forward,
+        ip4(10, 0, 0, 1),
+        1111U,
+        ip4(10, 0, 0, 2),
+        2222U
+    ));
+    PFL_REQUIRE(forward_context->size() == 2U);
+    PFL_EXPECT((*forward_context)[0].family == NonTerminalIpAddressFamily::ipv4);
+    PFL_EXPECT((*forward_context)[1].family == NonTerminalIpAddressFamily::ipv6);
+
+    PFL_EXPECT(intern_canonical_non_terminal_ip_context(
+        registry,
+        forward.view(),
+        endpoint4(ip4(10, 0, 0, 1), 1111U),
+        endpoint4(ip4(10, 0, 0, 2), 2222U)
+    ) == forward_id);
+    PFL_EXPECT(intern_canonical_non_terminal_ip_context(
+        registry,
+        reverse.view(),
+        endpoint4(ip4(10, 0, 0, 2), 2222U),
+        endpoint4(ip4(10, 0, 0, 1), 1111U)
+    ) == forward_id);
+
+    NonTerminalIpContextBuilder equal_terminal_observed {};
+    PFL_REQUIRE(equal_terminal_observed.push_ipv4(ip4(203, 0, 113, 100), ip4(203, 0, 113, 10)));
+    PFL_REQUIRE(equal_terminal_observed.push_ipv4(ip4(198, 51, 100, 200), ip4(198, 51, 100, 20)));
+
+    NonTerminalIpContextBuilder equal_terminal_swapped {};
+    PFL_REQUIRE(equal_terminal_swapped.push_ipv4(ip4(203, 0, 113, 10), ip4(203, 0, 113, 100)));
+    PFL_REQUIRE(equal_terminal_swapped.push_ipv4(ip4(198, 51, 100, 20), ip4(198, 51, 100, 200)));
+
+    const auto endpoint = endpoint4(ip4(10, 0, 0, 1), 443U);
+    const auto tie_id = intern_canonical_non_terminal_ip_context(
+        registry,
+        equal_terminal_observed.view(),
+        endpoint,
+        endpoint
+    );
+    PFL_REQUIRE(tie_id != kEmptyNonTerminalIpContextId);
+    const auto* tie_context = registry.find(tie_id);
+    PFL_REQUIRE(tie_context != nullptr);
+    PFL_EXPECT(*tie_context == canonicalize_ipv4(
+        equal_terminal_observed,
+        ip4(10, 0, 0, 1),
+        443U,
+        ip4(10, 0, 0, 1),
+        443U
+    ));
+    PFL_EXPECT(intern_canonical_non_terminal_ip_context(
+        registry,
+        equal_terminal_swapped.view(),
+        endpoint,
+        endpoint
+    ) == tie_id);
+
+    NonTerminalIpContextBuilder distinct {};
+    PFL_REQUIRE(distinct.push_ipv4(ip4(203, 0, 113, 11), ip4(203, 0, 113, 100)));
+    PFL_REQUIRE(distinct.push_ipv4(ip4(198, 51, 100, 20), ip4(198, 51, 100, 200)));
+    const auto distinct_id = intern_canonical_non_terminal_ip_context(registry, distinct.view(), endpoint, endpoint);
+    PFL_EXPECT(distinct_id != kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(distinct_id != tie_id);
+}
+
 void expect_builder_overflow_is_reported_and_not_empty() {
     NonTerminalIpContextBuilder builder {};
     for (std::size_t index = 0; index < kMaxNonTerminalIpContextLevels; ++index) {
@@ -378,6 +461,7 @@ void run_non_terminal_ip_context_tests() {
     expect_equal_terminal_endpoint_tie_case_is_whole_context_canonical();
     expect_ipv6_canonicalization_matches_reverse();
     expect_mixed_ipv4_ipv6_canonicalization_matches_reverse();
+    expect_canonical_view_interning_matches_owning_canonicalization();
     expect_builder_overflow_is_reported_and_not_empty();
     expect_registry_retrieval_returns_canonical_context();
     expect_hash_matches_equality_contract();

@@ -69,19 +69,53 @@ namespace {
 }
 
 template <typename Endpoint>
-[[nodiscard]] NonTerminalIpContext canonicalize_by_terminal_endpoints(
+[[nodiscard]] bool canonical_context_should_swap(
     const NonTerminalIpContextView observed,
     const Endpoint& terminal_source,
     const Endpoint& terminal_destination
 ) {
     if (terminal_source < terminal_destination) {
-        return make_context_from_view(observed, false);
+        return false;
     }
     if (terminal_destination < terminal_source) {
-        return make_context_from_view(observed, true);
+        return true;
     }
 
-    return make_context_from_view(observed, swapped_context_is_less(observed));
+    return swapped_context_is_less(observed);
+}
+
+template <typename Endpoint>
+[[nodiscard]] NonTerminalIpContext canonicalize_by_terminal_endpoints(
+    const NonTerminalIpContextView observed,
+    const Endpoint& terminal_source,
+    const Endpoint& terminal_destination
+) {
+    return make_context_from_view(
+        observed,
+        canonical_context_should_swap(observed, terminal_source, terminal_destination)
+    );
+}
+
+template <typename Endpoint>
+[[nodiscard]] NonTerminalIpContextId intern_canonical_by_terminal_endpoints(
+    NonTerminalIpContextRegistry& registry,
+    const NonTerminalIpContextView observed,
+    const Endpoint& terminal_source,
+    const Endpoint& terminal_destination
+) {
+    if (observed.empty()) {
+        return kEmptyNonTerminalIpContextId;
+    }
+
+    if (!canonical_context_should_swap(observed, terminal_source, terminal_destination)) {
+        return registry.intern(observed);
+    }
+
+    std::array<NonTerminalIpLevel, kMaxNonTerminalIpContextLevels> swapped_levels {};
+    for (std::size_t index = 0U; index < observed.size(); ++index) {
+        swapped_levels[index] = swap_non_terminal_ip_level_direction(observed[index]);
+    }
+    return registry.intern(NonTerminalIpContextView {swapped_levels.data(), observed.size()});
 }
 
 }  // namespace
@@ -280,6 +314,24 @@ NonTerminalIpContext canonicalize_non_terminal_ip_context(
     const EndpointKeyV6& terminal_destination
 ) {
     return canonicalize_by_terminal_endpoints(observed, terminal_source, terminal_destination);
+}
+
+NonTerminalIpContextId intern_canonical_non_terminal_ip_context(
+    NonTerminalIpContextRegistry& registry,
+    const NonTerminalIpContextView observed,
+    const EndpointKeyV4& terminal_source,
+    const EndpointKeyV4& terminal_destination
+) {
+    return intern_canonical_by_terminal_endpoints(registry, observed, terminal_source, terminal_destination);
+}
+
+NonTerminalIpContextId intern_canonical_non_terminal_ip_context(
+    NonTerminalIpContextRegistry& registry,
+    const NonTerminalIpContextView observed,
+    const EndpointKeyV6& terminal_source,
+    const EndpointKeyV6& terminal_destination
+) {
+    return intern_canonical_by_terminal_endpoints(registry, observed, terminal_source, terminal_destination);
 }
 
 }  // namespace pfl

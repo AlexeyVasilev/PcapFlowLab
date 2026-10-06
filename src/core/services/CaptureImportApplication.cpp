@@ -91,12 +91,12 @@ namespace {
         return std::nullopt;
     }
 
-    auto context = canonicalize_non_terminal_ip_context(
+    return intern_canonical_non_terminal_ip_context(
+        state.non_terminal_ip_context_registry,
         builder.view(),
         EndpointKeyV4 {.addr = flow_key.src_addr, .port = flow_key.src_port},
         EndpointKeyV4 {.addr = flow_key.dst_addr, .port = flow_key.dst_port}
     );
-    return state.non_terminal_ip_context_registry.intern(std::move(context));
 }
 
 [[nodiscard]] std::optional<NonTerminalIpContextId> resolve_non_terminal_ip_context_id_for_flow_identity(
@@ -112,12 +112,12 @@ namespace {
         return std::nullopt;
     }
 
-    auto context = canonicalize_non_terminal_ip_context(
+    return intern_canonical_non_terminal_ip_context(
+        state.non_terminal_ip_context_registry,
         builder.view(),
         EndpointKeyV6 {.addr = flow_key.src_addr, .port = flow_key.src_port},
         EndpointKeyV6 {.addr = flow_key.dst_addr, .port = flow_key.dst_port}
     );
-    return state.non_terminal_ip_context_registry.intern(std::move(context));
 }
 
 void apply_unrecognized_packet_import_with_reason(
