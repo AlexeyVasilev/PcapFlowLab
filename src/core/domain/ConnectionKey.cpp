@@ -40,6 +40,7 @@ ConnectionKeyV4 make_connection_key(const FlowKeyV4& key) noexcept {
             .second = destination,
             .protocol = key.protocol,
             .protocol_path_id = key.protocol_path_id,
+            .non_terminal_ip_context_id = key.non_terminal_ip_context_id,
         };
     }
 
@@ -48,6 +49,7 @@ ConnectionKeyV4 make_connection_key(const FlowKeyV4& key) noexcept {
         .second = source,
         .protocol = key.protocol,
         .protocol_path_id = key.protocol_path_id,
+        .non_terminal_ip_context_id = key.non_terminal_ip_context_id,
     };
 }
 
@@ -61,6 +63,7 @@ ConnectionKeyV6 make_connection_key(const FlowKeyV6& key) noexcept {
             .second = destination,
             .protocol = key.protocol,
             .protocol_path_id = key.protocol_path_id,
+            .non_terminal_ip_context_id = key.non_terminal_ip_context_id,
         };
     }
 
@@ -69,6 +72,7 @@ ConnectionKeyV6 make_connection_key(const FlowKeyV6& key) noexcept {
         .second = source,
         .protocol = key.protocol,
         .protocol_path_id = key.protocol_path_id,
+        .non_terminal_ip_context_id = key.non_terminal_ip_context_id,
     };
 }
 
@@ -99,6 +103,7 @@ std::size_t ConnectionKeyV4Hash::operator()(const ConnectionKeyV4& key) const no
     seed = detail::hash_combine(seed, hash_endpoint(key.second));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
     seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
+    seed = detail::hash_combine(seed, std::hash<NonTerminalIpContextId> {}(key.non_terminal_ip_context_id));
     return seed;
 }
 
@@ -107,6 +112,7 @@ std::size_t ConnectionKeyV6Hash::operator()(const ConnectionKeyV6& key) const no
     seed = detail::hash_combine(seed, hash_endpoint(key.second));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
     seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
+    seed = detail::hash_combine(seed, std::hash<NonTerminalIpContextId> {}(key.non_terminal_ip_context_id));
     return seed;
 }
 

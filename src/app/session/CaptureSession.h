@@ -230,6 +230,7 @@ public:
     [[nodiscard]] const CaptureSourceInfo& source_info() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_vlan_and_mpls_layers() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_gtpu_teids() const noexcept;
+    [[nodiscard]] bool flow_grouping_ignores_non_terminal_ip_endpoints() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] const CapturePacketStatistics& packet_statistics() const noexcept;
     [[nodiscard]] CapturePacketSizeStatistics packet_size_statistics() const noexcept;
@@ -676,6 +677,7 @@ private:
     bool opened_from_index_ {false};
     bool flow_grouping_ignores_vlan_and_mpls_layers_ {false};
     bool flow_grouping_ignores_gtpu_teids_ {false};
+    bool flow_grouping_ignores_non_terminal_ip_endpoints_ {false};
     bool has_loaded_state_ {false};
     bool partial_open_ {false};
     OpenFailureInfo partial_open_failure_ {};

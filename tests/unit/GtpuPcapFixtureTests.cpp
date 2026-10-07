@@ -15,6 +15,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
 
@@ -22,6 +23,14 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+CaptureImportOptions non_terminal_ip_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_non_terminal_ip_endpoints_when_grouping_flows = true,
+        },
+    };
 }
 
 const ProtocolPath* require_protocol_path(const CaptureSession& session, const ProtocolPathId protocol_path_id) {
@@ -614,16 +623,25 @@ void run_gtpu_supported_inner_flow_tests() {
         1U
     );
 
-    expect_inner_flow_present(
-        "parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap",
-        FlowAddressFamily::ipv4,
-        "TCP",
-        "10.60.0.10",
-        49660U,
-        "10.60.0.20",
-        443U,
-        2U
-    );
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
+            return row.packet_count == 1U &&
+                require_flow_protocol_path_text(session, row) ==
+                    "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP";
+        }));
+
+        CaptureSession agnostic_session {};
+        PFL_REQUIRE(agnostic_session.open_capture(
+            fixture_path("parsing/gtpu/11_gtpu_inner_ipv4_tcp_bidirectional.pcap"),
+            non_terminal_ip_agnostic_import_options()));
+        const auto agnostic_rows = agnostic_session.list_flows();
+        PFL_REQUIRE(agnostic_rows.size() == 1U);
+        PFL_EXPECT(agnostic_rows.front().packet_count == 2U);
+    }
 
     expect_inner_flow_present(
         "parsing/gtpu/13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap",

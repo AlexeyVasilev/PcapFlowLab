@@ -333,6 +333,7 @@ Examples of next-open capture-processing settings:
 - `HTTP: use request path as service hint when Host is missing`
 - `Ignore VLAN and MPLS layers when grouping flows`
 - `Ignore GTP-U TEIDs when grouping inner flows`
+- `Ignore non-terminal IP endpoints when grouping flows`
 
 Important distinction:
 

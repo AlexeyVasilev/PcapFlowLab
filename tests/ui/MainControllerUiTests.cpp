@@ -3510,15 +3510,19 @@ int main(int argc, char* argv[]) {
         auto* http_help_text = named_object(settings_pane.object.get(), "httpUsePathAsServiceHintHelpText");
         auto* vlan_help_text = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText");
         auto* gtpu_help_text = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText");
+        auto* non_terminal_ip_help_text =
+            named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText");
         UI_REQUIRE(settings_tabs != nullptr);
         UI_REQUIRE(http_help_text != nullptr);
         UI_REQUIRE(vlan_help_text != nullptr);
         UI_REQUIRE(gtpu_help_text != nullptr);
+        UI_REQUIRE(non_terminal_ip_help_text != nullptr);
         settings_tabs->setProperty("currentIndex", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(http_help_text->property("text").toString() == QStringLiteral("Applied when the next raw capture is opened."));
         UI_EXPECT(vlan_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
         UI_EXPECT(gtpu_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(non_terminal_ip_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
     });
 
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
@@ -3559,6 +3563,30 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(gtpu_grouping_checkbox->property("checked").toBool());
         UI_EXPECT(vlan_grouping_checkbox->property("checked").toBool());
+    });
+
+    run_ui_section("settings_pane_ignore_non_terminal_ip_grouping_checkbox", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
+        auto* non_terminal_ip_grouping_checkbox =
+            named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsCheckBox");
+        auto* gtpu_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsCheckBox");
+        UI_EXPECT(settings_tabs != nullptr);
+        UI_EXPECT(non_terminal_ip_grouping_checkbox != nullptr);
+        UI_EXPECT(gtpu_grouping_checkbox != nullptr);
+        settings_tabs->setProperty("currentIndex", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(non_terminal_ip_grouping_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("ignoreNonTerminalIpEndpointsWhenGroupingFlows", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!non_terminal_ip_grouping_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("ignoreGtpuTeidsWhenGroupingInnerFlows", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!non_terminal_ip_grouping_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("ignoreNonTerminalIpEndpointsWhenGroupingFlows", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(non_terminal_ip_grouping_checkbox->property("checked").toBool());
+        UI_EXPECT(gtpu_grouping_checkbox->property("checked").toBool());
     });
 
     run_ui_section("flow_grouping_warning_text", [&]() {

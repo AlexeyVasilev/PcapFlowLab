@@ -1512,7 +1512,7 @@ void expect_gre_ambiguity_no_flow_cases_do_not_claim_eoip() {
     }
 }
 
-void expect_outer_address_change_does_not_split_eoip_identity() {
+void expect_outer_address_change_splits_eoip_identity_by_default() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap")));
 
@@ -1521,6 +1521,34 @@ void expect_outer_address_change_does_not_split_eoip_identity() {
     PFL_EXPECT(storage.recognized_packets == 2U);
     PFL_EXPECT(storage.unrecognized_packets == 0U);
     PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 2U);
+    for (const auto& row : rows) {
+        PFL_EXPECT(row.family == FlowAddressFamily::ipv4);
+        PFL_EXPECT(row.protocol_text == "UDP");
+        PFL_EXPECT(row.packet_count == 1U);
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, row) ==
+            "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+        );
+
+        const auto packet_rows = effective_flow_packet_rows(session, row.index);
+        PFL_REQUIRE(packet_rows.size() == 1U);
+        PFL_EXPECT(packet_rows[0].payload_length == 4U);
+    }
+}
+
+void expect_outer_address_change_can_use_legacy_inner_eoip_identity() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(
+        fixture_path("26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap"),
+        CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_non_terminal_ip_endpoints_when_grouping_flows = true},
+        }
+    ));
+
+    PFL_EXPECT(session.flow_grouping_ignores_non_terminal_ip_endpoints());
 
     const auto rows = session.list_flows();
     PFL_REQUIRE(rows.size() == 1U);
@@ -1532,11 +1560,6 @@ void expect_outer_address_change_does_not_split_eoip_identity() {
         require_flow_protocol_path_text(session, row) ==
         "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
     );
-
-    const auto packet_rows = effective_flow_packet_rows(session, row.index);
-    PFL_REQUIRE(packet_rows.size() == 2U);
-    PFL_EXPECT(packet_rows[0].payload_length == 4U);
-    PFL_EXPECT(packet_rows[1].payload_length == 4U);
 }
 
 void expect_outer_vlan_metadata_stays_in_physical_identity() {
@@ -2129,7 +2152,8 @@ void run_eoip_pcap_fixture_tests() {
     expect_missing_key_and_unsupported_v1_do_not_claim_eoip();
     expect_gre_ambiguity_recognized_flows_do_not_claim_eoip();
     expect_gre_ambiguity_no_flow_cases_do_not_claim_eoip();
-    expect_outer_address_change_does_not_split_eoip_identity();
+    expect_outer_address_change_splits_eoip_identity_by_default();
+    expect_outer_address_change_can_use_legacy_inner_eoip_identity();
     expect_outer_vlan_metadata_stays_in_physical_identity();
     expect_outer_ipv4_fragmented_eoip_packets_do_not_continue();
     expect_unsupported_inner_ethernet_continuations_remain_no_flow();

@@ -37,6 +37,7 @@ enum class CaptureIndexSectionId : std::uint32_t {
     unrecognized_reason_blobs = 17,
     packet_locator_v16 = 18,
     capture_import_settings = 19,
+    non_terminal_ip_context_registry = 20,
 };
 
 inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
@@ -58,6 +59,7 @@ inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedDirectorySectionSc
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorV16SectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableCaptureImportSettingsSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableNonTerminalIpContextRegistrySectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -67,7 +69,7 @@ inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U
 [[nodiscard]] constexpr std::uint64_t max_capture_statistics_snapshot_payload_size_bytes() noexcept {
     constexpr std::uint64_t kWorstCaseEndpointIdentityBytes = 1U + 18U;
     constexpr std::uint64_t kWorstCaseEndpointIdentityForFamilyBytes = 18U;
-    constexpr std::uint64_t kWorstCaseConnectionKeyBytes = 41U;
+    constexpr std::uint64_t kWorstCaseConnectionKeyBytes = 45U;
     constexpr std::uint64_t kProtocolCountersRowBytes = 1U + (4U * 8U);
     constexpr std::uint64_t kPacketSizeDistributionBytes =
         8U + 4U + (static_cast<std::uint64_t>(kCapturePacketSizeStatisticsBucketCount) * 8U);
@@ -227,6 +229,27 @@ struct ProtocolPathRegistrySectionReadResult {
     }
 };
 
+enum class NonTerminalIpContextRegistrySectionReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_section_header,
+    wrong_section_id,
+    invalid_section_framing,
+    unsupported_schema_version,
+    truncated_payload,
+    malformed_non_terminal_ip_context_registry_payload,
+};
+
+struct NonTerminalIpContextRegistrySectionReadResult {
+    NonTerminalIpContextRegistrySectionReadStatus status {
+        NonTerminalIpContextRegistrySectionReadStatus::ok
+    };
+    CaptureIndexStableSectionHeader section_header {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == NonTerminalIpContextRegistrySectionReadStatus::ok;
+    }
+};
+
 enum class ProtocolPathDisplayStatisticsSectionReadStatus : std::uint8_t {
     ok = 0,
     invalid_section_header,
@@ -254,6 +277,7 @@ struct CaptureIndexV16FastStatisticsTier {
     CaptureStatisticsSnapshot capture_statistics_snapshot {};
     CaptureImportSettingsSnapshot capture_import_settings {};
     ProtocolPathRegistry protocol_path_registry {};
+    NonTerminalIpContextRegistry non_terminal_ip_context_registry {};
     ProtocolPathDisplayStatistics protocol_path_display_statistics {};
 
     [[nodiscard]] friend bool operator==(
@@ -272,6 +296,8 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     duplicate_capture_import_settings_section,
     missing_protocol_path_registry_early_section,
     duplicate_protocol_path_registry_early_section,
+    missing_non_terminal_ip_context_registry_section,
+    duplicate_non_terminal_ip_context_registry_section,
     missing_protocol_path_terminal_aggregates_section,
     wrong_fast_section_order,
     invalid_fast_section_framing,
@@ -282,6 +308,7 @@ enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
     malformed_capture_import_settings_payload,
     capture_import_settings_semantic_inconsistency,
     malformed_protocol_path_registry_payload,
+    malformed_non_terminal_ip_context_registry_payload,
     malformed_protocol_path_terminal_aggregates_payload,
     protocol_path_terminal_aggregates_semantic_inconsistency,
     fast_tier_cross_section_inconsistency,
@@ -495,14 +522,53 @@ bool read_protocol_path_display_statistics(
     std::istream& stream,
     ProtocolPathDisplayStatistics& statistics
 );
+bool write_non_terminal_ip_context_registry(
+    std::ostream& stream,
+    const NonTerminalIpContextRegistry& registry
+);
+bool read_non_terminal_ip_context_registry(
+    std::istream& stream,
+    NonTerminalIpContextRegistry& registry
+);
 
 bool write_packet_ref(std::ostream& stream, const PacketRef& packet);
 bool read_packet_ref(std::istream& stream, PacketRef& packet);
 
-bool write_flow(std::ostream& stream, const FlowV4& flow);
-bool write_flow(std::ostream& stream, const FlowV6& flow);
-bool read_flow(std::istream& stream, FlowV4& flow);
-bool read_flow(std::istream& stream, FlowV6& flow);
+bool write_flow(std::ostream& stream, const ConnectionKeyV4& connection_key, const FlowV4& flow);
+bool write_flow(std::ostream& stream, const ConnectionKeyV6& connection_key, const FlowV6& flow);
+bool read_flow(std::istream& stream, const ConnectionKeyV4& connection_key, FlowV4& flow);
+bool read_flow(std::istream& stream, const ConnectionKeyV6& connection_key, FlowV6& flow);
+
+bool write_v20_connection_key(std::ostream& stream, const ConnectionKeyV4& key);
+bool write_v20_connection_key(std::ostream& stream, const ConnectionKeyV6& key);
+bool read_v20_connection_key(std::istream& stream, ConnectionKeyV4& key);
+bool read_v20_connection_key(std::istream& stream, ConnectionKeyV6& key);
+[[nodiscard]] bool validate_v20_connection_key_context_reference(
+    const ConnectionKeyV4& key,
+    const NonTerminalIpContextRegistry& registry
+) noexcept;
+[[nodiscard]] bool validate_v20_connection_key_context_reference(
+    const ConnectionKeyV6& key,
+    const NonTerminalIpContextRegistry& registry
+) noexcept;
+
+bool write_v20_directional_flow(std::ostream& stream, const FlowV4& flow);
+bool write_v20_directional_flow(std::ostream& stream, const FlowV6& flow);
+bool read_v20_directional_flow(std::istream& stream, FlowV4& flow);
+bool read_v20_directional_flow(std::istream& stream, FlowV6& flow);
+
+bool write_v20_connection(std::ostream& stream, const ConnectionV4& connection);
+bool write_v20_connection(std::ostream& stream, const ConnectionV6& connection);
+bool read_v20_connection(
+    std::istream& stream,
+    ConnectionV4& connection,
+    const NonTerminalIpContextRegistry& registry
+);
+bool read_v20_connection(
+    std::istream& stream,
+    ConnectionV6& connection,
+    const NonTerminalIpContextRegistry& registry
+);
 
 bool write_connection(std::ostream& stream, const ConnectionV4& connection);
 bool write_connection(std::ostream& stream, const ConnectionV6& connection);
@@ -600,6 +666,14 @@ bool write_v16_protocol_path_registry_early_section(
 ProtocolPathRegistrySectionReadResult read_v16_protocol_path_registry_early_section(
     std::istream& stream,
     ProtocolPathRegistry& registry
+);
+bool write_v20_non_terminal_ip_context_registry_section(
+    std::ostream& stream,
+    const NonTerminalIpContextRegistry& registry
+);
+NonTerminalIpContextRegistrySectionReadResult read_v20_non_terminal_ip_context_registry_section(
+    std::istream& stream,
+    NonTerminalIpContextRegistry& registry
 );
 bool write_v16_protocol_path_terminal_aggregates_section(
     std::ostream& stream,

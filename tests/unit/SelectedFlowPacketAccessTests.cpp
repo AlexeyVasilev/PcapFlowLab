@@ -216,6 +216,7 @@ detail::CaptureIndexV16FastStatisticsTier make_v16_fast_tier(const CaptureState&
             CaptureStatisticsScope::complete),
         .capture_import_settings = make_capture_import_settings_snapshot(AnalysisSettings {}),
         .protocol_path_registry = state.protocol_path_registry,
+        .non_terminal_ip_context_registry = state.non_terminal_ip_context_registry,
         .protocol_path_display_statistics =
             session_detail::build_protocol_path_display_statistics(state, connections),
     };
@@ -1253,7 +1254,7 @@ void run_selected_flow_packet_access_tests() {
 
         const auto resident_client = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_a.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_a.key),
             resident_source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {0U, 1U},
@@ -1262,7 +1263,7 @@ void run_selected_flow_packet_access_tests() {
         );
         const auto v16_client = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_a.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_a.key),
             v16_source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {0U, 1U},
@@ -1279,7 +1280,7 @@ void run_selected_flow_packet_access_tests() {
 
         const auto resident_server = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_b.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_b.key),
             resident_source,
             Direction::b_to_a,
             std::vector<std::uint64_t> {4U, 6U},
@@ -1288,7 +1289,7 @@ void run_selected_flow_packet_access_tests() {
         );
         const auto v16_server = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_b.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_b.key),
             v16_source,
             Direction::b_to_a,
             std::vector<std::uint64_t> {4U, 6U},
@@ -1595,7 +1596,7 @@ void run_selected_flow_packet_access_tests() {
         );
         const auto presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_a.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_a.key),
             source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {30U},
@@ -1625,7 +1626,7 @@ void run_selected_flow_packet_access_tests() {
         CountingSelectedFlowPacketAccessSource source(packets, {});
         const auto source_presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_a.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_a.key),
             source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {4U},
@@ -1634,7 +1635,7 @@ void run_selected_flow_packet_access_tests() {
         );
         const auto expected_presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            ipv4_connections.front()->flow_a.key,
+            make_flow_key(ipv4_connections.front()->key, ipv4_connections.front()->flow_a.key),
             std::span<const PacketRef>(packets.data() + 1U, 4U),
             std::vector<std::uint64_t> {4U},
             {},
@@ -1675,7 +1676,7 @@ void run_selected_flow_packet_access_tests() {
 
         const auto own_presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            target_connection->flow_a.key,
+            make_flow_key(target_connection->key, target_connection->flow_a.key),
             source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {target_connection->flow_a.packets.front().packet_index},
@@ -1686,7 +1687,7 @@ void run_selected_flow_packet_access_tests() {
 
         const auto foreign_presentation = session_detail::build_quic_presentation_for_selected_direction(
             session,
-            target_connection->flow_a.key,
+            make_flow_key(target_connection->key, target_connection->flow_a.key),
             source,
             Direction::a_to_b,
             std::vector<std::uint64_t> {foreign_packet_index},

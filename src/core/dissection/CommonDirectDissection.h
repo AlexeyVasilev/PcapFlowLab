@@ -6,6 +6,7 @@
 
 #include "core/dissection/DissectionEngine.h"
 #include "core/io/LinkType.h"
+#include "core/domain/NonTerminalIpContext.h"
 #include "core/domain/TerminalTransportPayloadBounds.h"
 
 namespace pfl::dissection {
@@ -35,6 +36,7 @@ struct ImportIpv6Fragmentation {
 
 struct ImportDissectionFacts {
     ProtocolPathBuilder physical_path {};
+    NonTerminalIpContextBuilder non_terminal_ip_context_builder {};
     ImportDissectionOutcome outcome {ImportDissectionOutcome::unrecognized};
     DissectionAddressFamily family {DissectionAddressFamily::unknown};
     ProtocolId terminal_protocol {ProtocolId::unknown};
@@ -84,6 +86,9 @@ public:
 
 private:
     static void consume_step(void* context, const DissectionStep& step) noexcept;
+    void promote_effective_ip_if_present() noexcept;
+    void observe_ipv4_flow_addresses(const Ipv4Facts& facts) noexcept;
+    void observe_ipv6_flow_addresses(const Ipv6Facts& facts) noexcept;
 
     struct PendingPathContribution {
         LayerKey layer {};
@@ -98,6 +103,7 @@ private:
     ImportDissectionFacts facts_ {};
     TerminalDisposition terminal_disposition_ {TerminalDisposition::none};
     std::optional<std::uint32_t> igmp_effective_destination_v4_ {};
+    bool has_pending_terminal_ip_level_ {false};
 };
 
 [[nodiscard]] constexpr ProtocolSelector make_link_type_selector(const std::uint32_t link_type) noexcept {

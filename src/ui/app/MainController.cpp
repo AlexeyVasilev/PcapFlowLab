@@ -4183,6 +4183,10 @@ bool MainController::ignoreGtpuTeidsWhenGroupingInnerFlows() const noexcept {
     return pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows;
 }
 
+bool MainController::ignoreNonTerminalIpEndpointsWhenGroupingFlows() const noexcept {
+    return pending_analysis_settings_.ignore_non_terminal_ip_endpoints_when_grouping_flows;
+}
+
 bool MainController::validateSelectedPacketChecksums() const noexcept {
     return validate_selected_packet_checksums_;
 }
@@ -6564,6 +6568,25 @@ void MainController::setIgnoreGtpuTeidsWhenGroupingInnerFlows(const bool enabled
             session_.opened_from_index()
                 ? QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened.")
                 : QStringLiteral("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting."),
+            false
+        );
+        emit stateChanged();
+    }
+}
+
+void MainController::setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(const bool enabled) {
+    if (pending_analysis_settings_.ignore_non_terminal_ip_endpoints_when_grouping_flows == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.ignore_non_terminal_ip_endpoints_when_grouping_flows = enabled;
+    session_.set_analysis_settings(pending_analysis_settings_);
+    emit ignoreNonTerminalIpEndpointsWhenGroupingFlowsChanged();
+    if (session_.has_capture()) {
+        setStatusText(
+            session_.opened_from_index()
+                ? QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened.")
+                : QStringLiteral("Reopen the current raw capture to apply the non-terminal IP endpoint flow-grouping setting."),
             false
         );
         emit stateChanged();

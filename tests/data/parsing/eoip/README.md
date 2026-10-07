@@ -86,7 +86,7 @@ Identity rules established by fixtures:
 - the stored `GRE(key=...)` value is the decoded little-endian 16-bit Tunnel ID widened into the existing 32-bit GRE-key slot, not the raw 32-bit EoIP word;
 - outer IPv4 source/destination addresses do not become final flow endpoints;
 - outer VLAN / MPLS layers do remain part of the physical path, so they can still split flows;
-- same inner tuple plus same tunnel ID aggregates even if outer IPv4 endpoints change;
+- same inner tuple plus same tunnel ID splits by default when outer IPv4 endpoints change;
 - same inner tuple plus different tunnel IDs splits;
 - same tunnel ID plus different payload lengths aggregates;
 - same tunnel ID plus the same inner frame but different accepted EoIP `frame_length` values still aggregates;
@@ -254,9 +254,9 @@ The malformed/truncated fixtures prove that production:
 - Outer IPv4 endpoints: different
 - Inner tuple: identical
 - Tunnel ID: identical
-- Outcome: 1 recognized flow
+- Outcome: 2 recognized flows by default; 1 flow when non-terminal IP endpoints are ignored for grouping
 - Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
-- Purpose: proves outer IPv4 endpoints do not participate in final EoIP flow identity.
+- Purpose: proves outer IPv4 endpoints participate in non-terminal IP flow identity.
 
 `27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap`
 - Packets: 2

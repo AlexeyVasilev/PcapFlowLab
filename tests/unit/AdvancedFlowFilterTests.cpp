@@ -129,12 +129,12 @@ ConnectionV4 make_ipv4_connection(
     connection.has_flow_a = flow_a_key.has_value();
     connection.has_flow_b = flow_b_key.has_value();
     if (flow_a_key.has_value()) {
-        connection.flow_a.key = *flow_a_key;
+        connection.flow_a.key = directional_endpoint_key(*flow_a_key);
         connection.flow_a.packet_count = flow_a_packet_count;
         connection.flow_a.total_bytes = flow_a_original_bytes;
     }
     if (flow_b_key.has_value()) {
-        connection.flow_b.key = *flow_b_key;
+        connection.flow_b.key = directional_endpoint_key(*flow_b_key);
         connection.flow_b.packet_count = flow_b_packet_count;
         connection.flow_b.total_bytes = flow_b_original_bytes;
     }
@@ -175,7 +175,7 @@ ConnectionV6 make_ipv6_connection(
     connection.key = make_connection_key(flow_a_key);
     connection.key.protocol_path_id = protocol_path_id;
     connection.has_flow_a = true;
-    connection.flow_a.key = flow_a_key;
+    connection.flow_a.key = directional_endpoint_key(flow_a_key);
     connection.flow_a.packet_count = packet_count;
     connection.flow_a.total_bytes = total_bytes;
     connection.packet_count = packet_count;
@@ -527,14 +527,16 @@ std::size_t fixture_flow_index(
         const auto& connection = connections[index];
         if (flow == FixtureFlow::ipv6_udp) {
             if (connection.family == FlowAddressFamily::ipv6 && connection.ipv6 != nullptr &&
-                connection.ipv6->has_flow_a && connection.ipv6->flow_a.key == fixture_ipv6_flow_key(flow)) {
+                connection.ipv6->has_flow_a &&
+                connection.ipv6->flow_a.key == directional_endpoint_key(fixture_ipv6_flow_key(flow))) {
                 return index;
             }
             continue;
         }
 
         if (connection.family == FlowAddressFamily::ipv4 && connection.ipv4 != nullptr &&
-            connection.ipv4->has_flow_a && connection.ipv4->flow_a.key == fixture_ipv4_flow_key(flow)) {
+            connection.ipv4->has_flow_a &&
+            connection.ipv4->flow_a.key == directional_endpoint_key(fixture_ipv4_flow_key(flow))) {
             return index;
         }
     }
@@ -1937,7 +1939,7 @@ void run_directional_traffic_tests() {
         for (std::size_t index = 0; index < distribution_connections.size(); ++index) {
             const auto& connection = distribution_connections[index];
             if (connection.family == FlowAddressFamily::ipv4 && connection.ipv4 != nullptr &&
-                connection.ipv4->has_flow_a && connection.ipv4->flow_a.key == key) {
+                connection.ipv4->has_flow_a && connection.ipv4->flow_a.key == directional_endpoint_key(key)) {
                 return index;
             }
         }

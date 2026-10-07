@@ -155,10 +155,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 }
                 facts_.terminal_protocol = ProtocolId::arp;
             } else if constexpr (std::is_same_v<Facts, Ipv4Facts>) {
-                facts_.family = DissectionAddressFamily::ipv4;
-                facts_.has_flow_addresses = true;
-                facts_.src_addr_v4 = layer_facts.src_addr_v4;
-                facts_.dst_addr_v4 = layer_facts.dst_addr_v4;
+                observe_ipv4_flow_addresses(layer_facts);
                 facts_.has_ipv4_fragmentation = true;
                 facts_.ipv4_fragmentation = ImportIpv4Fragmentation {
                     .is_fragmented = layer_facts.is_fragmented,
@@ -170,10 +167,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                     facts_.terminal_protocol = protocol_id_from_ip_protocol(layer_facts.protocol);
                 }
             } else if constexpr (std::is_same_v<Facts, Ipv6Facts>) {
-                facts_.family = DissectionAddressFamily::ipv6;
-                facts_.has_flow_addresses = true;
-                facts_.src_addr_v6 = layer_facts.src_addr_v6;
-                facts_.dst_addr_v6 = layer_facts.dst_addr_v6;
+                observe_ipv6_flow_addresses(layer_facts);
                 facts_.has_ipv6_fragmentation = true;
                 facts_.ipv6_fragmentation = ImportIpv6Fragmentation {
                     .has_fragment_header = layer_facts.has_fragment_header,
@@ -321,6 +315,47 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
     }
 
     facts_.outcome = ImportDissectionOutcome::unrecognized;
+}
+
+void ImportDissectionCollector::promote_effective_ip_if_present() noexcept {
+    if (!has_pending_terminal_ip_level_) {
+        return;
+    }
+
+    switch (facts_.family) {
+    case DissectionAddressFamily::ipv4:
+        static_cast<void>(facts_.non_terminal_ip_context_builder.push_ipv4(
+            facts_.src_addr_v4,
+            facts_.dst_addr_v4
+        ));
+        return;
+    case DissectionAddressFamily::ipv6:
+        static_cast<void>(facts_.non_terminal_ip_context_builder.push_ipv6(
+            facts_.src_addr_v6,
+            facts_.dst_addr_v6
+        ));
+        return;
+    case DissectionAddressFamily::unknown:
+        return;
+    }
+}
+
+void ImportDissectionCollector::observe_ipv4_flow_addresses(const Ipv4Facts& facts) noexcept {
+    promote_effective_ip_if_present();
+    facts_.family = DissectionAddressFamily::ipv4;
+    facts_.has_flow_addresses = true;
+    facts_.src_addr_v4 = facts.src_addr_v4;
+    facts_.dst_addr_v4 = facts.dst_addr_v4;
+    has_pending_terminal_ip_level_ = true;
+}
+
+void ImportDissectionCollector::observe_ipv6_flow_addresses(const Ipv6Facts& facts) noexcept {
+    promote_effective_ip_if_present();
+    facts_.family = DissectionAddressFamily::ipv6;
+    facts_.has_flow_addresses = true;
+    facts_.src_addr_v6 = facts.src_addr_v6;
+    facts_.dst_addr_v6 = facts.dst_addr_v6;
+    has_pending_terminal_ip_level_ = true;
 }
 
 void ImportDissectionCollector::consume_step(void* context, const DissectionStep& step) noexcept {

@@ -2000,6 +2000,7 @@ std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
             .endpoint_a = *endpoint_a,
             .endpoint_b = *endpoint_b,
             .protocol_path_id = connection.ipv4->key.protocol_path_id,
+            .non_terminal_ip_context_id = connection.ipv4->key.non_terminal_ip_context_id,
             .protocol = connection.ipv4->key.protocol,
             .protocol_hint = connection.ipv4->protocol_hint,
             .service_hint = connection.ipv4->service_hint,
@@ -2031,6 +2032,7 @@ std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
         .endpoint_a = *endpoint_a,
         .endpoint_b = *endpoint_b,
         .protocol_path_id = connection.ipv6->key.protocol_path_id,
+        .non_terminal_ip_context_id = connection.ipv6->key.non_terminal_ip_context_id,
         .protocol = connection.ipv6->key.protocol,
         .protocol_hint = connection.ipv6->protocol_hint,
         .service_hint = connection.ipv6->service_hint,
@@ -2073,6 +2075,7 @@ std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
         .endpoint_a = endpoint_a,
         .endpoint_b = endpoint_b,
         .protocol_path_id = row.key.protocol_path_id,
+        .non_terminal_ip_context_id = row.key.non_terminal_ip_context_id,
         .protocol = row.key.protocol,
         .protocol_hint = row.protocol_hint,
         .service_hint = row.service_hint,
@@ -2115,6 +2118,7 @@ std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
         .endpoint_a = endpoint_a,
         .endpoint_b = endpoint_b,
         .protocol_path_id = row.key.protocol_path_id,
+        .non_terminal_ip_context_id = row.key.non_terminal_ip_context_id,
         .protocol = row.key.protocol,
         .protocol_hint = row.protocol_hint,
         .service_hint = row.service_hint,
@@ -3483,7 +3487,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
             if (row.has_flow_a) {
                 row.flow_a = CaptureIndexV16DirectionalFlowMetadataV4 {
-                    .key = connection.ipv4->flow_a.key,
+                    .key = make_flow_key(connection.ipv4->key, connection.ipv4->flow_a.key),
                     .packet_count = connection.ipv4->flow_a.packet_count,
                     .original_byte_count = connection.ipv4->flow_a.total_bytes,
                 };
@@ -3494,7 +3498,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
             if (row.has_flow_b) {
                 row.flow_b = CaptureIndexV16DirectionalFlowMetadataV4 {
-                    .key = connection.ipv4->flow_b.key,
+                    .key = make_flow_key(connection.ipv4->key, connection.ipv4->flow_b.key),
                     .packet_count = connection.ipv4->flow_b.packet_count,
                     .original_byte_count = connection.ipv4->flow_b.total_bytes,
                 };
@@ -3529,7 +3533,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
         if (row.has_flow_a) {
             row.flow_a = CaptureIndexV16DirectionalFlowMetadataV6 {
-                .key = connection.ipv6->flow_a.key,
+                .key = make_flow_key(connection.ipv6->key, connection.ipv6->flow_a.key),
                 .packet_count = connection.ipv6->flow_a.packet_count,
                 .original_byte_count = connection.ipv6->flow_a.total_bytes,
             };
@@ -3540,7 +3544,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
         if (row.has_flow_b) {
             row.flow_b = CaptureIndexV16DirectionalFlowMetadataV6 {
-                .key = connection.ipv6->flow_b.key,
+                .key = make_flow_key(connection.ipv6->key, connection.ipv6->flow_b.key),
                 .packet_count = connection.ipv6->flow_b.packet_count,
                 .original_byte_count = connection.ipv6->flow_b.total_bytes,
             };

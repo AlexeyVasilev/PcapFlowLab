@@ -32,6 +32,7 @@ struct ConnectionKeyV4 {
     EndpointKeyV4 second {};
     ProtocolId protocol {ProtocolId::unknown};
     ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    NonTerminalIpContextId non_terminal_ip_context_id {kEmptyNonTerminalIpContextId};
 
     [[nodiscard]] friend constexpr bool operator==(const ConnectionKeyV4&, const ConnectionKeyV4&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const ConnectionKeyV4&, const ConnectionKeyV4&) = default;
@@ -42,6 +43,7 @@ struct ConnectionKeyV6 {
     EndpointKeyV6 second {};
     ProtocolId protocol {ProtocolId::unknown};
     ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    NonTerminalIpContextId non_terminal_ip_context_id {kEmptyNonTerminalIpContextId};
 
     [[nodiscard]] friend constexpr bool operator==(const ConnectionKeyV6&, const ConnectionKeyV6&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const ConnectionKeyV6&, const ConnectionKeyV6&) = default;

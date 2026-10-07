@@ -1164,6 +1164,7 @@ std::optional<FlowDirectionalKey> directional_flow_key(
             .dst_port = destination.port,
             .protocol = flow.protocol,
             .protocol_path_id = flow.protocol_path_id,
+            .non_terminal_ip_context_id = flow.non_terminal_ip_context_id,
         }};
     }
 
@@ -1181,6 +1182,7 @@ std::optional<FlowDirectionalKey> directional_flow_key(
         .dst_port = destination.port,
         .protocol = flow.protocol,
         .protocol_path_id = flow.protocol_path_id,
+        .non_terminal_ip_context_id = flow.non_terminal_ip_context_id,
     }};
 }
 
@@ -2639,6 +2641,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     opened_from_index_ = false;
     flow_grouping_ignores_vlan_and_mpls_layers_ = false;
     flow_grouping_ignores_gtpu_teids_ = false;
+    flow_grouping_ignores_non_terminal_ip_endpoints_ = false;
     has_loaded_state_ = false;
     last_open_error_text_.clear();
     selected_flow_full_packet_cache_.reset();
@@ -2685,6 +2688,7 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(opened_from_index_, other.opened_from_index_);
     swap(flow_grouping_ignores_vlan_and_mpls_layers_, other.flow_grouping_ignores_vlan_and_mpls_layers_);
     swap(flow_grouping_ignores_gtpu_teids_, other.flow_grouping_ignores_gtpu_teids_);
+    swap(flow_grouping_ignores_non_terminal_ip_endpoints_, other.flow_grouping_ignores_non_terminal_ip_endpoints_);
     swap(has_loaded_state_, other.has_loaded_state_);
     swap(partial_open_, other.partial_open_);
     swap(partial_open_failure_, other.partial_open_failure_);
@@ -2760,6 +2764,8 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     opened_from_index_ = false;
     flow_grouping_ignores_vlan_and_mpls_layers_ = options.settings.ignore_vlan_and_mpls_layers_when_grouping_flows;
     flow_grouping_ignores_gtpu_teids_ = options.settings.ignore_gtpu_teids_when_grouping_inner_flows;
+    flow_grouping_ignores_non_terminal_ip_endpoints_ =
+        options.settings.ignore_non_terminal_ip_endpoints_when_grouping_flows;
     has_loaded_state_ = true;
     partial_open_ = (import_result == CaptureImportResult::partial_success_with_warning);
     partial_open_failure_ = effective_ctx->failure;
@@ -2861,6 +2867,7 @@ bool CaptureSession::save_index(
         ),
         .capture_import_settings = state_.capture_import_settings,
         .protocol_path_registry = state_.protocol_path_registry,
+        .non_terminal_ip_context_registry = state_.non_terminal_ip_context_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
 
@@ -3019,6 +3026,7 @@ bool CaptureSession::load_v16_index_result(
     );
     state_.capture_import_settings = result.fast_statistics_tier.capture_import_settings;
     state_.protocol_path_registry = result.fast_statistics_tier.protocol_path_registry;
+    state_.non_terminal_ip_context_registry = result.fast_statistics_tier.non_terminal_ip_context_registry;
     opened_from_index_ = true;
     flow_grouping_ignores_vlan_and_mpls_layers_ =
         capture_import_settings_bool_value(
@@ -3029,6 +3037,11 @@ bool CaptureSession::load_v16_index_result(
         capture_import_settings_bool_value(
             state_.capture_import_settings,
             kCaptureImportSettingIgnoreGtpuTeidsWhenGroupingInnerFlows
+        ).value_or(false);
+    flow_grouping_ignores_non_terminal_ip_endpoints_ =
+        capture_import_settings_bool_value(
+            state_.capture_import_settings,
+            kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows
         ).value_or(false);
     has_loaded_state_ = true;
     partial_open_ = result.fast_statistics_tier.capture_statistics_snapshot.scope == CaptureStatisticsScope::partial;
@@ -3167,6 +3180,10 @@ bool CaptureSession::flow_grouping_ignores_vlan_and_mpls_layers() const noexcept
 
 bool CaptureSession::flow_grouping_ignores_gtpu_teids() const noexcept {
     return flow_grouping_ignores_gtpu_teids_;
+}
+
+bool CaptureSession::flow_grouping_ignores_non_terminal_ip_endpoints() const noexcept {
+    return flow_grouping_ignores_non_terminal_ip_endpoints_;
 }
 
 bool CaptureSession::is_partial_open() const noexcept {

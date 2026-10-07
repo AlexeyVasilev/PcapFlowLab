@@ -175,6 +175,14 @@ CaptureImportOptions gtpu_teid_agnostic_import_options() {
     };
 }
 
+CaptureImportOptions non_terminal_ip_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_non_terminal_ip_endpoints_when_grouping_flows = true,
+        },
+    };
+}
+
 ProtocolPathId flow_protocol_path_id(const FlowRow& row) {
     if (std::holds_alternative<ConnectionKeyV4>(row.key)) {
         return std::get<ConnectionKeyV4>(row.key).protocol_path_id;
@@ -2198,12 +2206,14 @@ void expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows() {
     PFL_EXPECT(require_packet_protocol_path_text(state, 1U) == "EthernetII -> MPLS(label=1200) -> IPv4 -> TCP");
 }
 
-void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
+void expect_same_path_reverse_tuple_with_asymmetric_carrier_splits_by_context() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap")));
     const auto rows = session.list_flows();
-    PFL_REQUIRE(rows.size() == 1U);
-    PFL_EXPECT(rows[0].packet_count == 2U);
+    PFL_REQUIRE(rows.size() == 2U);
+    PFL_EXPECT(rows[0].packet_count == 1U);
+    PFL_EXPECT(rows[1].packet_count == 1U);
+    PFL_EXPECT(flow_protocol_path_id(rows[0]) == flow_protocol_path_id(rows[1]));
 
     const auto& state = session.state();
     const auto* first_packet = find_packet_ref(state, 0U);
@@ -2217,6 +2227,14 @@ void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
     PFL_EXPECT(
         require_packet_protocol_path_text(state, 1U) ==
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+
+    CaptureSession agnostic_session {};
+    PFL_REQUIRE(agnostic_session.open_capture(
+        fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap"),
+        non_terminal_ip_agnostic_import_options()));
+    const auto agnostic_rows = agnostic_session.list_flows();
+    PFL_REQUIRE(agnostic_rows.size() == 1U);
+    PFL_EXPECT(agnostic_rows[0].packet_count == 2U);
 }
 
 void expect_vlan_and_mpls_flow_identity_normalization_helper_behaviors() {
@@ -2832,7 +2850,7 @@ void expect_gtpu_teid_agnostic_index_roundtrip_keeps_stored_grouping_without_rea
         .ignore_gtpu_teids_when_grouping_inner_flows = false,
     });
     PFL_REQUIRE(loaded_gtpu_teid_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 19U);
+    PFL_EXPECT(kCaptureIndexVersion == 20U);
     PFL_EXPECT(loaded_gtpu_teid_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(loaded_gtpu_teid_agnostic.flow_grouping_ignores_gtpu_teids());
     PFL_EXPECT(protocol_path_text_or_invalid(
@@ -3116,7 +3134,7 @@ void expect_vlan_and_mpls_agnostic_index_roundtrip_keeps_stored_grouping_without
 
     CaptureSession loaded_vlan_and_mpls_agnostic {};
     PFL_REQUIRE(loaded_vlan_and_mpls_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 19U);
+    PFL_EXPECT(kCaptureIndexVersion == 20U);
     PFL_EXPECT(loaded_vlan_and_mpls_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(loaded_vlan_and_mpls_agnostic.flow_grouping_ignores_vlan_and_mpls_layers());
     PFL_EXPECT(protocol_path_text_or_invalid(
@@ -3284,7 +3302,7 @@ void run_protocol_path_tests() {
     expect_frontend_protocol_path_statistics_are_loaded_by_mode();
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
-    expect_same_exact_path_reverse_tuple_stays_bidirectional();
+    expect_same_path_reverse_tuple_with_asymmetric_carrier_splits_by_context();
     expect_vlan_and_mpls_flow_identity_normalization_helper_behaviors();
     expect_gtpu_teid_flow_identity_normalization_helper_behaviors();
     expect_ignore_vlan_and_mpls_layers_merges_bidirectional_vlan_asymmetry();

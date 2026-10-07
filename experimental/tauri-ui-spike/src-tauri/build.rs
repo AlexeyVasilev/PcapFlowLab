@@ -130,6 +130,7 @@ fn main() {
     let sources = [
         "src/core/domain/FlowKey.cpp",
         "src/core/domain/ProtocolPath.cpp",
+        "src/core/domain/NonTerminalIpContext.cpp",
         "src/core/domain/ConnectionKey.cpp",
         "src/core/domain/Flow.cpp",
         "src/core/domain/Connection.cpp",

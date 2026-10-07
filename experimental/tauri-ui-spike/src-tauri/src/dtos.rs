@@ -9,6 +9,7 @@ pub struct SourceAvailabilityDto {
     pub byte_backed_inspection_available: bool,
     pub flow_grouping_ignores_vlan_and_mpls_layers: bool,
     pub flow_grouping_ignores_gtpu_teids: bool,
+    pub flow_grouping_ignores_non_terminal_ip_endpoints: bool,
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
 }
@@ -79,6 +80,7 @@ pub struct SettingsDto {
     pub use_possible_tls_quic: bool,
     pub ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
     pub ignore_gtpu_teids_when_grouping_inner_flows: bool,
+    pub ignore_non_terminal_ip_endpoints_when_grouping_flows: bool,
     pub show_wireshark_filter_for_selected_flow: bool,
     pub validate_selected_packet_checksums: bool,
 }

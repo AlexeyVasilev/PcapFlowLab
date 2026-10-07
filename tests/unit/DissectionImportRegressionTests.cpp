@@ -199,20 +199,30 @@ std::string require_protocol_path_text(const ProtocolPathRegistry& registry, con
     return format_protocol_path(*path);
 }
 
-FlowSnapshotV4 snapshot_flow(const FlowV4& flow, const ProtocolPathRegistry& registry) {
+FlowSnapshotV4 snapshot_flow(
+    const ConnectionKeyV4& connection_key,
+    const FlowV4& flow,
+    const ProtocolPathRegistry& registry
+) {
+    const auto key = make_flow_key(connection_key, flow.key);
     return FlowSnapshotV4 {
-        .key = flow.key,
-        .protocol_path = require_protocol_path_text(registry, flow.key.protocol_path_id),
+        .key = key,
+        .protocol_path = require_protocol_path_text(registry, key.protocol_path_id),
         .packets = flow.packets,
         .packet_count = flow.packet_count,
         .total_bytes = flow.total_bytes,
     };
 }
 
-FlowSnapshotV6 snapshot_flow(const FlowV6& flow, const ProtocolPathRegistry& registry) {
+FlowSnapshotV6 snapshot_flow(
+    const ConnectionKeyV6& connection_key,
+    const FlowV6& flow,
+    const ProtocolPathRegistry& registry
+) {
+    const auto key = make_flow_key(connection_key, flow.key);
     return FlowSnapshotV6 {
-        .key = flow.key,
-        .protocol_path = require_protocol_path_text(registry, flow.key.protocol_path_id),
+        .key = key,
+        .protocol_path = require_protocol_path_text(registry, key.protocol_path_id),
         .packets = flow.packets,
         .packet_count = flow.packet_count,
         .total_bytes = flow.total_bytes,
@@ -223,8 +233,12 @@ ConnectionSnapshotV4 snapshot_connection(const ConnectionV4& connection, const P
     return ConnectionSnapshotV4 {
         .key = connection.key,
         .protocol_path = require_protocol_path_text(registry, connection.key.protocol_path_id),
-        .flow_a = connection.has_flow_a ? std::optional<FlowSnapshotV4> {snapshot_flow(connection.flow_a, registry)} : std::nullopt,
-        .flow_b = connection.has_flow_b ? std::optional<FlowSnapshotV4> {snapshot_flow(connection.flow_b, registry)} : std::nullopt,
+        .flow_a = connection.has_flow_a
+            ? std::optional<FlowSnapshotV4> {snapshot_flow(connection.key, connection.flow_a, registry)}
+            : std::nullopt,
+        .flow_b = connection.has_flow_b
+            ? std::optional<FlowSnapshotV4> {snapshot_flow(connection.key, connection.flow_b, registry)}
+            : std::nullopt,
         .packet_count = connection.packet_count,
         .total_bytes = connection.total_bytes,
         .has_fragmented_packets = connection.has_fragmented_packets,
@@ -245,8 +259,12 @@ ConnectionSnapshotV6 snapshot_connection(const ConnectionV6& connection, const P
     return ConnectionSnapshotV6 {
         .key = connection.key,
         .protocol_path = require_protocol_path_text(registry, connection.key.protocol_path_id),
-        .flow_a = connection.has_flow_a ? std::optional<FlowSnapshotV6> {snapshot_flow(connection.flow_a, registry)} : std::nullopt,
-        .flow_b = connection.has_flow_b ? std::optional<FlowSnapshotV6> {snapshot_flow(connection.flow_b, registry)} : std::nullopt,
+        .flow_a = connection.has_flow_a
+            ? std::optional<FlowSnapshotV6> {snapshot_flow(connection.key, connection.flow_a, registry)}
+            : std::nullopt,
+        .flow_b = connection.has_flow_b
+            ? std::optional<FlowSnapshotV6> {snapshot_flow(connection.key, connection.flow_b, registry)}
+            : std::nullopt,
         .packet_count = connection.packet_count,
         .total_bytes = connection.total_bytes,
         .has_fragmented_packets = connection.has_fragmented_packets,

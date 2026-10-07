@@ -515,7 +515,7 @@ std::size_t service_length_offset_for_first_top_flow(const std::vector<std::uint
 
     const auto family = static_cast<CaptureStatisticsAddressFamily>(bytes[offset + 4U]);
     offset += 4U + 1U;
-    offset += family == CaptureStatisticsAddressFamily::ipv4 ? 17U : 41U;
+    offset += family == CaptureStatisticsAddressFamily::ipv4 ? 21U : 45U;
     offset += encoded_endpoint_key_size(family);
     offset += encoded_endpoint_key_size(family);
     offset += 1U + 1U;

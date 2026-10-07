@@ -13,6 +13,7 @@
 #include "app/session/SessionFormatting.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
 
@@ -59,7 +60,7 @@ constexpr std::array<IpEncapsulationFixtureExpectation, 20> kIpEncapsulationFixt
     {"20_ipv6_next41_payload_too_short.pcap", 1U},
 }};
 
-constexpr std::array<SupportedIpEncapsulationExpectation, 5> kSupportedIpEncapsulationFixturesNow {{
+constexpr std::array<SupportedIpEncapsulationExpectation, 4> kSupportedIpEncapsulationFixturesNow {{
     {
         "01_ipv4_in_ipv4_tcp.pcap",
         1U,
@@ -95,18 +96,6 @@ constexpr std::array<SupportedIpEncapsulationExpectation, 5> kSupportedIpEncapsu
         "10.60.0.20",
         443U,
         "EthernetII -> VLAN(vid=660) -> IPv4 -> IPv4 -> UDP",
-    },
-    {
-        "13_same_inner_tuple_different_outer_ipv4_tunnels.pcap",
-        2U,
-        2U,
-        FlowAddressFamily::ipv4,
-        "UDP",
-        "10.60.0.10",
-        53600U,
-        "10.60.0.20",
-        443U,
-        "EthernetII -> IPv4 -> IPv4 -> UDP",
     },
     {
         "14_same_inner_tuple_same_outer_ipv4_two_packets.pcap",
@@ -282,6 +271,14 @@ std::filesystem::path fixture_dir() {
 
 std::filesystem::path fixture_path(std::string_view file_name) {
     return fixture_dir() / std::filesystem::path(file_name);
+}
+
+CaptureImportOptions non_terminal_ip_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_non_terminal_ip_endpoints_when_grouping_flows = true,
+        },
+    };
 }
 
 std::set<std::string> expected_fixture_file_names() {
@@ -779,6 +776,35 @@ void expect_supported_ipv4_in_ipv4_tcp_udp_decode() {
     }
 }
 
+void expect_same_inner_tuple_different_outer_ipv4_tunnels_splits_by_default() {
+    constexpr auto fixture_name = "13_same_inner_tuple_different_outer_ipv4_tunnels.pcap";
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(fixture_name)));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 2U);
+    PFL_EXPECT(storage.recognized_packets == 2U);
+    PFL_EXPECT(storage.unrecognized_packets == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 2U);
+    PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
+        return row_matches_tuple(
+                row, FlowAddressFamily::ipv4, "UDP", "10.60.0.10", 53600U, "10.60.0.20", 443U) &&
+            row.packet_count == 1U &&
+            has_protocol_path(session, row, "EthernetII -> IPv4 -> IPv4 -> UDP");
+    }));
+
+    CaptureSession agnostic_session {};
+    PFL_REQUIRE(agnostic_session.open_capture(fixture_path(fixture_name), non_terminal_ip_agnostic_import_options()));
+    const auto agnostic_rows = agnostic_session.list_flows();
+    PFL_REQUIRE(agnostic_rows.size() == 1U);
+    PFL_EXPECT(agnostic_rows.front().packet_count == 2U);
+    PFL_EXPECT(has_protocol_path(agnostic_session, agnostic_rows.front(), "EthernetII -> IPv4 -> IPv4 -> UDP"));
+}
+
 void expect_supported_nested_ipv4_in_ipv4_udp_decode() {
     for (const auto& expectation : kSupportedNestedIpv4InIpv4FixturesNow) {
         CaptureSession session {};
@@ -1009,6 +1035,7 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_fixtures_import_without_crash();
     expect_total_packet_accounting();
     expect_supported_ipv4_in_ipv4_tcp_udp_decode();
+    expect_same_inner_tuple_different_outer_ipv4_tunnels_splits_by_default();
     expect_supported_nested_ipv4_in_ipv4_udp_decode();
     expect_supported_ipv6_in_ipv4_tcp_udp_decode();
     expect_supported_ipv4_in_ipv6_tcp_udp_decode();

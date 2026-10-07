@@ -299,6 +299,24 @@ template <typename Connection>
            serialized_u32_size();
 }
 
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const DirectionalEndpointKeyV4&) noexcept {
+    return serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const DirectionalEndpointKeyV6&) noexcept {
+    return 16U +
+           16U +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
 [[nodiscard]] constexpr std::uint64_t serialized_connection_key_size(const ConnectionKeyV4& key) noexcept {
     return serialized_endpoint_key_size(key.first) +
            serialized_endpoint_key_size(key.second) +
@@ -1132,6 +1150,7 @@ bool CaptureIndexWriter::write(
         ),
         .capture_import_settings = state.capture_import_settings,
         .protocol_path_registry = state.protocol_path_registry,
+        .non_terminal_ip_context_registry = state.non_terminal_ip_context_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
 
@@ -1156,7 +1175,7 @@ bool CaptureIndexWriter::write_v16(
     ThrottledProgressReporter progress_reporter {options};
 
     const auto total_sections =
-        4U +
+        5U +
         4U +
         static_cast<std::uint64_t>(plan.unrecognized_directory_sections.size()) +
         static_cast<std::uint64_t>(plan.packetref_detail_sections.size()) +
@@ -1264,6 +1283,28 @@ bool CaptureIndexWriter::write_v16(
             static_cast<std::uint64_t>(fast_tier.protocol_path_registry.size()),
             [&](std::ostream& payload, const detail::SerializationProgressCallback& callback) {
                 return detail::write_protocol_path_registry(payload, fast_tier.protocol_path_registry, callback);
+            },
+            out_error_text)) {
+        cleanup_temp();
+        return false;
+    }
+    ++completed_sections;
+
+    if (!write_marshaled_section(
+            stream,
+            detail::CaptureIndexSectionId::non_terminal_ip_context_registry,
+            detail::kCaptureIndexStableNonTerminalIpContextRegistrySectionSchemaVersion,
+            options,
+            progress_reporter,
+            "non-terminal IP context registry section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(fast_tier.non_terminal_ip_context_registry.size()),
+            [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
+                return detail::write_non_terminal_ip_context_registry(
+                    payload,
+                    fast_tier.non_terminal_ip_context_registry
+                );
             },
             out_error_text)) {
         cleanup_temp();

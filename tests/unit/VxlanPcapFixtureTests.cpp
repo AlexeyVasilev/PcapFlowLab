@@ -11,6 +11,7 @@
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
 
@@ -18,6 +19,14 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+CaptureImportOptions non_terminal_ip_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_non_terminal_ip_endpoints_when_grouping_flows = true,
+        },
+    };
 }
 
 const ProtocolPath* require_protocol_path(const CaptureSession& session, const ProtocolPathId protocol_path_id) {
@@ -501,16 +510,25 @@ void run_vxlan_pcap_fixture_tests() {
         }));
     }
 
-    expect_inner_flow_present(
-        "parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap",
-        FlowAddressFamily::ipv4,
-        "TCP",
-        "10.40.0.10",
-        49440U,
-        "10.40.0.20",
-        443U,
-        2U
-    );
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
+            return row.packet_count == 1U &&
+                require_flow_protocol_path_text(session, row) ==
+                    "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP";
+        }));
+
+        CaptureSession agnostic_session {};
+        PFL_REQUIRE(agnostic_session.open_capture(
+            fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap"),
+            non_terminal_ip_agnostic_import_options()));
+        const auto agnostic_rows = agnostic_session.list_flows();
+        PFL_REQUIRE(agnostic_rows.size() == 1U);
+        PFL_EXPECT(agnostic_rows.front().packet_count == 2U);
+    }
 
     {
         CaptureSession session {};
@@ -929,12 +947,24 @@ void run_vxlan_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/22_vxlan_identity_outer_carrier_variation_same_flow.pcap")));
         const auto rows = session.list_flows();
-        PFL_REQUIRE(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 2U);
         PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
-        const auto* row = require_flow_by_tuple(
-            rows, FlowAddressFamily::ipv4, "TCP", "10.70.0.10", 56000U, "10.70.0.20", 443U);
-        PFL_EXPECT(row->packet_count == 4U);
-        PFL_EXPECT(require_flow_protocol_path_text(session, *row) ==
+        PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
+            return row_matches_tuple(
+                    row, FlowAddressFamily::ipv4, "TCP", "10.70.0.10", 56000U, "10.70.0.20", 443U) &&
+                row.packet_count == 2U &&
+                require_flow_protocol_path_text(session, row) ==
+                    "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP";
+        }));
+
+        CaptureSession agnostic_session {};
+        PFL_REQUIRE(agnostic_session.open_capture(
+            fixture_path("parsing/vxlan/22_vxlan_identity_outer_carrier_variation_same_flow.pcap"),
+            non_terminal_ip_agnostic_import_options()));
+        const auto agnostic_rows = agnostic_session.list_flows();
+        PFL_REQUIRE(agnostic_rows.size() == 1U);
+        PFL_EXPECT(agnostic_rows.front().packet_count == 4U);
+        PFL_EXPECT(require_flow_protocol_path_text(agnostic_session, agnostic_rows.front()) ==
             "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
     }
 

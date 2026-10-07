@@ -286,14 +286,17 @@ void run_analysis_settings_tests() {
         PFL_EXPECT(loaded_session.load_index(index_path));
         PFL_EXPECT(loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
         PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_non_terminal_ip_endpoints());
     }
 
     {
         PFL_EXPECT(!AnalysisSettings {}.ignore_gtpu_teids_when_grouping_inner_flows);
+        PFL_EXPECT(!AnalysisSettings {}.ignore_non_terminal_ip_endpoints_when_grouping_flows);
 
         CaptureSession default_session {};
         PFL_EXPECT(default_session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
         PFL_EXPECT(!default_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(!default_session.flow_grouping_ignores_non_terminal_ip_endpoints());
 
         CaptureSession enabled_session {};
         PFL_EXPECT(enabled_session.open_capture(
@@ -318,6 +321,28 @@ void run_analysis_settings_tests() {
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
         PFL_EXPECT(loaded_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+    }
+
+    {
+        const auto capture_path = fixture_path(
+            "parsing/eoip/26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap"
+        );
+        const auto index_path =
+            std::filesystem::temp_directory_path() / "pfl_non_terminal_ip_grouping_setting_roundtrip.idx";
+
+        CaptureSession imported_session {};
+        PFL_EXPECT(imported_session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_non_terminal_ip_endpoints_when_grouping_flows = true},
+        }));
+        PFL_EXPECT(imported_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+        PFL_EXPECT(imported_session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(loaded_session.flow_grouping_ignores_non_terminal_ip_endpoints());
     }
 }
 

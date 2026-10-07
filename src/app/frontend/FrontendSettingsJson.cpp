@@ -184,6 +184,8 @@ FrontendSettingsJsonParseResult parse_frontend_settings_json_file(const std::fil
             settings.ignore_vlan_and_mpls_layers_when_grouping_flows = *value;
         } else if (*key == "ignore_gtpu_teids_when_grouping_inner_flows") {
             settings.ignore_gtpu_teids_when_grouping_inner_flows = *value;
+        } else if (*key == "ignore_non_terminal_ip_endpoints_when_grouping_flows") {
+            settings.ignore_non_terminal_ip_endpoints_when_grouping_flows = *value;
         } else if (*key == "validate_selected_packet_checksums") {
             settings.validate_selected_packet_checksums = *value;
         } else {
