@@ -250,9 +250,11 @@ are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 
 ## NTP
 
-These fixtures define the first conservative NTP detection-only behavior.
-Fixtures 01-05 are current positive cases and fixtures 06-10 are
-first-contract negatives or intentionally unsupported first-version forms.
+These fixtures define the first conservative NTP detection-only behavior and
+staged structured-inspection byte contracts. Fixtures 01-05 are current
+positive cases, fixtures 06-10 are first-contract negatives or intentionally
+unsupported first-version forms, and fixtures 11-15 are future structured
+inspection baselines that remain detection-only in current production.
 
 `ntp/01_ntpv4_client_request_port123.pcap`
 - Purpose: NTPv4 mode-3 client request positive baseline on destination UDP/123.
@@ -283,6 +285,21 @@ first-contract negatives or intentionally unsupported first-version forms.
 
 `ntp/10_ntpv4_truncated_47_byte_header.pcap`
 - Purpose: 47-byte truncated basic-header boundary negative case.
+
+`ntp/11_ntpv4_structured_exchange.pcap`
+- Purpose: two-packet NTPv4 client/server exchange for future structured Summary and byte-view coverage.
+
+`ntp/12_ntpv3_structured_server_response.pcap`
+- Purpose: NTPv3 server response with deterministic nonzero root and timestamp fields for future structured presentation coverage.
+
+`ntp/13_ntpv4_unsynchronized_stratum16.pcap`
+- Purpose: NTPv4 unsynchronized LI `3` and stratum `16` accepted-boundary coverage.
+
+`ntp/14_ntpv4_signed_root_delay.pcap`
+- Purpose: NTPv4 server response covering signed Root Delay and unsigned Root Dispersion fixed-point formatting.
+
+`ntp/15_ntpv4_era0_last_second.pcap`
+- Purpose: NTPv4 Era 0 last-second timestamp boundary without era-unfolding inference.
 
 ## ICMP
 

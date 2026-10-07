@@ -1,7 +1,8 @@
 # NTP Parsing Fixtures
 
 This directory contains the permanent PCAP fixture set for the first
-conservative PcapFlowLab NTP recognition behavior.
+conservative PcapFlowLab NTP recognition behavior and the staged wire
+fixtures for the next structured NTP inspection pass.
 
 ## Current First NTP Support
 
@@ -22,7 +23,7 @@ Current behavior:
 - Stratum must be `<= 16`.
 - Leap Indicator `3` is not rejected; it represents an unsynchronized clock.
 - No NTP-specific Packet Summary, Stream rows, Stream Item Data, or byte
-  views.
+  views for fixtures 01-10.
 - No `service_hint`.
 - No port-independent content recognition.
 - No deep timestamp, poll, precision, extension-field, MAC, NTS, or daemon
@@ -34,30 +35,38 @@ protocol hint `ntp`, while service hint remains empty.
 Fixtures 01-05 are recognized as NTP. Fixtures 06-10 remain ordinary UDP flows
 with no NTP detected protocol because they are malformed for this recognition
 contract or intentionally outside the first conservative automatic detector.
+Fixtures 11-15 are staged structured-inspection inputs. They intentionally keep
+the same conservative NTPv3/NTPv4 UDP/123 detection shape while adding richer
+header-field coverage for future Packet Summary / byte-view work.
 
-## Local Generation
+## Fixture Generation
 
-The local helper script is intentionally not committed and should remain a
-local generation helper only:
+The authoritative generator is committed alongside these fixtures:
 
 ```bash
-python tmp/generate_ntp_pcaps.py --output-dir tests/data/parsing/ntp --force
+python tests/data/parsing/ntp/generate_ntp_pcaps.py --output-dir tests/data/parsing/ntp --force
 ```
 
 Run the command from the repository root after installing Scapy locally. The
-script creates the output directory, overwrites exactly the ten fixture files
-listed below when `--force` is supplied, emits classic Ethernet `.pcap` files,
-and prints only the generated paths.
+script creates the output directory, overwrites exactly the fifteen fixture
+files listed below when `--force` is supplied, emits classic Ethernet `.pcap`
+files, and prints only the generated paths.
+
+The fixtures are deterministic synthetic captures. The generator preserves the
+historical detection fixture recipe for fixtures 01-10 and extends the same
+fixture family with structured-inspection inputs 11-15. Regenerating with an
+unchanged generator in the expected local environment should not change
+existing fixture bytes; review generated `.pcap` diffs before committing.
 
 To write into the current directory on a separate fixture-generation VM, `cd`
 to the desired output directory and run the script without `--output-dir`:
 
 ```bash
-python /path/to/tmp/generate_ntp_pcaps.py --force
+python /path/to/tests/data/parsing/ntp/generate_ntp_pcaps.py --force
 ```
 
 Do not edit generated packet bytes by hand. If a fixture needs to change,
-adjust the local generator and regenerate the PCAPs.
+adjust the committed generator and regenerate the PCAPs.
 
 ## Shared Deterministic Values
 
@@ -93,6 +102,12 @@ All target positive fixtures use the classic 48-byte NTP basic header:
 Fields are encoded in big-endian/network byte order. The first detector should
 not require client packets to have every non-mode field zero and should not
 deeply validate timestamp semantics.
+
+NTP timestamps carry only a 32-bit seconds field plus a 32-bit fraction field.
+They do not carry an era number on the wire. Fixtures 11-15 therefore document
+Era 0 raw timestamp values only. Era unfolding from capture time or local clock
+context is future technical debt and is not part of the current fixture
+contract.
 
 ## Fixture Map
 
@@ -208,6 +223,88 @@ deeply validate timestamp semantics.
 - Purpose: complete 48-byte basic-header boundary negative case
 - Current PFL behavior: NOT NTP
 
+### `11_ntpv4_structured_exchange.pcap`
+
+- Packets: `2`
+- Direction: bidirectional client/server exchange
+- IPv4/UDP packet 1: `192.0.2.170:59000` -> `192.0.2.180:123`
+- IPv4/UDP packet 2: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes in each packet
+- Client fields: LI `0`, VN `4`, Mode `3`, Stratum `0`, Poll `6`,
+  Precision `-20`, Root Delay `0`, Root Dispersion `0`
+- Client Transmit Timestamp: Era 0 seconds for
+  `2026-01-02 03:04:05 UTC`, fraction `0x40000000` (`.25`)
+- Server fields: LI `0`, VN `4`, Mode `4`, Stratum `2`, Poll `6`,
+  Precision `-20`, Root Delay `+0.125`, Root Dispersion `0.25`,
+  Reference ID `192.0.2.1`
+- Server Reference Timestamp: `2026-01-02 03:00:00.500000 UTC`
+- Server Originate Timestamp: exactly the client Transmit Timestamp
+- Server Receive Timestamp: `2026-01-02 03:04:05.375000 UTC`
+- Server Transmit Timestamp: `2026-01-02 03:04:05.500000 UTC`
+- Purpose: future structured NTP client/server Summary and byte-view baseline
+- Current PFL behavior: Detected Protocol `NTP`, protocol hint `ntp`, empty
+  service hint; no NTP-specific structured Summary is expected yet
+
+### `12_ntpv3_structured_server_response.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes
+- Fields: LI `0`, VN `3`, Mode `4`, Stratum `1`, Poll `4`,
+  Precision `-18`, Reference ID ASCII `GPS\0`
+- Root fields: deterministic nonzero Root Delay and Root Dispersion
+- Timestamps: deterministic nonzero Era 0 Reference, Originate, Receive, and
+  Transmit values
+- Purpose: future structured NTPv3 server-response presentation baseline
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint; no
+  NTP-specific structured Summary is expected yet
+
+### `13_ntpv4_unsynchronized_stratum16.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes
+- Fields: LI `3`, VN `4`, Mode `4`, Stratum `16`, Poll `4`,
+  Precision `-18`
+- Purpose: future structured presentation coverage for the unsynchronized
+  Leap Indicator and accepted stratum upper boundary
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint; LI `3`
+  and stratum `16` remain accepted by the conservative detector
+
+### `14_ntpv4_signed_root_delay.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes
+- Fields: LI `0`, VN `4`, Mode `4`, Stratum `2`, Poll `4`,
+  Precision `-30`
+- Root Delay: `-0.5` encoded as signed 16.16
+- Root Dispersion: `+1.5` encoded as unsigned 16.16
+- Timestamps: deterministic Era 0 values including exact `.5` fractions
+- Purpose: future structured presentation coverage for signed fixed-point Root
+  Delay and unsigned fixed-point Root Dispersion
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint; no
+  NTP-specific structured Summary is expected yet
+
+### `15_ntpv4_era0_last_second.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes
+- Fields: LI `0`, VN `4`, Mode `4`, Stratum `2`, Poll `4`,
+  Precision `-20`
+- Transmit Timestamp raw fields: seconds `0xffffffff`, fraction `0x80000000`
+- Interpreted within Era 0 only, this is
+  `2036-02-07 06:28:15.500000 UTC`
+- Purpose: future structured presentation boundary for the final representable
+  Era 0 second without adding Era 1 inference
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint; no era
+  unfolding is expected
+
 ## Intentionally Unsupported First-Version Forms
 
 The first conservative detector intentionally does not recognize:
@@ -236,6 +333,19 @@ contracts by these fixtures.
 No permanent direction-mismatch fixture is included for mode/port combinations
 such as client mode with only source port `123`; that boundary is better
 protected later with small synthetic unit tests.
+
+## Structured Inspection Expansion Boundary
+
+Fixtures 11-15 are committed as packet-byte contracts before the structured
+NTP presentation implementation. Future code may add NTP Summary fields,
+protocol-aware byte views, or Stream/Stream Item Data labels for these
+fixtures, but the current branch still treats them as ordinary UDP packet
+payloads with an NTP protocol hint.
+
+Fixture 05 remains the reusable KoD `RATE` coverage for stratum `0` /
+Reference ID `RATE`. Fixture 10 remains the reusable truncated-header
+negative boundary; it must not gain structured Summary output until truncated
+NTP handling is explicitly designed.
 
 ## Manual Wireshark Guidance
 
