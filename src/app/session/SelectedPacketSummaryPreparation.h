@@ -30,6 +30,7 @@ struct SelectedPacketSummaryPreparation {
     std::optional<QuicPresentationResult> quic_presentation {};
     std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
     std::optional<NtpMessage> ntp_message {};
+    std::optional<StunMessage> stun_message {};
     NetworkAddressFamily ntp_terminal_address_family {NetworkAddressFamily::unknown};
     std::optional<PacketDataPresentation> packet_data {};
 

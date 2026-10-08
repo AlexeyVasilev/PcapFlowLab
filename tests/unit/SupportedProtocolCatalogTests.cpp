@@ -132,6 +132,10 @@ void expect_representative_rows() {
         return row.stable_id == "ntp";
     });
     PFL_EXPECT(ntp_row_count == 1U);
+    const auto stun_row_count = std::count_if(rows.begin(), rows.end(), [](const auto& row) {
+        return row.stable_id == "stun";
+    });
+    PFL_EXPECT(stun_row_count == 1U);
 
     const auto* tls = find_row("tls");
     PFL_REQUIRE(tls != nullptr);
@@ -170,6 +174,18 @@ void expect_representative_rows() {
     const auto* dhcp = find_row("dhcp");
     PFL_REQUIRE(dhcp != nullptr);
     PFL_EXPECT(dhcp->protocol == "DHCPv4");
+
+    const auto* stun = find_row("stun");
+    PFL_REQUIRE(stun != nullptr);
+    PFL_EXPECT(stun->protocol == "STUN");
+    PFL_EXPECT(stun->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(stun->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(stun->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(stun->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(stun->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(stun->notes.find("without port") != std::string_view::npos);
+    PFL_EXPECT(stun->notes.find("structured") != std::string_view::npos);
+    PFL_EXPECT(stun->notes.find("STUN Message") != std::string_view::npos);
 
     const auto* mqtt = find_row("mqtt");
     PFL_REQUIRE(mqtt != nullptr);

@@ -1,11 +1,11 @@
 # STUN Parsing Fixtures
 
-This directory contains the planned permanent PCAP fixture set for current
-PcapFlowLab STUN recognition behavior and future structured STUN presentation
+This directory contains the permanent PCAP fixture set for current PcapFlowLab
+STUN recognition behavior and structured selected-packet STUN presentation
 coverage.
 
-Current STUN support is detection-only. It lives in the application protocol
-hint path and recognizes STUN from an individual UDP transport payload when:
+Current open/import-time STUN support is deliberately cheap. It recognizes
+STUN from an individual UDP transport payload when:
 
 - payload size is at least `20` bytes;
 - the top two bits of the first byte are zero: `(payload[0] & 0xC0) == 0`;
@@ -17,13 +17,21 @@ Recognition is not port-gated. A valid STUN-shaped payload can be recognized
 on UDP `3478` or on a non-standard UDP port. Successful detection produces
 Detected Protocol `STUN`; service hint remains empty.
 
-PcapFlowLab does not currently parse STUN methods/classes for presentation,
-transaction IDs, attributes, TURN-specific data, ICE state, WebRTC sessions, or
-protocol-aware STUN Stream rows. It also does not parse STUN attributes such as
+Selected-packet STUN inspection is deeper and on demand. For recognized UDP
+STUN messages, Packet Details `Summary` exposes the raw Message Type, decoded
+Method and Class, Message Length, Magic Cookie, full 96-bit Transaction ID, and
+ordered structured attributes. Current attribute presentation covers
 `MAPPED-ADDRESS`, `XOR-MAPPED-ADDRESS`, `USERNAME`, `MESSAGE-INTEGRITY`,
 `MESSAGE-INTEGRITY-SHA256`, `ERROR-CODE`, `REALM`, `NONCE`, `SOFTWARE`,
-`FINGERPRINT`, `ICE-CONTROLLING`, `ICE-CONTROLLED`, `PRIORITY`, or
-`USE-CANDIDATE`.
+`FINGERPRINT`, `ICE-CONTROLLING`, `ICE-CONTROLLED`, `PRIORITY`,
+`USE-CANDIDATE`, and unknown attributes. Packet Details `Bytes` exposes a
+packet-local `STUN Message` view.
+
+Attribute order is preserved, 4-byte padding is handled, malformed inner
+attributes are surfaced conservatively while preserving a valid outer STUN
+header, and unknown attributes remain visible with required/optional
+classification. Generic UDP Stream behavior is unchanged; there are no
+specialized STUN Stream rows and no Service extraction.
 
 ## Generation
 
@@ -37,8 +45,8 @@ Run the command from the repository root after installing Scapy locally. The
 script creates the output directory, overwrites exactly the eleven fixture files
 listed below when `--force` is supplied, emits classic Ethernet `.pcap` files,
 and prints only the generated paths. Fixtures `01`-`06` preserve the historical
-detection-only recipe; fixtures `07`-`11` are structured-inspection targets for
-future STUN parsing work.
+recognition recipe; fixtures `07`-`11` cover current structured selected-packet
+STUN inspection.
 
 To write into the current directory on a separate fixture-generation VM, `cd`
 to the desired output directory and run the script without `--output-dir`:
@@ -93,7 +101,8 @@ then XOR the CRC with `0x5354554E`.
 - Purpose: positive baseline for common STUN Binding Request recognition on
   the standard STUN port
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary
+  service hint, structured STUN Summary header, and bounded `STUN Message`
+  byte view
 - Wireshark note: should decode as STUN
 
 ### `02_stun_binding_request_response.pcap`
@@ -107,7 +116,7 @@ then XOR the CRC with `0x5354554E`.
 - Purpose: positive bidirectional Flow baseline showing method/class
   differences do not split the user-facing Flow
 - Expected current PFL behavior: one bidirectional UDP Flow, packet count `2`,
-  Detected Protocol `STUN`, empty service hint
+  Detected Protocol `STUN`, empty service hint, structured STUN Summary
 - Boundary: PcapFlowLab does not currently associate transaction IDs
   semantically
 
@@ -120,7 +129,7 @@ then XOR the CRC with `0x5354554E`.
   transaction ID
 - Purpose: positive baseline preserving current non-port-gated STUN detection
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint
+  service hint, structured STUN Summary
 - Wireshark note: automatic STUN dissection on non-standard ports may vary by
   Wireshark configuration or heuristic behavior
 
@@ -177,10 +186,10 @@ then XOR the CRC with `0x5354554E`.
 - Response attributes: IPv4 `XOR-MAPPED-ADDRESS` for
   `203.0.113.25:54321`, `SOFTWARE` value `PFL STUN fixture`,
   deterministic `MESSAGE-INTEGRITY-SHA256`, valid `FINGERPRINT`
-- Purpose: future structured STUN/ICE attribute presentation coverage while
-  preserving current detection-only behavior
+- Purpose: structured STUN/ICE attribute presentation coverage while
+  preserving current open-time recognition behavior
 - Expected current PFL behavior: one bidirectional UDP Flow, packet count `2`,
-  Detected Protocol `STUN`, empty service hint, no dedicated STUN Summary
+  Detected Protocol `STUN`, empty service hint, structured STUN Summary
 
 ### `08_stun_binding_success_xor_mapped_ipv6.pcap`
 
@@ -191,10 +200,10 @@ then XOR the CRC with `0x5354554E`.
 - Attributes: IPv6 `XOR-MAPPED-ADDRESS` for
   `2001:db8:ffff::25:54321`, IPv6 `MAPPED-ADDRESS` for
   `2001:db8:ffff::26:54322`
-- Purpose: future IPv6 address-family coverage for mapped-address attribute
-  decoding
+- Purpose: IPv6 address-family coverage for mapped-address attribute decoding
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary
+  service hint, structured STUN Summary header, and bounded `STUN Message`
+  byte view
 
 ### `09_stun_binding_error_response.pcap`
 
@@ -204,9 +213,9 @@ then XOR the CRC with `0x5354554E`.
 - STUN: Binding Error Response `0x0111`
 - Attributes: `ERROR-CODE` `401 Unauthorized`, `REALM` value `example.org`,
   `NONCE` value `pfl-stun-nonce-0001`, `SOFTWARE` value `PFL STUN fixture`
-- Purpose: future structured error-response and text-attribute coverage
+- Purpose: structured error-response and text-attribute coverage
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary
+  service hint, structured STUN Summary
 
 ### `10_stun_attribute_padding_and_unknown.pcap`
 
@@ -218,10 +227,10 @@ then XOR the CRC with `0x5354554E`.
   zero padding, `ICE-CONTROLLED` `0x8877665544332211`, unknown required
   attribute `0x1234`, unknown optional attribute `0x8123` with 3-byte value and
   1 byte of zero padding
-- Purpose: future attribute padding, alignment, and unknown-attribute
+- Purpose: attribute padding, alignment, and unknown-attribute
   preservation coverage
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary
+  service hint, structured STUN Summary
 
 ### `11_stun_malformed_attribute_length.pcap`
 
@@ -232,20 +241,18 @@ then XOR the CRC with `0x5354554E`.
 - Malformed body: Message Length is `8`; the single `USERNAME` attribute
   declares Length `8` but only 4 value bytes are present after the attribute
   header
-- Purpose: future parser robustness coverage for malformed inner attributes
+- Purpose: parser robustness coverage for malformed inner attributes
   without weakening the current outer-envelope detector
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary, no crash
+  service hint, structured STUN Summary with malformed attribute warning,
+  bounded `STUN Message` byte view, no crash
 
-## Future Parsing Boundary
+## Current Limitations
 
-These fixtures preserve current detection-only behavior while documenting the
-target shape for future structured STUN support.
-
-A future STUN parser should expose the header fields `Message Type`, `Method`,
-`Class`, `Message Length`, `Magic Cookie`, and `Transaction ID`, and should
-present the attributes covered by fixtures `07`-`11` safely. That future parser
-should not imply HMAC validation, FINGERPRINT CRC validation, TURN allocation
-state, STUN over TCP/TLS/DTLS support, request/response correlation, ICE state
-machine reconstruction, WebRTC session reconstruction, specialized STUN Stream
-rows, or a service hint unless those capabilities are explicitly implemented.
+Current STUN support intentionally does not implement HMAC validation for
+`MESSAGE-INTEGRITY`, `MESSAGE-INTEGRITY-SHA256` validation, `FINGERPRINT` CRC
+validation, STUN-over-TCP, STUN-over-TLS/DTLS, TURN state/method semantics
+beyond generic raw method visibility, request/response transaction correlation,
+an ICE state machine, candidate-pair construction, role-conflict resolution,
+WebRTC session reconstruction, specialized STUN Stream rows, or Service
+extraction. These are unsupported limitations, not malformed-STUN conditions.

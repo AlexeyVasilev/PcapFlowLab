@@ -21,6 +21,7 @@
 #include "core/services/NtpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
+#include "core/services/StunInspectionParser.h"
 
 namespace pfl {
 
@@ -50,8 +51,6 @@ constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
-constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
-constexpr std::size_t kStunHeaderSize = 20U;
 constexpr std::size_t kBootpFixedHeaderSize = 236U;
 constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
 constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
@@ -343,27 +342,6 @@ bool looks_like_http_response(const std::string_view payload_text) noexcept {
 
 bool looks_like_ssh_banner(std::span<const std::uint8_t> payload) noexcept {
     return payload.size() >= 4U && payload_as_text(payload).starts_with("SSH-");
-}
-
-bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
-    if (payload.size() < kStunHeaderSize) {
-        return false;
-    }
-
-    if ((payload[0] & 0xC0U) != 0U) {
-        return false;
-    }
-
-    const auto message_length = static_cast<std::size_t>(read_be16(payload, 2U));
-    if ((message_length % 4U) != 0U) {
-        return false;
-    }
-
-    if (payload.size() != (kStunHeaderSize + message_length)) {
-        return false;
-    }
-
-    return read_be32(payload, 4U) == kStunMagicCookie;
 }
 
 std::optional<std::size_t> declared_udp_payload_length_for_terminal_payload(
@@ -1339,7 +1317,7 @@ FlowHintUpdate detect_ssh_hint(std::span<const std::uint8_t> payload) {
 }
 
 FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
-    if (!looks_like_stun_message(payload)) {
+    if (!stun_message_matches_current_support_contract(payload)) {
         return {};
     }
 

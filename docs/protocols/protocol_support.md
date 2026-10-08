@@ -108,7 +108,7 @@ limitations remain accurately described.
 | Application | mDNS | Yes | Yes | Yes | Yes | Multicast DNS and DNS-SD service information are parsed where available. |
 | Application | DHCPv4 | Yes | No | No | No | Recognized from BOOTP/DHCPv4 wire shape only; no dedicated message parser is exposed. |
 | Application | SSH | Yes | No | No | No | Recognized from SSH banner only; structured SSH message parsing is not implemented. |
-| Application | STUN | Yes | No | No | No | Recognized from STUN message shape only; deeper STUN parsing is not implemented. |
+| Application | STUN | Yes | No | Yes | No | Structurally valid UDP STUN is recognized without port gating; selected packets expose structured headers/attributes and a STUN Message byte view. Integrity/fingerprint validation and STUN/ICE/TURN state tracking are not implemented. |
 | Application | BitTorrent | Yes | No | No | No | Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented. |
 | Application | MQTT | Yes | No | No | No | Recognized from a structurally validated CONNECT packet for MQTT 3.1, 3.1.1, and 5.0; deeper MQTT parsing is not implemented. |
 | Application | AMQP | Yes | No | No | No | Recognized from exact AMQP protocol headers for AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL negotiation; deeper AMQP frame parsing is not implemented. |
@@ -198,7 +198,7 @@ The current high-level detected-protocol families used by flow rows and Statisti
 | QUIC | Confirmed | QUIC long-header detection with optional deferred service enrichment. |
 | Possible QUIC | Heuristic / possible | Only appears when `use_possible_tls_quic` is enabled; default behavior remains off. |
 | SSH | Confirmed | Banner-based detection only. |
-| STUN | Confirmed | Cheap STUN message-shape detection only. |
+| STUN | Confirmed | Cheap outer UDP STUN envelope recognition requires a structurally valid message, exact Message Length, and Magic Cookie without a port requirement; ordered attribute parsing is deferred to selected-packet inspection. |
 | BitTorrent | Confirmed | Canonical 68-byte BitTorrent handshake detection only. |
 | MQTT | Confirmed | Structurally validated MQTT CONNECT detection only. |
 | AMQP | Confirmed | Exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol-header detection only. |
@@ -257,7 +257,7 @@ surface under `Stream Item Data` where applicable.
 | mDNS | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Detection still depends on UDP/5353 and multicast destination checks. Flow-level Service uses a bounded best-effort Question/PTR-owner/RR-owner hint, selected-packet `Summary` is structured, packet-local selected-flow Stream items expose the same bounded structured DNS wire model, and user-facing compact detected text is `mDNS`. |
 | HTTP | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet `Summary` appends a final HTTP layer using the existing packet-details formatter path. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction, and Stream Item `Data` now exposes exact authoritative bytes for request/response/partial rows through the same bounded ownership model rather than an HTTP document model; synthetic gap rows remain unavailable. |
 | DHCP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is open-time detection from BOOTP/DHCP shape checks only. Generic UDP-owned Stream Item `Data` may still exist where transport ownership is available, but there is no DHCP-specific Stream item model. |
-| STUN | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is hint-only. Generic transport-owned Stream Item `Data` may still exist, but no STUN-specific selected-packet or Stream semantics are implemented. |
+| STUN | Supported | Not supported | Not supported | Supported | Supported | Not supported | Partial | Supported | Current support recognizes structurally valid UDP STUN envelopes without port gating and keeps import-time work to cheap outer-envelope checks. Selected-packet `Summary` exposes packet-local STUN header fields and ordered TLV attributes, including IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS forms, text attributes, integrity/fingerprint attributes as unvalidated values, unknown required/optional attributes, and conservative malformed inner-attribute bounds. Packet Details `Bytes` exposes a bounded packet-local `STUN Message` view. Generic UDP-owned Stream Item `Data` may still exist, but no STUN-specific Stream items, transaction reconstruction, HMAC/fingerprint validation, ICE/TURN state tracking, or service extraction is implemented. |
 | BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is canonical-handshake / hint recognition only. Generic transport-owned Stream Item `Data` may still exist, but no BitTorrent-specific Stream semantics are implemented. |
 | MQTT | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is structurally validated CONNECT hint recognition for MQTT 3.1, 3.1.1, and 5.0 over TCP only. Generic TCP-owned Stream Item `Data` may still exist, but no MQTT-specific selected-packet or Stream semantics are implemented. |
 | AMQP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol headers over TCP only. TCP/5671 and TCP/5672 alone do not imply AMQP, ordinary TLS traffic on TCP/5671 is not inferred as AMQP, split protocol headers may be missed, and captures starting after negotiation may remain TCP. Generic TCP-owned Stream Item `Data` may still exist, but no AMQP-specific selected-packet, service extraction, Stream, or byte-view semantics are implemented. |
@@ -291,11 +291,11 @@ The shared layered Summary model is intentionally conservative today.
 - It still does not expose full dedicated Summary subtrees for:
   - mDNS;
   - DHCP;
-  - STUN;
   - BitTorrent;
   - MQTT;
   - AMQP;
   - SMTP / POP3 / IMAP / SSH.
+- STUN adds a packet-local structured Summary layer with header fields and ordered attribute children when the selected UDP payload is a supported STUN envelope.
 - For TLS, QUIC, DNS, HTTP, NTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
 - ICMPv4 is now slightly stronger: layered Summary uses the shared bounded `IcmpInspectionParser -> IcmpMessage` model for common-header and selected type-specific metadata while still keeping checksum validation, quoted-packet recursive decoding, request/reply correlation, and ICMPv6 parity out of scope.
 
@@ -309,12 +309,17 @@ Selected-packet `Summary` currently has three main high-level patterns:
   - DNS;
   - HTTP;
   - NTP;
+  - STUN;
 - shared basic protocol text for:
   - ARP;
   - IGMP;
   - ICMP;
   - ICMPv6;
 - explicit conservative fallbacks for other packets.
+
+STUN attributes are represented as ordered structured children of the STUN
+Summary layer. This remains packet-local selected-packet inspection, not
+capture-wide transaction reconstruction.
 
 IPv4, IPv6, Ethernet, and VLAN currently contribute strongly to layered Summary rather than to any standalone selected-packet protocol pane, because that pane no longer exists in the UI.
 
@@ -328,6 +333,10 @@ Selected-packet `Bytes` is not a generic "deep application payload" system.
 - For complete classic 48-byte NTPv3/NTPv4 packets it can show a bounded
   packet-local `NTP Message` view; extension fields, MACs, and NTS are not
   parsed as part of that view.
+- For structurally valid UDP STUN packets it can show a bounded packet-local
+  `STUN Message` view whose bounds follow `20 + Message Length`. Malformed
+  inner attributes do not necessarily invalidate the outer STUN byte view, and
+  no per-attribute byte views are currently provided.
 - For fragmented IP packets, byte extraction is intentionally conservative and may be empty.
 - For protocols such as ICMP, ICMPv6, and IGMP, the current model is still bounded per-packet byte views rather than a deep recursive inspector.
 
@@ -409,6 +418,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - NTPv3/NTPv4 client/server recognition, KoD, conservative negatives,
     structured timestamp and fixed-point field presentation, unsynchronized
     state, NTPv3-vs-NTPv4 Root Delay semantics, and Era-0 endpoint coverage.
+- `stun`
+  - STUN Binding Request / Success / Error classes, standard and non-standard UDP ports, historical detector negatives, ICE attributes, IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS forms, padding, unknown required/optional attributes, malformed inner TLV bounds, integrity/fingerprint presentation, selected-packet Summary, and `STUN Message` Bytes coverage.
 - `vlan`
   - single-tag 802.1Q, current two-tag QinQ, VLAN-tagged ARP, unknown inner EtherType, and malformed/truncated VLAN fixtures.
 - `vxlan`
@@ -465,6 +476,12 @@ The current protocol-support pass intentionally does not claim support for:
   authentication MACs, NTS, non-standard-port recognition, request/response
   timing correlation, clock offset/delay analysis, specialized NTP Stream
   semantics, and NTP era unfolding after the 2036 rollover.
+- STUN HMAC validation, MESSAGE-INTEGRITY-SHA256 validation, FINGERPRINT CRC
+  validation, STUN-over-TCP, STUN-over-TLS/DTLS, TURN state or method
+  semantics beyond generic raw method visibility, request/response transaction
+  correlation, ICE state machines, candidate-pair construction, role-conflict
+  resolution, WebRTC session reconstruction, specialized STUN Stream semantics,
+  and STUN Service extraction.
 
 ## How To Update This Document
 

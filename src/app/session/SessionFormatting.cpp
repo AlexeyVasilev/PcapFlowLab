@@ -9,6 +9,7 @@
 #include "app/session/DnsSummaryPresentation.h"
 #include "app/session/IcmpSummaryPresentation.h"
 #include "app/session/NtpSummaryPresentation.h"
+#include "app/session/StunSummaryPresentation.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::session_detail {
@@ -5475,6 +5476,10 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(
 
     if (options.ntp_message.has_value()) {
         return build_ntp_summary_layer(*options.ntp_message, options.ntp_terminal_address_family);
+    }
+
+    if (options.stun_message.has_value()) {
+        return build_stun_summary_layer(*options.stun_message);
     }
 
     if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {

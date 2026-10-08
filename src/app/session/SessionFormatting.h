@@ -15,6 +15,7 @@
 #include "core/domain/NtpInspection.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
+#include "core/domain/StunInspection.h"
 #include "core/services/TlsInspectionModel.h"
 
 namespace pfl::session_detail {
@@ -100,6 +101,7 @@ struct PacketSummaryOptions {
     std::optional<QuicPresentationResult> quic_presentation {};
     std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
     std::optional<NtpMessage> ntp_message {};
+    std::optional<StunMessage> stun_message {};
     NetworkAddressFamily ntp_terminal_address_family {NetworkAddressFamily::unknown};
     std::optional<PacketDataPresentation> packet_data {};
 };

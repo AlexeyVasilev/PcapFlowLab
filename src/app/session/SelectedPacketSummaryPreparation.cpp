@@ -8,6 +8,7 @@
 #include "core/services/FlowHintService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/NtpInspectionParser.h"
+#include "core/services/StunInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
 
@@ -111,6 +112,25 @@ std::optional<NtpMessage> inspect_selected_packet_ntp_message(
                 : std::nullopt,
         }
     );
+}
+
+std::optional<StunMessage> inspect_selected_packet_stun_message(
+    const PacketDetails& details,
+    std::span<const std::uint8_t> transport_payload
+) {
+    if (!details.has_udp || transport_payload.empty()) {
+        return std::nullopt;
+    }
+
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        if (effective_payload.transport != EffectiveTransportKind::udp ||
+            effective_payload.role != EffectiveTransportRole::top_level) {
+            return std::nullopt;
+        }
+    }
+
+    return inspect_supported_stun_message(transport_payload);
 }
 
 NetworkAddressFamily resolve_selected_packet_ntp_terminal_address_family(const PacketDetails& details) noexcept {
@@ -428,6 +448,10 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
                 options.ntp_message.has_value()) {
                 return TransportPayloadDisposition::claimed_by_supported_protocol;
             }
+            if (effective_payload.role == EffectiveTransportRole::top_level &&
+                options.stun_message.has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
             const auto dns_payload_is_owned = use_summary_dns_evidence
                 ? dns_payload_has_summary_ownership(
                     packet_bytes,
@@ -460,6 +484,9 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
 
     if (details.has_udp) {
         if (options.ntp_message.has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+        if (options.stun_message.has_value()) {
             return TransportPayloadDisposition::claimed_by_supported_protocol;
         }
         const auto dns_payload_is_owned = use_summary_dns_evidence
@@ -576,6 +603,7 @@ PacketSummaryOptions SelectedPacketSummaryPreparation::make_options() const {
     options.quic_presentation = quic_presentation;
     options.dns_summary_presentation_kind = dns_summary_presentation_kind;
     options.ntp_message = ntp_message;
+    options.stun_message = stun_message;
     options.ntp_terminal_address_family = ntp_terminal_address_family;
     options.packet_data = packet_data;
     return options;
@@ -607,6 +635,10 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         ? std::vector<std::uint8_t>(transport_payload_view.payload.begin(), transport_payload_view.payload.end())
         : std::vector<std::uint8_t> {};
     const auto ntp_message = inspect_selected_packet_ntp_message(
+        details,
+        std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+    );
+    const auto stun_message = inspect_selected_packet_stun_message(
         details,
         std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
     );
@@ -658,6 +690,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         .quic_presentation = std::move(quic_presentation),
         .dns_summary_presentation_kind = resolve_dns_summary_presentation_kind(session, details, flow_index),
         .ntp_message = ntp_message,
+        .stun_message = stun_message,
         .ntp_terminal_address_family = resolve_selected_packet_ntp_terminal_address_family(details),
         .packet_data = std::nullopt,
     };

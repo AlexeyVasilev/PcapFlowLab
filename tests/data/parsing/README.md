@@ -85,6 +85,14 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 ## STUN
 
+These fixtures cover current UDP STUN recognition and selected-packet
+structured inspection. Coverage includes Binding Request / Success / Error
+classes, standard and non-standard UDP ports, historical detector negatives,
+ICE attributes, IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS attributes,
+padding, unknown required/optional attributes, malformed inner TLV bounds,
+integrity/fingerprint presentation, selected-packet Summary, and `STUN Message`
+Bytes coverage.
+
 `stun/01_stun_binding_request_3478.pcap`
 - Purpose: standard positive STUN Binding Request baseline.
 
@@ -104,19 +112,19 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: exact declared-length boundary negative case.
 
 `stun/07_stun_binding_ice_exchange.pcap`
-- Purpose: structured STUN/ICE Binding request/response target with USERNAME, PRIORITY, ICE-CONTROLLING, USE-CANDIDATE, MESSAGE-INTEGRITY, MESSAGE-INTEGRITY-SHA256, XOR-MAPPED-ADDRESS, SOFTWARE, and FINGERPRINT attributes.
+- Purpose: structured STUN/ICE Binding request/response coverage with USERNAME, PRIORITY, ICE-CONTROLLING, USE-CANDIDATE, MESSAGE-INTEGRITY, MESSAGE-INTEGRITY-SHA256, XOR-MAPPED-ADDRESS, SOFTWARE, FINGERPRINT, Summary, and Bytes expectations.
 
 `stun/08_stun_binding_success_xor_mapped_ipv6.pcap`
-- Purpose: IPv6 mapped-address target covering XOR-MAPPED-ADDRESS and MAPPED-ADDRESS attributes.
+- Purpose: IPv6 mapped-address coverage for XOR-MAPPED-ADDRESS and MAPPED-ADDRESS attributes.
 
 `stun/09_stun_binding_error_response.pcap`
-- Purpose: Binding Error Response target covering ERROR-CODE, REALM, NONCE, and SOFTWARE attributes.
+- Purpose: Binding Error Response coverage for ERROR-CODE, REALM, NONCE, and SOFTWARE attributes.
 
 `stun/10_stun_attribute_padding_and_unknown.pcap`
-- Purpose: attribute padding and unknown required/optional attribute target.
+- Purpose: attribute padding and unknown required/optional attribute coverage.
 
 `stun/11_stun_malformed_attribute_length.pcap`
-- Purpose: malformed inner-attribute-length robustness target with a valid outer STUN envelope.
+- Purpose: malformed inner-attribute-length robustness coverage with a valid outer STUN envelope.
 
 ## BitTorrent
 
