@@ -1,14 +1,14 @@
 # NTP Parsing Fixtures
 
-This directory contains the permanent PCAP fixture set for the first
-conservative PcapFlowLab NTP recognition behavior and the staged wire
-fixtures for the next structured NTP inspection pass.
+This directory contains the permanent PCAP fixture set for conservative
+PcapFlowLab NTP recognition behavior and the structured wire fixtures used by
+selected-packet NTP Summary / byte-view tests.
 
-## Current First NTP Support
+## Current NTP Support
 
-The first NTP support is detection-only. It lives in the
-application protocol hint path and recognizes NTP only from a conservative
-UDP/123-gated subset of classic NTP packets.
+Current NTP support lives in the application protocol hint path and selected
+packet presentation path. It recognizes and presents NTP only from a
+conservative UDP/123-gated subset of classic NTP packets.
 
 Current behavior:
 
@@ -22,8 +22,9 @@ Current behavior:
 - Server mode requires source UDP port `123`.
 - Stratum must be `<= 16`.
 - Leap Indicator `3` is not rejected; it represents an unsynchronized clock.
-- No NTP-specific Packet Summary, Stream rows, Stream Item Data, or byte
-  views for fixtures 01-10.
+- Structured selected-packet Summary and byte-view support is intentionally
+  limited to complete classic 48-byte NTPv3/NTPv4 basic headers.
+- No NTP-specific Stream rows or Stream Item Data.
 - No `service_hint`.
 - No port-independent content recognition.
 - No deep timestamp, poll, precision, extension-field, MAC, NTS, or daemon
@@ -35,9 +36,9 @@ protocol hint `ntp`, while service hint remains empty.
 Fixtures 01-05 are recognized as NTP. Fixtures 06-10 remain ordinary UDP flows
 with no NTP detected protocol because they are malformed for this recognition
 contract or intentionally outside the first conservative automatic detector.
-Fixtures 11-15 are staged structured-inspection inputs. They intentionally keep
+Fixtures 11-16 are structured-inspection inputs. They intentionally keep
 the same conservative NTPv3/NTPv4 UDP/123 detection shape while adding richer
-header-field coverage for future Packet Summary / byte-view work.
+header-field coverage for Packet Summary / byte-view work.
 
 ## Fixture Generation
 
@@ -48,13 +49,13 @@ python tests/data/parsing/ntp/generate_ntp_pcaps.py --output-dir tests/data/pars
 ```
 
 Run the command from the repository root after installing Scapy locally. The
-script creates the output directory, overwrites exactly the fifteen fixture
+script creates the output directory, overwrites exactly the sixteen fixture
 files listed below when `--force` is supplied, emits classic Ethernet `.pcap`
 files, and prints only the generated paths.
 
 The fixtures are deterministic synthetic captures. The generator preserves the
 historical detection fixture recipe for fixtures 01-10 and extends the same
-fixture family with structured-inspection inputs 11-15. Regenerating with an
+fixture family with structured-inspection inputs 11-16. Regenerating with an
 unchanged generator in the expected local environment should not change
 existing fixture bytes; review generated `.pcap` diffs before committing.
 
@@ -104,10 +105,17 @@ not require client packets to have every non-mode field zero and should not
 deeply validate timestamp semantics.
 
 NTP timestamps carry only a 32-bit seconds field plus a 32-bit fraction field.
-They do not carry an era number on the wire. Fixtures 11-15 therefore document
+They do not carry an era number on the wire. Fixtures 11-16 therefore document
 Era 0 raw timestamp values only. Era unfolding from capture time or local clock
 context is future technical debt and is not part of the current fixture
 contract.
+
+Root Delay and Root Dispersion are retained as raw 32-bit wire fields. Summary
+presentation interprets them by NTP version: NTPv3 uses signed 16.16 fixed
+point, while NTPv4 uses unsigned NTP short format. Reference ID presentation is
+also version/stratum/family aware: stratum `0`/`1` may show ASCII reference
+identifiers, but stratum `> 1` over terminal IPv4 is shown as an IPv4 address;
+IPv6 or unknown terminal family uses an opaque raw hex form.
 
 ## Fixture Map
 
@@ -164,7 +172,8 @@ contract.
 - Purpose: positive Kiss-o'-Death-style response proving stratum `0` is not
   rejected wholesale
 - Current PFL behavior: Detected Protocol `NTP`, empty service hint
-- Boundary: no special KoD presentation or service hint is expected
+- Boundary: NTPv4 stratum-0 printable Reference ID also appears as `Kiss Code`;
+  no service hint is expected
 
 ### `06_ntp_garbage_port123.pcap`
 
@@ -241,9 +250,10 @@ contract.
 - Server Originate Timestamp: exactly the client Transmit Timestamp
 - Server Receive Timestamp: `2026-01-02 03:04:05.375000 UTC`
 - Server Transmit Timestamp: `2026-01-02 03:04:05.500000 UTC`
-- Purpose: future structured NTP client/server Summary and byte-view baseline
+- Purpose: structured NTP client/server Summary and byte-view baseline
 - Current PFL behavior: Detected Protocol `NTP`, protocol hint `ntp`, empty
-  service hint; no NTP-specific structured Summary is expected yet
+  service hint; structured selected-packet Summary and NTP Message byte view
+  are expected
 
 ### `12_ntpv3_structured_server_response.pcap`
 
@@ -256,9 +266,9 @@ contract.
 - Root fields: deterministic nonzero Root Delay and Root Dispersion
 - Timestamps: deterministic nonzero Era 0 Reference, Originate, Receive, and
   Transmit values
-- Purpose: future structured NTPv3 server-response presentation baseline
-- Current PFL behavior: Detected Protocol `NTP`, empty service hint; no
-  NTP-specific structured Summary is expected yet
+- Purpose: structured NTPv3 server-response presentation baseline
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint;
+  structured selected-packet Summary and NTP Message byte view are expected
 
 ### `13_ntpv4_unsynchronized_stratum16.pcap`
 
@@ -267,13 +277,16 @@ contract.
 - IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
 - Payload: exactly `48` bytes
 - Fields: LI `3`, VN `4`, Mode `4`, Stratum `16`, Poll `4`,
-  Precision `-18`
-- Purpose: future structured presentation coverage for the unsynchronized
-  Leap Indicator and accepted stratum upper boundary
+  Precision `-18`, Reference ID raw bytes `53 54 45 50`
+- Purpose: structured presentation coverage for the unsynchronized
+  Leap Indicator, accepted stratum upper boundary, and stratum `> 1`
+  Reference ID IPv4 interpretation
+- Summary Reference ID: `83.84.69.80`; the printable raw bytes intentionally
+  guard against treating all printable Reference IDs as ASCII.
 - Current PFL behavior: Detected Protocol `NTP`, empty service hint; LI `3`
   and stratum `16` remain accepted by the conservative detector
 
-### `14_ntpv4_signed_root_delay.pcap`
+### `14_ntpv4_large_root_delay.pcap`
 
 - Packets: `1`
 - Direction: server to client
@@ -281,13 +294,15 @@ contract.
 - Payload: exactly `48` bytes
 - Fields: LI `0`, VN `4`, Mode `4`, Stratum `2`, Poll `4`,
   Precision `-30`
-- Root Delay: `-0.5` encoded as signed 16.16
-- Root Dispersion: `+1.5` encoded as unsigned 16.16
+- Root Delay raw field: `0xffff8000`, interpreted as unsigned NTPv4 short
+  format `65535.5 s`
+- Root Dispersion raw field: `0x00018000`, interpreted as unsigned NTPv4
+  short format `1.5 s`
 - Timestamps: deterministic Era 0 values including exact `.5` fractions
-- Purpose: future structured presentation coverage for signed fixed-point Root
-  Delay and unsigned fixed-point Root Dispersion
-- Current PFL behavior: Detected Protocol `NTP`, empty service hint; no
-  NTP-specific structured Summary is expected yet
+- Purpose: structured presentation coverage for NTPv4 unsigned Root Delay and
+  Root Dispersion fixed-point formatting
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint;
+  structured selected-packet Summary and NTP Message byte view are expected
 
 ### `15_ntpv4_era0_last_second.pcap`
 
@@ -300,10 +315,35 @@ contract.
 - Transmit Timestamp raw fields: seconds `0xffffffff`, fraction `0x80000000`
 - Interpreted within Era 0 only, this is
   `2036-02-07 06:28:15.500000 UTC`
-- Purpose: future structured presentation boundary for the final representable
+- Purpose: structured presentation boundary for the final representable
   Era 0 second without adding Era 1 inference
 - Current PFL behavior: Detected Protocol `NTP`, empty service hint; no era
   unfolding is expected
+
+### `16_ntpv3_signed_root_delay.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.180:123` -> `192.0.2.170:59000`
+- Payload: exactly `48` bytes
+- Fields: LI `0`, VN `3`, Mode `4`, Stratum `2`, Poll `4`,
+  Precision `-30`
+- Root Delay raw field: `0xffff8000`, interpreted as signed NTPv3 16.16
+  fixed point `-0.5 s`
+- Root Dispersion raw field: `0x00018000`, interpreted as signed NTPv3 16.16
+  fixed point `1.5 s`
+- Timestamps: deterministic Era 0 values including exact `.5` fractions
+- Purpose: structured presentation coverage for NTPv3 signed Root Delay /
+  Root Dispersion fixed-point formatting
+- Current PFL behavior: Detected Protocol `NTP`, empty service hint
+- Wireshark note: this NTPv3 fixture uses Root Delay raw value `0xffff8000`.
+  PcapFlowLab intentionally presents it as `-0.5 s` because NTPv3 Root Delay
+  follows the signed 16.16 fixed-point semantics from RFC 1305. Current
+  Wireshark versions may display the same raw NTPv3 field as `65535.5 s` using
+  unsigned interpretation. This known difference is intentional; PFL must not
+  be changed only to match that Wireshark presentation. Fixture 14 is the NTPv4
+  counterpart where the high-bit-set field is intentionally interpreted as
+  unsigned and displays `65535.5 s`.
 
 ## Intentionally Unsupported First-Version Forms
 
@@ -336,11 +376,10 @@ protected later with small synthetic unit tests.
 
 ## Structured Inspection Expansion Boundary
 
-Fixtures 11-15 are committed as packet-byte contracts before the structured
-NTP presentation implementation. Future code may add NTP Summary fields,
-protocol-aware byte views, or Stream/Stream Item Data labels for these
-fixtures, but the current branch still treats them as ordinary UDP packet
-payloads with an NTP protocol hint.
+Fixtures 11-16 are committed as packet-byte contracts for structured
+selected-packet NTP presentation. Current structured support adds NTP Summary
+fields and an NTP Message byte view; Stream/Stream Item Data labels remain
+outside this fixture contract.
 
 Fixture 05 remains the reusable KoD `RATE` coverage for stratum `0` /
 Reference ID `RATE`. Fixture 10 remains the reusable truncated-header
@@ -364,12 +403,15 @@ Useful manual checks include:
   NTP-family traffic; that does not conflict with PcapFlowLab's intentionally
   narrower first automatic detector.
 - For fixture 10, expect truncated or malformed presentation.
+- For fixture 16, the Root Delay presentation difference described above is a
+  known NTPv3 signed-fixed-point contract difference, not a PFL defect.
 
-## Future Parsing Boundary
+## Current Parsing Boundary
 
 Future NTP work may add broader version support, extension-field handling,
-authentication/NTS awareness, protocol-aware Stream presentation, selected
-packet Summary support, or richer clock-state reporting. That work is
-intentionally outside this fixture contract. The first implementation stays a
-cheap, bounded, port-gated protocol hint for conservative NTPv3/NTPv4
-client/server packets.
+authentication/NTS awareness, protocol-aware Stream presentation, or richer
+clock-state reporting. That work is intentionally outside this fixture
+contract. Current support remains cheap, bounded, and port-gated for
+conservative NTPv3/NTPv4 client/server recognition, with selected-packet
+structured Summary and a packet-local `NTP Message` byte view for complete
+classic 48-byte messages.

@@ -302,11 +302,15 @@ void expect_structured_fixture_shapes_and_detection() {
         server_to_client_one_packet());
 
     expect_detected_ntp_protocol(
-        "parsing/ntp/14_ntpv4_signed_root_delay.pcap",
+        "parsing/ntp/14_ntpv4_large_root_delay.pcap",
         server_to_client_one_packet());
 
     expect_detected_ntp_protocol(
         "parsing/ntp/15_ntpv4_era0_last_second.pcap",
+        server_to_client_one_packet());
+
+    expect_detected_ntp_protocol(
+        "parsing/ntp/16_ntpv3_signed_root_delay.pcap",
         server_to_client_one_packet());
 }
 
@@ -350,7 +354,7 @@ void expect_future_ntp_summary_for_structured_v4_client_packet() {
     expect_summary_field_contains(*ntp_layer, "Mode", "3");
     expect_summary_field_contains(*ntp_layer, "Leap Indicator", "0");
     expect_summary_field_contains(*ntp_layer, "Leap Indicator", "No");
-    expect_summary_field_equals(*ntp_layer, "Stratum", "0");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Unspecified or invalid (0)");
     expect_summary_field_contains(*ntp_layer, "Poll", "6");
     expect_summary_field_contains(*ntp_layer, "Poll", "64");
     expect_summary_field_contains(*ntp_layer, "Precision", "-20");
@@ -372,7 +376,7 @@ void expect_future_ntp_summary_for_structured_v4_server_packet() {
     expect_summary_field_equals(*ntp_layer, "Version", "4");
     expect_summary_field_contains(*ntp_layer, "Mode", "Server");
     expect_summary_field_contains(*ntp_layer, "Mode", "4");
-    expect_summary_field_equals(*ntp_layer, "Stratum", "2");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Secondary reference (2)");
     expect_summary_field_contains(*ntp_layer, "Poll", "6");
     expect_summary_field_contains(*ntp_layer, "Precision", "-20");
     expect_summary_field_contains(*ntp_layer, "Root Delay", "0.125");
@@ -396,7 +400,7 @@ void expect_future_ntp_summary_for_structured_v3_server_packet() {
     expect_summary_field_equals(*ntp_layer, "Version", "3");
     expect_summary_field_contains(*ntp_layer, "Mode", "Server");
     expect_summary_field_contains(*ntp_layer, "Mode", "4");
-    expect_summary_field_equals(*ntp_layer, "Stratum", "1");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Primary reference (1)");
     expect_summary_field_contains(*ntp_layer, "Poll", "4");
     expect_summary_field_contains(*ntp_layer, "Precision", "-18");
     expect_summary_field_contains(*ntp_layer, "Reference ID", "GPS");
@@ -415,22 +419,36 @@ void expect_future_ntp_summary_for_unsynchronized_boundary_packet() {
 
     expect_summary_field_contains(*ntp_layer, "Leap Indicator", "3");
     expect_summary_field_contains(*ntp_layer, "Leap Indicator", "Unsynchronized");
-    expect_summary_field_equals(*ntp_layer, "Stratum", "16");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Unsynchronized (16)");
+    expect_summary_field_equals(*ntp_layer, "Reference ID", "83.84.69.80");
 }
 
-void expect_future_ntp_summary_for_signed_fixed_point_packet() {
-    const auto summary_layers = build_fixture_summary_layers("parsing/ntp/14_ntpv4_signed_root_delay.pcap");
+void expect_future_ntp_summary_for_v4_large_unsigned_fixed_point_packet() {
+    const auto summary_layers = build_fixture_summary_layers("parsing/ntp/14_ntpv4_large_root_delay.pcap");
     const auto* ntp_layer = expect_ntp_summary_layer(summary_layers);
     if (ntp_layer == nullptr) {
         return;
     }
 
+    expect_summary_field_equals(*ntp_layer, "Version", "4");
     expect_summary_field_contains(*ntp_layer, "Precision", "-30");
-    expect_summary_field_contains(*ntp_layer, "Root Delay", "-0.5");
-    expect_summary_field_contains(*ntp_layer, "Root Delay", "s");
-    expect_summary_field_contains(*ntp_layer, "Root Dispersion", "1.5");
-    expect_summary_field_contains(*ntp_layer, "Root Dispersion", "s");
+    expect_summary_field_equals(*ntp_layer, "Root Delay", "65535.5 s");
+    expect_summary_field_equals(*ntp_layer, "Root Dispersion", "1.5 s");
     expect_summary_field_equals(*ntp_layer, "Transmit Timestamp", "2026-01-05 06:00:03.500000 UTC");
+}
+
+void expect_future_ntp_summary_for_v3_signed_fixed_point_packet() {
+    const auto summary_layers = build_fixture_summary_layers("parsing/ntp/16_ntpv3_signed_root_delay.pcap");
+    const auto* ntp_layer = expect_ntp_summary_layer(summary_layers);
+    if (ntp_layer == nullptr) {
+        return;
+    }
+
+    expect_summary_field_equals(*ntp_layer, "Version", "3");
+    expect_summary_field_contains(*ntp_layer, "Precision", "-30");
+    expect_summary_field_equals(*ntp_layer, "Root Delay", "-0.5 s");
+    expect_summary_field_equals(*ntp_layer, "Root Dispersion", "1.5 s");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Secondary reference (2)");
 }
 
 void expect_future_ntp_summary_for_era0_boundary_packet() {
@@ -450,7 +468,7 @@ void expect_future_ntp_summary_for_kod_rate_packet() {
         return;
     }
 
-    expect_summary_field_equals(*ntp_layer, "Stratum", "0");
+    expect_summary_field_equals(*ntp_layer, "Stratum", "Unspecified or invalid (0)");
     expect_summary_field_equals(*ntp_layer, "Reference ID", "RATE");
     expect_summary_field_equals(*ntp_layer, "Kiss Code", "RATE");
 }
@@ -511,7 +529,8 @@ void run_ntp_pcap_fixture_tests() {
     expect_future_ntp_summary_for_structured_v4_server_packet();
     expect_future_ntp_summary_for_structured_v3_server_packet();
     expect_future_ntp_summary_for_unsynchronized_boundary_packet();
-    expect_future_ntp_summary_for_signed_fixed_point_packet();
+    expect_future_ntp_summary_for_v4_large_unsigned_fixed_point_packet();
+    expect_future_ntp_summary_for_v3_signed_fixed_point_packet();
     expect_future_ntp_summary_for_era0_boundary_packet();
     expect_future_ntp_summary_for_kod_rate_packet();
     expect_truncated_header_has_no_future_ntp_summary();

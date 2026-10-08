@@ -12,6 +12,7 @@
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/ConnectionKey.h"
+#include "core/domain/NtpInspection.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
 #include "core/services/TlsInspectionModel.h"
@@ -98,6 +99,8 @@ struct PacketSummaryOptions {
     std::vector<PacketSummaryLayer> tls_summary_layers {};
     std::optional<QuicPresentationResult> quic_presentation {};
     std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
+    std::optional<NtpMessage> ntp_message {};
+    NetworkAddressFamily ntp_terminal_address_family {NetworkAddressFamily::unknown};
     std::optional<PacketDataPresentation> packet_data {};
 };
 

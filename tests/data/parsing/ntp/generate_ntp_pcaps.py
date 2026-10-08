@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate deterministic NTP parsing fixtures 01-15.
+"""Generate deterministic NTP parsing fixtures 01-16.
 
 Fixtures 01-10 preserve the historical detection-fixture recipe. Fixtures
-11-15 are newer structured-inspection byte contracts. Keep those construction
+11-16 are newer structured-inspection byte contracts. Keep those construction
 paths intentionally separate so changes to future structured fixtures cannot
 silently alter the legacy regression artifacts.
 """
@@ -119,8 +119,8 @@ def build_structured_ntp_header(
                 precision & 0xFF,
             ]
         )
-        + signed_u32(root_delay)
-        + unsigned_u32(root_dispersion)
+        + wire_u32(root_delay)
+        + wire_u32(root_dispersion)
         + reference_id
         + timestamp_bytes(reference_timestamp)
         + timestamp_bytes(originate_timestamp)
@@ -129,16 +129,10 @@ def build_structured_ntp_header(
     )
 
 
-def signed_u32(value: int) -> bytes:
-    if not -(1 << 31) <= value < (1 << 31):
-        raise ValueError("signed uint32 field value is out of range")
+def wire_u32(value: int) -> bytes:
+    if not -(1 << 31) <= value <= 0xFFFFFFFF:
+        raise ValueError("wire uint32 field value is out of range")
     return (value & 0xFFFFFFFF).to_bytes(4, "big")
-
-
-def unsigned_u32(value: int) -> bytes:
-    if not 0 <= value <= 0xFFFFFFFF:
-        raise ValueError("unsigned uint32 field value is out of range")
-    return value.to_bytes(4, "big")
 
 
 def timestamp_bytes(value: int) -> bytes:
@@ -393,7 +387,7 @@ def structured_ntpv4_client_payload(transmit_timestamp: int) -> bytes:
     )
 
 
-def build_structured_fixtures_11_15() -> list[Fixture]:
+def build_structured_fixtures_11_16() -> list[Fixture]:
     client_tx = ntp_timestamp_era0(utc(2026, 1, 2, 3, 4, 5), 0x40000000)
     client_v4 = structured_ntpv4_client_payload(client_tx)
     server_v4 = build_structured_ntp_header(
@@ -439,7 +433,7 @@ def build_structured_fixtures_11_15() -> list[Fixture]:
         reference_timestamp=ntp_timestamp_era0(utc(2026, 1, 4, 5, 0, 0)),
         transmit_timestamp=ntp_timestamp_era0(utc(2026, 1, 4, 5, 0, 1), 0x80000000),
     )
-    signed_root_delay = build_structured_ntp_header(
+    large_root_delay_v4 = build_structured_ntp_header(
         leap_indicator=0,
         version=4,
         mode=4,
@@ -466,6 +460,21 @@ def build_structured_fixtures_11_15() -> list[Fixture]:
         reference_id=REFERENCE_ID_192_0_2_1,
         transmit_timestamp=raw_ntp_timestamp(0xFFFFFFFF, 0x80000000),
     )
+    signed_root_delay_v3 = build_structured_ntp_header(
+        leap_indicator=0,
+        version=3,
+        mode=4,
+        stratum=2,
+        poll=4,
+        precision=-30,
+        root_delay=fixed_16_16(-1, 2, signed=True),
+        root_dispersion=fixed_16_16(3, 2, signed=True),
+        reference_id=REFERENCE_ID_192_0_2_1,
+        reference_timestamp=ntp_timestamp_era0(utc(2026, 1, 7, 8, 0, 0), 0x80000000),
+        originate_timestamp=ntp_timestamp_era0(utc(2026, 1, 7, 8, 0, 1)),
+        receive_timestamp=ntp_timestamp_era0(utc(2026, 1, 7, 8, 0, 2)),
+        transmit_timestamp=ntp_timestamp_era0(utc(2026, 1, 7, 8, 0, 3), 0x80000000),
+    )
 
     return [
         Fixture(
@@ -484,18 +493,22 @@ def build_structured_fixtures_11_15() -> list[Fixture]:
             [server_to_client_packet(src_port=NTP_PORT, payload=unsynchronized_stratum16, ip_id=0x4A04, packet_time=structured_time(4))],
         ),
         Fixture(
-            "14_ntpv4_signed_root_delay.pcap",
-            [server_to_client_packet(src_port=NTP_PORT, payload=signed_root_delay, ip_id=0x4A05, packet_time=structured_time(5))],
+            "14_ntpv4_large_root_delay.pcap",
+            [server_to_client_packet(src_port=NTP_PORT, payload=large_root_delay_v4, ip_id=0x4A05, packet_time=structured_time(5))],
         ),
         Fixture(
             "15_ntpv4_era0_last_second.pcap",
             [server_to_client_packet(src_port=NTP_PORT, payload=era0_last_second, ip_id=0x4A06, packet_time=structured_time(6))],
         ),
+        Fixture(
+            "16_ntpv3_signed_root_delay.pcap",
+            [server_to_client_packet(src_port=NTP_PORT, payload=signed_root_delay_v3, ip_id=0x4A07, packet_time=structured_time(7))],
+        ),
     ]
 
 
 def build_all_fixtures() -> list[Fixture]:
-    return build_legacy_fixtures_01_10() + build_structured_fixtures_11_15()
+    return build_legacy_fixtures_01_10() + build_structured_fixtures_11_16()
 
 
 def write_pcap(path: Path, packets: list) -> None:

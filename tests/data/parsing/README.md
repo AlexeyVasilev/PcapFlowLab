@@ -250,11 +250,11 @@ are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 
 ## NTP
 
-These fixtures define the first conservative NTP detection-only behavior and
-staged structured-inspection byte contracts. Fixtures 01-05 are current
-positive cases, fixtures 06-10 are first-contract negatives or intentionally
-unsupported first-version forms, and fixtures 11-15 are future structured
-inspection baselines that remain detection-only in current production.
+These fixtures define the conservative NTPv3/NTPv4 UDP/123 recognition
+contract and structured selected-packet inspection byte contracts. Fixtures
+01-05 are positive cases, fixtures 06-10 are first-contract negatives or
+intentionally unsupported first-version forms, and fixtures 11-16 cover
+structured Summary / byte-view presentation.
 
 `ntp/01_ntpv4_client_request_port123.pcap`
 - Purpose: NTPv4 mode-3 client request positive baseline on destination UDP/123.
@@ -287,19 +287,22 @@ inspection baselines that remain detection-only in current production.
 - Purpose: 47-byte truncated basic-header boundary negative case.
 
 `ntp/11_ntpv4_structured_exchange.pcap`
-- Purpose: two-packet NTPv4 client/server exchange for future structured Summary and byte-view coverage.
+- Purpose: two-packet NTPv4 client/server exchange for structured Summary and byte-view coverage.
 
 `ntp/12_ntpv3_structured_server_response.pcap`
-- Purpose: NTPv3 server response with deterministic nonzero root and timestamp fields for future structured presentation coverage.
+- Purpose: NTPv3 server response with deterministic nonzero root and timestamp fields for structured presentation coverage.
 
 `ntp/13_ntpv4_unsynchronized_stratum16.pcap`
-- Purpose: NTPv4 unsynchronized LI `3` and stratum `16` accepted-boundary coverage.
+- Purpose: NTPv4 unsynchronized LI `3`, stratum `16`, and IPv4 secondary Reference ID formatting coverage.
 
-`ntp/14_ntpv4_signed_root_delay.pcap`
-- Purpose: NTPv4 server response covering signed Root Delay and unsigned Root Dispersion fixed-point formatting.
+`ntp/14_ntpv4_large_root_delay.pcap`
+- Purpose: NTPv4 server response covering unsigned Root Delay / Root Dispersion fixed-point formatting with a large raw Root Delay.
 
 `ntp/15_ntpv4_era0_last_second.pcap`
 - Purpose: NTPv4 Era 0 last-second timestamp boundary without era-unfolding inference.
+
+`ntp/16_ntpv3_signed_root_delay.pcap`
+- Purpose: NTPv3 server response covering signed Root Delay / Root Dispersion fixed-point formatting.
 
 ## ICMP
 

@@ -18,6 +18,7 @@
 #include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
+#include "core/services/NtpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
 
@@ -33,7 +34,6 @@ constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
-constexpr std::uint16_t kNtpPort = 123;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
@@ -52,7 +52,6 @@ constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x0
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
 constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
 constexpr std::size_t kStunHeaderSize = 20U;
-constexpr std::size_t kNtpBasicHeaderSize = 48U;
 constexpr std::size_t kBootpFixedHeaderSize = 236U;
 constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
 constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
@@ -393,36 +392,16 @@ bool looks_like_ntp_message(std::span<const std::uint8_t> packet_bytes,
                             const std::size_t payload_offset,
                             const std::uint16_t src_port,
                             const std::uint16_t dst_port) noexcept {
-    if (payload.size() != kNtpBasicHeaderSize) {
-        return false;
-    }
-
     const auto declared_udp_payload_length =
         declared_udp_payload_length_for_terminal_payload(packet_bytes, payload_offset);
-    if (!declared_udp_payload_length.has_value() ||
-        *declared_udp_payload_length != kNtpBasicHeaderSize) {
-        return false;
-    }
-
-    const auto version = static_cast<std::uint8_t>((payload[0] >> 3U) & 0x07U);
-    if (version != 3U && version != 4U) {
-        return false;
-    }
-
-    const auto mode = static_cast<std::uint8_t>(payload[0] & 0x07U);
-    if (mode == 3U) {
-        if (dst_port != kNtpPort) {
-            return false;
+    return inspect_supported_ntp_message(
+        payload,
+        NtpRecognitionContext {
+            .src_port = src_port,
+            .dst_port = dst_port,
+            .declared_udp_payload_length = declared_udp_payload_length,
         }
-    } else if (mode == 4U) {
-        if (src_port != kNtpPort) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    return payload[1] <= 16U;
+    ).has_value();
 }
 
 bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {

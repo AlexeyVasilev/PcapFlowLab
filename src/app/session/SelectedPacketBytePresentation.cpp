@@ -7,6 +7,7 @@
 #include "core/io/LinkType.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/NtpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
 
@@ -299,6 +300,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "tls_record";
     case SelectedPacketByteViewKind::tls_handshake:
         return "tls_handshake";
+    case SelectedPacketByteViewKind::ntp_message:
+        return "ntp";
     default:
         return "unknown";
     }
@@ -365,6 +368,7 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"dns", SelectedPacketByteViewKind::dns_message},
         {"tls_record", SelectedPacketByteViewKind::tls_record},
         {"tls_handshake", SelectedPacketByteViewKind::tls_handshake},
+        {"ntp", SelectedPacketByteViewKind::ntp_message},
     };
 
     const auto it = std::find_if(
@@ -540,6 +544,8 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return "QUIC CRYPTO Stream";
     case SelectedPacketByteViewKind::dns_message:
         return "DNS Message";
+    case SelectedPacketByteViewKind::ntp_message:
+        return "NTP Message";
     case SelectedPacketByteViewKind::tls_record:
         if (!is_complete) {
             return "TLS Record Fragment";
@@ -2445,6 +2451,69 @@ void append_dns_message_view(
     );
 }
 
+void append_ntp_message_view(
+    SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewId& parent_id,
+    const SelectedPacketByteViewDescriptor& parent_view
+) {
+    if (!parent_view.payload_range.has_value()) {
+        return;
+    }
+
+    append_protocol_unit_view(
+        presentation.views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::ntp_message,
+        0U,
+        presentation.owner_captured_length,
+        *parent_view.payload_range,
+        std::nullopt
+    );
+}
+
+void append_direct_ntp_message_view(
+    SelectedPacketBytePresentation& presentation,
+    const PacketDetails& details,
+    std::span<const std::uint8_t> packet_bytes,
+    const std::optional<SelectedPacketByteViewId>& outer_udp_id
+) {
+    if (!details.has_udp || !outer_udp_id.has_value()) {
+        return;
+    }
+
+    const auto* udp_view = presentation.find_view(*outer_udp_id);
+    if (udp_view == nullptr || !udp_view->payload_range.has_value()) {
+        return;
+    }
+
+    const auto& payload_range = *udp_view->payload_range;
+    const auto payload_offset = static_cast<std::size_t>(payload_range.offset);
+    const auto payload_length = static_cast<std::size_t>(payload_range.captured_length);
+    if (payload_offset > packet_bytes.size() ||
+        payload_length > packet_bytes.size() - payload_offset) {
+        return;
+    }
+
+    const auto message = inspect_supported_ntp_message(
+        packet_bytes.subspan(payload_offset, payload_length),
+        NtpRecognitionContext {
+            .src_port = details.udp.src_port,
+            .dst_port = details.udp.dst_port,
+            .declared_udp_payload_length = payload_range.declared_length.has_value()
+                ? std::optional<std::size_t> {static_cast<std::size_t>(*payload_range.declared_length)}
+                : std::nullopt,
+        }
+    );
+    if (!message.has_value()) {
+        return;
+    }
+
+    append_ntp_message_view(presentation, *outer_udp_id, *udp_view);
+}
+
 void append_effective_transport_dns_message_view(
     SelectedPacketBytePresentation& presentation,
     const PacketDetails& details,
@@ -3274,6 +3343,17 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             options.packet_bytes,
             suppress_udp_dns_for_quic,
             outer_tcp_id,
+            outer_udp_id
+        );
+    }
+    const bool can_append_top_level_ntp =
+        !details.effective_transport_payload.has_value() ||
+        details.effective_transport_payload->role == EffectiveTransportRole::top_level;
+    if (!options.packet_bytes.empty() && can_append_top_level_ntp) {
+        append_direct_ntp_message_view(
+            presentation,
+            details,
+            options.packet_bytes,
             outer_udp_id
         );
     }

@@ -201,10 +201,12 @@ void expect_representative_rows() {
     PFL_EXPECT(ntp->category == session_detail::SupportedProtocolCategory::application);
     PFL_EXPECT(ntp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(ntp->service == session_detail::SupportedProtocolCapabilityStatus::no);
-    PFL_EXPECT(ntp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(ntp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(ntp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
     PFL_EXPECT(ntp->notes.find("48-byte NTPv3/NTPv4") != std::string_view::npos);
-    PFL_EXPECT(ntp->notes.find("UDP/123 direction semantics") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("structured NTP fields") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("NTP Message byte view") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("Other modes") != std::string_view::npos);
 }
 
 void expect_markdown_escaping() {

@@ -112,7 +112,7 @@ limitations remain accurately described.
 | Application | BitTorrent | Yes | No | No | No | Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented. |
 | Application | MQTT | Yes | No | No | No | Recognized from a structurally validated CONNECT packet for MQTT 3.1, 3.1.1, and 5.0; deeper MQTT parsing is not implemented. |
 | Application | AMQP | Yes | No | No | No | Recognized from exact AMQP protocol headers for AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL negotiation; deeper AMQP frame parsing is not implemented. |
-| Application | NTP | Yes | No | No | No | Conservatively recognized for classic 48-byte NTPv3/NTPv4 client/server packets using UDP/123 direction semantics. Broader NTP modes and extensions are not yet automatically recognized. |
+| Application | NTP | Yes | No | Yes | No | Conservative 48-byte NTPv3/NTPv4 client/server recognition; selected packets expose structured NTP fields and an NTP Message byte view. Other modes, extensions, authentication/NTS, and era unfolding remain unsupported. |
 | Application | Mail protocols (SMTP / POP3 / IMAP) | Yes | No | No | No | Lightweight detection exists; structured mail-protocol parsing is not implemented. |
 <!-- END USER PROTOCOL CAPABILITY CATALOG -->
 
@@ -261,7 +261,7 @@ surface under `Stream Item Data` where applicable.
 | BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is canonical-handshake / hint recognition only. Generic transport-owned Stream Item `Data` may still exist, but no BitTorrent-specific Stream semantics are implemented. |
 | MQTT | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is structurally validated CONNECT hint recognition for MQTT 3.1, 3.1.1, and 5.0 over TCP only. Generic TCP-owned Stream Item `Data` may still exist, but no MQTT-specific selected-packet or Stream semantics are implemented. |
 | AMQP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol headers over TCP only. TCP/5671 and TCP/5672 alone do not imply AMQP, ordinary TLS traffic on TCP/5671 is not inferred as AMQP, split protocol headers may be missed, and captures starting after negotiation may remain TCP. Generic TCP-owned Stream Item `Data` may still exist, but no AMQP-specific selected-packet, service extraction, Stream, or byte-view semantics are implemented. |
-| NTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exactly 48-byte NTPv3/NTPv4 mode-3 client packets with destination UDP/123 and mode-4 server packets with source UDP/123 when stratum is `<= 16`. All Leap Indicator values, including `LI == 3`, are accepted. NTPv1/v2, symmetric modes 1/2, broadcast mode 5, control/private modes 6/7, extension fields, authenticated MACs, NTS, non-standard-port automatic detection, TCP, and longer packets are outside the first conservative automatic detector rather than classified as universally invalid NTP. Generic UDP-owned Stream Item `Data` may still exist, but no NTP-specific selected-packet, Stream, service extraction, timestamp decoding, or byte-view semantics are implemented. |
+| NTP | Supported | Not supported | Not supported | Supported | Supported | Not supported | Partial | Supported | Current support recognizes exactly 48-byte NTPv3/NTPv4 mode-3 client packets with destination UDP/123 and mode-4 server packets with source UDP/123 when stratum is `<= 16`. Selected-packet `Summary` exposes structured NTP fields, including version-aware Root Delay / Root Dispersion formatting and Era-0 timestamp presentation. Packet Details `Bytes` exposes a bounded packet-local `NTP Message` view for complete classic 48-byte messages. All Leap Indicator values, including `LI == 3`, are accepted. NTPv1/v2, symmetric modes 1/2, broadcast mode 5, control/private modes 6/7, extension fields, authenticated MACs, NTS, non-standard-port automatic detection, TCP, longer packets, request/response timing correlation, clock offset/delay analysis, era unfolding after the 2036 rollover, and NTP-specific Stream semantics are outside current support rather than classified as universally invalid NTP. Generic UDP-owned Stream Item `Data` may still exist, but no NTP-specific Stream item model is implemented. |
 | SSH | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is banner-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but no structured SSH message or Stream model is implemented. |
 | SMTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no SMTP-specific Stream model. |
 | POP3 | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no POP3-specific Stream model. |
@@ -295,9 +295,8 @@ The shared layered Summary model is intentionally conservative today.
   - BitTorrent;
   - MQTT;
   - AMQP;
-  - NTP;
   - SMTP / POP3 / IMAP / SSH.
-- For TLS, QUIC, DNS, HTTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
+- For TLS, QUIC, DNS, HTTP, NTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
 - ICMPv4 is now slightly stronger: layered Summary uses the shared bounded `IcmpInspectionParser -> IcmpMessage` model for common-header and selected type-specific metadata while still keeping checksum validation, quoted-packet recursive decoding, request/reply correlation, and ICMPv6 parity out of scope.
 
 ### Packet Details Summary
@@ -309,6 +308,7 @@ Selected-packet `Summary` currently has three main high-level patterns:
   - QUIC;
   - DNS;
   - HTTP;
+  - NTP;
 - shared basic protocol text for:
   - ARP;
   - IGMP;
@@ -325,6 +325,9 @@ Selected-packet `Bytes` is not a generic "deep application payload" system.
 - It can expose captured-packet roots, link/network/transport units, and selected derived protocol-unit views where current ownership/provenance exists.
 - For TCP and UDP packets it commonly includes extracted transport payload bytes.
 - For ARP packets it can show bounded ARP bytes through the selected-packet byte-presentation path.
+- For complete classic 48-byte NTPv3/NTPv4 packets it can show a bounded
+  packet-local `NTP Message` view; extension fields, MACs, and NTS are not
+  parsed as part of that view.
 - For fragmented IP packets, byte extraction is intentionally conservative and may be empty.
 - For protocols such as ICMP, ICMPv6, and IGMP, the current model is still bounded per-packet byte views rather than a deep recursive inspector.
 
@@ -402,6 +405,10 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - TLS 1.2 / 1.3, constricted captures, and IPv6 variants.
 - `udp`
   - generic UDP payload, truncation, and checksum-oriented fixtures.
+- `ntp`
+  - NTPv3/NTPv4 client/server recognition, KoD, conservative negatives,
+    structured timestamp and fixed-point field presentation, unsynchronized
+    state, NTPv3-vs-NTPv4 Root Delay semantics, and Era-0 endpoint coverage.
 - `vlan`
   - single-tag 802.1Q, current two-tag QinQ, VLAN-tagged ARP, unknown inner EtherType, and malformed/truncated VLAN fixtures.
 - `vxlan`
@@ -452,7 +459,12 @@ The current protocol-support pass intentionally does not claim support for:
 - MACsec decryption, ICV validation, MKA/SAK handling, or inner flow recovery;
 - PBB-TE, OAM/CFM, PBB control-plane behavior, or bridge-learning semantics;
 - PPPoE session-negotiation or control-plane semantics beyond conservative Discovery / PPP-control presentation;
-- MPLS LDP, BGP-labeled services, OAM, or MPLS-TP control-plane semantics.
+- MPLS LDP, BGP-labeled services, OAM, or MPLS-TP control-plane semantics;
+- NTPv1/v2 automatic recognition, NTP modes outside client/server `3`/`4`,
+  payloads longer than the classic 48-byte basic header, extension fields,
+  authentication MACs, NTS, non-standard-port recognition, request/response
+  timing correlation, clock offset/delay analysis, specialized NTP Stream
+  semantics, and NTP era unfolding after the 2036 rollover.
 
 ## How To Update This Document
 

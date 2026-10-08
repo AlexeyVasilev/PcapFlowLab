@@ -8,6 +8,7 @@
 
 #include "app/session/DnsSummaryPresentation.h"
 #include "app/session/IcmpSummaryPresentation.h"
+#include "app/session/NtpSummaryPresentation.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::session_detail {
@@ -5470,6 +5471,10 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(
     }
     if (const auto icmpv6_layer = build_icmpv6_summary_layer(details); icmpv6_layer.has_value()) {
         return icmpv6_layer;
+    }
+
+    if (options.ntp_message.has_value()) {
+        return build_ntp_summary_layer(*options.ntp_message, options.ntp_terminal_address_family);
     }
 
     if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {
