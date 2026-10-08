@@ -103,6 +103,21 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `stun/06_stun_declared_length_mismatch.pcap`
 - Purpose: exact declared-length boundary negative case.
 
+`stun/07_stun_binding_ice_exchange.pcap`
+- Purpose: structured STUN/ICE Binding request/response target with USERNAME, PRIORITY, ICE-CONTROLLING, USE-CANDIDATE, MESSAGE-INTEGRITY, MESSAGE-INTEGRITY-SHA256, XOR-MAPPED-ADDRESS, SOFTWARE, and FINGERPRINT attributes.
+
+`stun/08_stun_binding_success_xor_mapped_ipv6.pcap`
+- Purpose: IPv6 mapped-address target covering XOR-MAPPED-ADDRESS and MAPPED-ADDRESS attributes.
+
+`stun/09_stun_binding_error_response.pcap`
+- Purpose: Binding Error Response target covering ERROR-CODE, REALM, NONCE, and SOFTWARE attributes.
+
+`stun/10_stun_attribute_padding_and_unknown.pcap`
+- Purpose: attribute padding and unknown required/optional attribute target.
+
+`stun/11_stun_malformed_attribute_length.pcap`
+- Purpose: malformed inner-attribute-length robustness target with a valid outer STUN envelope.
+
 ## BitTorrent
 
 `bittorrent/01_bittorrent_handshake_typical_ports.pcap`
