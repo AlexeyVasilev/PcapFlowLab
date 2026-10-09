@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "app/session/SessionFormatting.h"
+#include "core/domain/DhcpInspection.h"
 
 namespace pfl {
 class CaptureSession;
@@ -29,6 +30,7 @@ struct SelectedPacketSummaryPreparation {
     std::vector<PacketSummaryLayer> tls_summary_layers {};
     std::optional<QuicPresentationResult> quic_presentation {};
     std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
+    std::optional<DhcpMessage> dhcp_message {};
     std::optional<NtpMessage> ntp_message {};
     std::optional<StunMessage> stun_message {};
     NetworkAddressFamily ntp_terminal_address_family {NetworkAddressFamily::unknown};

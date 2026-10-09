@@ -89,6 +89,7 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     tls_handshake,
     ntp_message,
     stun_message,
+    dhcp_message,
 };
 
 enum class SelectedPacketByteViewRole : std::uint8_t {

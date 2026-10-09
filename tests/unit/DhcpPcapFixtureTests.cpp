@@ -179,6 +179,19 @@ const session_detail::PacketSummaryField* find_summary_field(
     return it != layer.fields.end() ? &(*it) : nullptr;
 }
 
+std::vector<std::string> collect_summary_field_values(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    std::vector<std::string> values {};
+    for (const auto& field : layer.fields) {
+        if (field.label == label) {
+            values.push_back(field.value);
+        }
+    }
+    return values;
+}
+
 const session_detail::PacketSummaryField* find_descendant_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label
@@ -398,16 +411,19 @@ void expect_future_dhcp_summary_for_fixture_07_discover() {
         expect_descendant_summary_field_equals(*requested_ip, "Address", "192.0.2.100");
     }
     if (prl != nullptr) {
-        const auto prl_text = flatten_summary_layer_text(*prl);
-        PFL_EXPECT(contains_text(prl_text, "1"));
-        PFL_EXPECT(contains_text(prl_text, "3"));
-        PFL_EXPECT(contains_text(prl_text, "6"));
-        PFL_EXPECT(contains_text(prl_text, "15"));
-        PFL_EXPECT(contains_text(prl_text, "28"));
-        PFL_EXPECT(contains_text(prl_text, "51"));
-        PFL_EXPECT(contains_text(prl_text, "54"));
-        PFL_EXPECT(contains_text(prl_text, "58"));
-        PFL_EXPECT(contains_text(prl_text, "59"));
+        const auto requested_options = collect_summary_field_values(*prl, "Requested Option");
+        const std::vector<std::string> expected_requested_options {
+            "1 (Subnet Mask)",
+            "3 (Router)",
+            "6 (Domain Name Server)",
+            "15 (Domain Name)",
+            "28 (Broadcast Address)",
+            "51 (IP Address Lease Time)",
+            "54 (Server Identifier)",
+            "58 (Renewal Time Value)",
+            "59 (Rebinding Time Value)",
+        };
+        PFL_EXPECT(requested_options == expected_requested_options);
     }
     if (client_id != nullptr) {
         expect_descendant_summary_field_contains(*client_id, "Hardware Type", "Ethernet");

@@ -18,6 +18,7 @@
 #include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
+#include "core/services/DhcpInspectionParser.h"
 #include "core/services/NtpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
@@ -32,8 +33,6 @@ constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
-constexpr std::uint16_t kDhcpServerPort = 67;
-constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
@@ -51,10 +50,6 @@ constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
-constexpr std::size_t kBootpFixedHeaderSize = 236U;
-constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
-constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
-constexpr std::uint32_t kDhcpMagicCookie = 0x63825363U;
 constexpr std::string_view kBitTorrentHandshakeProtocol = "BitTorrent protocol";
 constexpr std::size_t kBitTorrentHandshakeSize = 68U;
 constexpr std::uint8_t kMqttConnectFixedHeaderByte = 0x10U;
@@ -131,10 +126,6 @@ std::string format_mac_address(std::span<const std::uint8_t> address) {
 
 bool has_port(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port) noexcept {
     return left == port || right == port;
-}
-
-bool has_port_pair(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port_a, const std::uint16_t port_b) noexcept {
-    return (left == port_a && right == port_b) || (left == port_b && right == port_a);
 }
 
 bool is_mdns_destination_port(const std::uint16_t port) noexcept {
@@ -601,14 +592,6 @@ bool looks_like_imap_payload(std::span<const std::uint8_t> payload) noexcept {
     ++index;
     const auto command = payload_text.substr(index);
     return command.starts_with("LOGIN ") || command.starts_with("CAPABILITY") || command == "LOGIN";
-}
-
-bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
-    if (payload.size() < kDhcpMinPayloadSize) {
-        return false;
-    }
-
-    return read_be32(payload, kDhcpMagicCookieOffset) == kDhcpMagicCookie;
 }
 
 std::optional<std::string> extract_http_host(std::span<const std::uint8_t> payload) {
@@ -1343,11 +1326,12 @@ FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> packet_bytes,
 FlowHintUpdate detect_dhcp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
-    if (!has_port_pair(src_port, dst_port, kDhcpClientPort, kDhcpServerPort)) {
-        return {};
-    }
-
-    if (!looks_like_dhcp_message(payload)) {
+    if (!dhcp_message_matches_current_support_contract(
+            payload,
+            DhcpRecognitionContext {
+                .src_port = src_port,
+                .dst_port = dst_port,
+            })) {
         return {};
     }
 

@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "app/session/DnsSummaryPresentation.h"
+#include "app/session/DhcpSummaryPresentation.h"
 #include "app/session/IcmpSummaryPresentation.h"
 #include "app/session/NtpSummaryPresentation.h"
 #include "app/session/StunSummaryPresentation.h"
@@ -5480,6 +5481,10 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(
 
     if (options.stun_message.has_value()) {
         return build_stun_summary_layer(*options.stun_message);
+    }
+
+    if (options.dhcp_message.has_value()) {
+        return build_dhcp_summary_layer(*options.dhcp_message);
     }
 
     if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {
