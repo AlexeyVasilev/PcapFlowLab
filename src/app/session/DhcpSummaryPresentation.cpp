@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <span>
 #include <string>
@@ -120,27 +121,34 @@ std::string format_client_hardware_address(const DhcpMessage& message) {
     return format_hex_bytes(bytes);
 }
 
-std::string format_message_type(const std::uint8_t value) {
+const char* known_message_type_name(const std::uint8_t value) noexcept {
     switch (value) {
     case 1U:
-        return "Discover (1)";
+        return "Discover";
     case 2U:
-        return "Offer (2)";
+        return "Offer";
     case 3U:
-        return "Request (3)";
+        return "Request";
     case 4U:
-        return "Decline (4)";
+        return "Decline";
     case 5U:
-        return "ACK (5)";
+        return "ACK";
     case 6U:
-        return "NAK (6)";
+        return "NAK";
     case 7U:
-        return "Release (7)";
+        return "Release";
     case 8U:
-        return "Inform (8)";
+        return "Inform";
     default:
-        return "Unknown (" + std::to_string(static_cast<unsigned>(value)) + ")";
+        return nullptr;
     }
+}
+
+std::string format_message_type(const std::uint8_t value) {
+    if (const auto* name = known_message_type_name(value); name != nullptr) {
+        return std::string {name} + " (" + std::to_string(static_cast<unsigned>(value)) + ')';
+    }
+    return "Unknown (" + std::to_string(static_cast<unsigned>(value)) + ")";
 }
 
 const char* known_option_name(const std::uint8_t code) noexcept {
@@ -231,6 +239,42 @@ std::optional<std::uint16_t> option_u16(const DhcpOption& option) noexcept {
         return std::nullopt;
     }
     return read_be16(std::span<const std::uint8_t>(option.value.data(), option.value.size()), 0U);
+}
+
+std::optional<std::string> option_title_preview(const DhcpOption& option) {
+    if (option.status != DhcpOptionStatus::complete) {
+        return std::nullopt;
+    }
+
+    switch (option.semantic_kind) {
+    case DhcpOptionSemanticKind::message_type:
+        if (option.value.size() == 1U) {
+            if (const auto* name = known_message_type_name(option.value.front()); name != nullptr) {
+                return std::string {name};
+            }
+        }
+        return std::nullopt;
+    case DhcpOptionSemanticKind::subnet_mask:
+    case DhcpOptionSemanticKind::broadcast_address:
+    case DhcpOptionSemanticKind::requested_ip_address:
+    case DhcpOptionSemanticKind::server_identifier:
+        if (const auto address = option_ipv4(option); address.has_value()) {
+            return format_ipv4(*address);
+        }
+        return std::nullopt;
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string option_title(const DhcpOption& option) {
+    auto title = "Option: " + option_name(option);
+    if (const auto preview = option_title_preview(option); preview.has_value()) {
+        title += " (";
+        title += *preview;
+        title += ')';
+    }
+    return title;
 }
 
 std::vector<PacketSummaryField> base_option_fields(const DhcpOption& option) {
@@ -375,7 +419,7 @@ PacketSummaryLayer build_option_layer(const DhcpOption& option) {
 
     return PacketSummaryLayer {
         .id = "dhcp.option",
-        .title = "Option: " + option_name(option),
+        .title = option_title(option),
         .fields = std::move(fields),
         .warning = option.status == DhcpOptionStatus::malformed,
     };

@@ -401,6 +401,7 @@ void expect_future_dhcp_summary_for_fixture_07_discover() {
     expect_child_title_contains(*options, 7U, "End");
 
     if (message_type != nullptr) {
+        PFL_EXPECT(message_type->title == "Option: DHCP Message Type (Discover)");
         expect_descendant_summary_field_contains(*message_type, "Value", "Discover");
         expect_descendant_summary_field_contains(*message_type, "Value", "1");
     }
@@ -408,6 +409,7 @@ void expect_future_dhcp_summary_for_fixture_07_discover() {
         expect_descendant_summary_field_equals(*host_name, "Value", "pfl-client");
     }
     if (requested_ip != nullptr) {
+        PFL_EXPECT(requested_ip->title == "Option: Requested IP Address (192.0.2.100)");
         expect_descendant_summary_field_equals(*requested_ip, "Address", "192.0.2.100");
     }
     if (prl != nullptr) {
@@ -474,10 +476,12 @@ void expect_future_dhcp_summary_for_fixture_08_offer() {
     const auto* message = expect_child_title_contains(*options, 10U, "Message");
 
     if (message_type != nullptr) {
+        PFL_EXPECT(message_type->title == "Option: DHCP Message Type (Offer)");
         expect_descendant_summary_field_contains(*message_type, "Value", "Offer");
         expect_descendant_summary_field_contains(*message_type, "Value", "2");
     }
     if (subnet != nullptr) {
+        PFL_EXPECT(subnet->title == "Option: Subnet Mask (255.255.255.0)");
         expect_descendant_summary_field_equals(*subnet, "Address", "255.255.255.0");
     }
     if (router != nullptr) {
@@ -494,6 +498,7 @@ void expect_future_dhcp_summary_for_fixture_08_offer() {
         expect_descendant_summary_field_equals(*domain, "Value", "example.test");
     }
     if (broadcast != nullptr) {
+        PFL_EXPECT(broadcast->title == "Option: Broadcast Address (192.0.2.255)");
         expect_descendant_summary_field_equals(*broadcast, "Address", "192.0.2.255");
     }
     if (lease != nullptr) {
@@ -506,6 +511,7 @@ void expect_future_dhcp_summary_for_fixture_08_offer() {
         expect_descendant_summary_field_contains(*rebinding, "Value", "3150");
     }
     if (server_id != nullptr) {
+        PFL_EXPECT(server_id->title == "Option: Server Identifier (192.0.2.1)");
         expect_descendant_summary_field_equals(*server_id, "Address", "192.0.2.1");
     }
     if (message != nullptr) {
