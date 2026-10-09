@@ -66,6 +66,21 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `dhcp/06_dhcp_truncated_before_magic_cookie.pcap`
 - Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
 
+`dhcp/07_dhcp_structured_discover.pcap`
+- Purpose: target structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, and End handling.
+
+`dhcp/08_dhcp_structured_offer.pcap`
+- Purpose: target structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, and Server Identifier.
+
+`dhcp/09_dhcp_option_overload.pcap`
+- Purpose: target Option Overload coverage where the main option area declares both file and sname as DHCP option areas.
+
+`dhcp/10_dhcp_padding_unknown_end.pcap`
+- Purpose: target Pad, unknown option, End termination, and deterministic post-End tail coverage.
+
+`dhcp/11_dhcp_malformed_option_length.pcap`
+- Purpose: target malformed option-length robustness while preserving the current cheap DHCP detector contract.
+
 ## SSH
 
 `ssh/01_ssh_server_banner_port22.pcap`
