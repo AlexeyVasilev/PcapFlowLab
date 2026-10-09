@@ -112,6 +112,16 @@ const FrontendStreamItemDto* find_frontend_stream_item_by_label(
     return it == items.end() ? nullptr : &(*it);
 }
 
+const StreamItemRow& expect_future_stream_row_or_first(
+    const std::vector<StreamItemRow>& rows,
+    const std::string_view label
+) {
+    PFL_REQUIRE(!rows.empty());
+    const auto* row = find_stream_row_by_label(rows, label);
+    PFL_EXPECT(row != nullptr);
+    return row != nullptr ? *row : rows.front();
+}
+
 session_detail::SelectedStreamItemDataPresentation require_selected_stream_item_data(
     CaptureSession& session,
     const std::size_t flow_index,
@@ -292,6 +302,99 @@ void run_selected_stream_item_data_presentation_tests() {
             30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/07_dhcp_structured_discover.pcap"), fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_stream_row_or_first(rows, "DHCP Discover");
+        PFL_REQUIRE(row.packet_indices.size() == 1U);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row.stream_item_index);
+        PFL_EXPECT(session_detail::to_string(presentation.semantic_kind) == "dhcp_message");
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
+        PFL_EXPECT(presentation.available_length == row.byte_count);
+        PFL_REQUIRE(presentation.captured_packet_range.has_value());
+        PFL_EXPECT(presentation.captured_packet_range->packet_index == row.packet_indices.front());
+        PFL_EXPECT(presentation.captured_packet_range->available_length == row.byte_count);
+
+        const auto packet = session.find_packet(row.packet_indices.front());
+        PFL_REQUIRE(packet.has_value());
+        const auto expected_payload = session.read_selected_flow_transport_payload(0U, *packet);
+        PFL_EXPECT(static_cast<std::size_t>(row.byte_count) == expected_payload.size());
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row.stream_item_index
+        );
+        PFL_EXPECT(materialized == expected_payload);
+        expect_hex_dump_matches(session, 0U, 30U, 16U, row.stream_item_index, expected_payload);
+        expect_presentation_based_item_data_matches_indexed(session, 0U, 30U, 16U, row.stream_item_index);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/11_dhcp_malformed_option_length.pcap"), fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_stream_row_or_first(rows, "DHCP Discover");
+        PFL_REQUIRE(row.packet_indices.size() == 1U);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row.stream_item_index);
+        PFL_EXPECT(session_detail::to_string(presentation.semantic_kind) == "dhcp_message");
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
+        PFL_EXPECT(presentation.available_length == row.byte_count);
+
+        const auto packet = session.find_packet(row.packet_indices.front());
+        PFL_REQUIRE(packet.has_value());
+        const auto expected_payload = session.read_selected_flow_transport_payload(0U, *packet);
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row.stream_item_index
+        );
+        PFL_EXPECT(materialized == expected_payload);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/05_dhcp_valid_payload_wrong_ports.pcap"), fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = rows.front();
+        PFL_EXPECT(row.label == "UDP Payload");
+        PFL_EXPECT(row.semantic_family == StreamItemSemanticFamily::generic);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row.stream_item_index);
+        PFL_EXPECT(session_detail::to_string(presentation.semantic_kind) == "opaque_payload");
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(presentation.available_length == row.byte_count);
+
+        const auto packet = session.find_packet(row.packet_indices.front());
+        PFL_REQUIRE(packet.has_value());
+        const auto expected_payload = session.read_selected_flow_transport_payload(0U, *packet);
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row.stream_item_index
+        );
+        PFL_EXPECT(materialized == expected_payload);
     }
 
     {
