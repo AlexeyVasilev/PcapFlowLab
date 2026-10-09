@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <span>
 #include <string>
@@ -13,6 +14,8 @@
 namespace pfl::session_detail {
 
 namespace {
+
+constexpr std::size_t kMaxAttributeTitlePreviewTextLength = 48U;
 
 PacketSummaryField make_summary_field(std::string label, std::string value) {
     return PacketSummaryField {
@@ -181,11 +184,73 @@ std::string format_address(const StunAddress& address) {
     }
 }
 
-std::string format_attribute_title(const StunAttribute& attribute) {
-    if (attribute.semantic_kind == StunAttributeSemanticKind::unknown) {
-        return "Attribute: Unknown " + format_hex(attribute.type, 4);
+std::optional<std::string> text_attribute_title_preview(const StunAttribute& attribute) {
+    if (attribute.status != StunAttributeStatus::complete || !attribute.text_value.has_value() ||
+        attribute.text_value->empty() || attribute.text_value->size() > kMaxAttributeTitlePreviewTextLength) {
+        return std::nullopt;
     }
-    return "Attribute: " + attribute_name(attribute.semantic_kind);
+    return *attribute.text_value;
+}
+
+std::optional<std::string> address_attribute_title_preview(const StunAttribute& attribute) {
+    if (attribute.status != StunAttributeStatus::complete || !attribute.address.has_value()) {
+        return std::nullopt;
+    }
+
+    switch (attribute.address->family) {
+    case StunAddressFamily::ipv4:
+        return format_address(*attribute.address) + ":" + std::to_string(attribute.address->port);
+    case StunAddressFamily::ipv6:
+        return "[" + format_address(*attribute.address) + "]:" + std::to_string(attribute.address->port);
+    default:
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> error_code_attribute_title_preview(const StunAttribute& attribute) {
+    if (attribute.status != StunAttributeStatus::complete || !attribute.error_code.has_value()) {
+        return std::nullopt;
+    }
+
+    auto preview = std::to_string(*attribute.error_code);
+    if (attribute.error_reason.has_value() && !attribute.error_reason->empty() &&
+        attribute.error_reason->size() <= kMaxAttributeTitlePreviewTextLength) {
+        preview += ' ';
+        preview += *attribute.error_reason;
+    }
+    return preview;
+}
+
+std::optional<std::string> attribute_title_preview(const StunAttribute& attribute) {
+    switch (attribute.semantic_kind) {
+    case StunAttributeSemanticKind::username:
+    case StunAttributeSemanticKind::realm:
+    case StunAttributeSemanticKind::nonce:
+        return text_attribute_title_preview(attribute);
+    case StunAttributeSemanticKind::mapped_address:
+    case StunAttributeSemanticKind::xor_mapped_address:
+        return address_attribute_title_preview(attribute);
+    case StunAttributeSemanticKind::error_code:
+        return error_code_attribute_title_preview(attribute);
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_attribute_title(const StunAttribute& attribute) {
+    std::string title;
+    if (attribute.semantic_kind == StunAttributeSemanticKind::unknown) {
+        title = "Attribute: Unknown " + format_hex(attribute.type, 4);
+    } else {
+        title = "Attribute: " + attribute_name(attribute.semantic_kind);
+    }
+
+    if (const auto preview = attribute_title_preview(attribute); preview.has_value()) {
+        title += " (";
+        title += *preview;
+        title += ")";
+    }
+    return title;
 }
 
 PacketSummaryLayer build_attribute_layer(const StunAttribute& attribute) {

@@ -353,6 +353,7 @@ void expect_future_stun_summary_for_fixture_07_request() {
     const auto* fingerprint = expect_attribute_child(*stun_layer, 5U, "FINGERPRINT");
 
     if (username != nullptr) {
+        PFL_EXPECT(username->title == "Attribute: USERNAME (remote:local)");
         expect_descendant_summary_field_equals(*username, "Value", "remote:local");
     }
     if (priority != nullptr) {
@@ -390,6 +391,7 @@ void expect_future_stun_summary_for_fixture_07_response() {
     const auto* fingerprint = expect_attribute_child(*stun_layer, 3U, "FINGERPRINT");
 
     if (xor_mapped != nullptr) {
+        PFL_EXPECT(xor_mapped->title == "Attribute: XOR-MAPPED-ADDRESS (203.0.113.25:54321)");
         expect_descendant_summary_field_equals(*xor_mapped, "Family", "IPv4");
         expect_descendant_summary_field_equals(*xor_mapped, "Address", "203.0.113.25");
         expect_descendant_summary_field_equals(*xor_mapped, "Port", "54321");
@@ -419,11 +421,13 @@ void expect_future_stun_summary_for_fixture_08_ipv6_addresses() {
     const auto* mapped = expect_attribute_child(*stun_layer, 1U, "MAPPED-ADDRESS");
 
     if (xor_mapped != nullptr) {
+        PFL_EXPECT(xor_mapped->title == "Attribute: XOR-MAPPED-ADDRESS ([2001:db8:ffff::25]:54321)");
         expect_descendant_summary_field_equals(*xor_mapped, "Family", "IPv6");
         expect_descendant_summary_field_equals(*xor_mapped, "Address", "2001:db8:ffff::25");
         expect_descendant_summary_field_equals(*xor_mapped, "Port", "54321");
     }
     if (mapped != nullptr) {
+        PFL_EXPECT(mapped->title == "Attribute: MAPPED-ADDRESS ([2001:db8:ffff::26]:54322)");
         expect_descendant_summary_field_equals(*mapped, "Family", "IPv6");
         expect_descendant_summary_field_equals(*mapped, "Address", "2001:db8:ffff::26");
         expect_descendant_summary_field_equals(*mapped, "Port", "54322");
@@ -445,13 +449,16 @@ void expect_future_stun_summary_for_fixture_09_error_response() {
     const auto* software = expect_attribute_child(*stun_layer, 3U, "SOFTWARE");
 
     if (error_code != nullptr) {
+        PFL_EXPECT(error_code->title == "Attribute: ERROR-CODE (401 Unauthorized)");
         expect_descendant_summary_field_equals(*error_code, "Code", "401");
         expect_descendant_summary_field_equals(*error_code, "Reason", "Unauthorized");
     }
     if (realm != nullptr) {
+        PFL_EXPECT(realm->title == "Attribute: REALM (example.org)");
         expect_descendant_summary_field_equals(*realm, "Value", "example.org");
     }
     if (nonce != nullptr) {
+        PFL_EXPECT(nonce->title == "Attribute: NONCE (pfl-stun-nonce-0001)");
         expect_descendant_summary_field_equals(*nonce, "Value", "pfl-stun-nonce-0001");
     }
     if (software != nullptr) {
@@ -502,6 +509,8 @@ void expect_future_stun_summary_for_fixture_11_malformed_attribute() {
     expect_stun_header_contract(*stun_layer, "0x0001", "Binding (0x001)", "Request", "8", "0x111111111111111111111111");
     const auto* username = expect_attribute_child(*stun_layer, 0U, "USERNAME");
     if (username != nullptr) {
+        PFL_EXPECT(username->title == "Attribute: USERNAME");
+        PFL_EXPECT(!contains_text(username->title, "abcd"));
         expect_descendant_summary_field_equals(*username, "Length", "8");
         expect_descendant_summary_field_contains(*username, "Status", "malformed");
         expect_descendant_summary_field_contains(*username, "Warning", "extends beyond");
