@@ -1,11 +1,12 @@
 # DHCPv4 / BOOTP-DHCP Parsing Fixtures
 
 This directory contains the permanent PCAP fixture set for current PcapFlowLab
-DHCPv4 recognition behavior and the first planned structured-inspection scope.
+DHCPv4 recognition behavior and selected-packet structured-inspection scope.
 
-Current PcapFlowLab DHCPv4 support is detection-only. It lives in the
-application protocol hint path, not in structural DissectionEngine parsing.
-The current detector recognizes DHCPv4 only when:
+Current PcapFlowLab DHCPv4 support combines cheap import/open-time recognition
+with deeper selected-packet, on-demand inspection. Open-time recognition lives
+in the application protocol hint path, not in structural DissectionEngine
+parsing. The current detector recognizes DHCPv4 only when:
 
 - transport is UDP;
 - the endpoint ports are exactly `67` and `68` in either direction;
@@ -15,12 +16,14 @@ The current detector recognizes DHCPv4 only when:
 The current detector does not require a valid BOOTP `op`, `htype`, `hlen`,
 DHCP Message Type option, valid DHCP option list, End option, or semantic
 consistency between addresses and options. The malformed-options fixture below
-therefore remains a positive DHCP detection case even though a future deep
-selected-packet parser should report its malformed option boundary.
+therefore remains a positive DHCP detection case even though selected-packet
+inspection reports its malformed option boundary.
 
-PcapFlowLab does not currently expose dedicated DHCP Packet Summary parsing,
-option parsing, message-type presentation, protocol-aware DHCP Stream items, or
-DHCP Stream Item Data.
+Selected-packet DHCP inspection is packet-local and on demand. It exposes a
+dedicated DHCP Summary layer, ordered option presentation, selected scalar
+option title previews, and a bounded `DHCP Message` Bytes view. DHCP-specific
+Stream rows, Stream Item Data semantics, Service extraction, transaction
+correlation, and lease/session reconstruction are not implemented.
 
 ## Generation
 
@@ -65,10 +68,10 @@ BOOTP uses `op = 1` for requests, `op = 2` for replies, `htype = 1`,
 Remaining `chaddr`, `sname`, and `file` bytes are deterministic zero padding
 unless the fixture explicitly uses text or Option Overload.
 
-## Planned First Structured Scope
+## Current Structured Scope
 
-The planned first structured DHCPv4 selected-packet pass should expose the
-fixed BOOTP/DHCP fields:
+Current structured DHCPv4 selected-packet inspection exposes the fixed
+BOOTP/DHCP fields:
 
 - `op`;
 - `htype`;
@@ -85,7 +88,7 @@ fixed BOOTP/DHCP fields:
 - `sname` and `file` when they are not overloaded;
 - DHCP magic cookie.
 
-The planned first option parser should preserve ordered options and cover:
+Current ordered option parsing preserves wire order and covers:
 
 - Subnet Mask;
 - Router;
@@ -109,16 +112,21 @@ The planned first option parser should preserve ordered options and cover:
 - Bootfile Name;
 - generic unknown option preservation.
 
-Structural behavior targets:
+Current structural behavior:
 
 - ordered option preservation;
 - Pad option support;
 - End option termination;
 - Option Overload option areas in the main options, `file`, and `sname`;
 - malformed or truncated option preservation without over-read or crash;
-- future selected-packet Bytes view named `DHCP Message`.
+- selected-packet Bytes view named `DHCP Message`.
 
-The planned first structured implementation does not include:
+Compact collapsed option-title previews are currently provided for DHCP Message
+Type, Subnet Mask, Requested IP Address, Broadcast Address, and Server
+Identifier, for example `Option: DHCP Message Type (Discover)` and
+`Option: Requested IP Address (192.0.2.100)`.
+
+The current structured implementation does not include:
 
 - Option 82 Relay Agent Information deep parsing;
 - Option 119 Domain Search decoding or compression handling;
@@ -129,7 +137,9 @@ The planned first structured implementation does not include:
 - DHCP authentication;
 - DHCPv6;
 - DHCP-specific Stream rows;
-- request/response transaction correlation by `xid`;
+- DHCP-specific Stream Item Data semantics;
+- Discover/Offer/Request/ACK transaction correlation;
+- `xid`-based session modeling;
 - lease/session lifecycle reconstruction;
 - DHCP client/server state machine;
 - service-hint extraction.
@@ -150,8 +160,8 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: positive baseline for current DHCPv4 recognition on client-to-server
   ports
 - Expected current PFL behavior: one normal UDP Flow, Detected Protocol
-  `DHCP`, empty service hint, no dedicated DHCP Packet Summary or
-  protocol-aware Stream behavior
+  `DHCP`, empty service hint, structured selected-packet DHCP Summary and
+  `DHCP Message` Bytes, no protocol-aware Stream behavior
 - Wireshark note: should decode as BOOTP/DHCP
 
 ### `02_dhcp_offer_broadcast.pcap`
@@ -167,7 +177,7 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: positive baseline proving the detector accepts the reverse DHCP port
   direction
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no deeper DHCP-specific presentation
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes
 - Wireshark note: should decode as BOOTP/DHCP
 
 ### `03_dhcp_request_ack_bidirectional.pcap`
@@ -181,7 +191,8 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: positive baseline for recognition inside one ordinary bidirectional
   UDP Flow
 - Expected current PFL behavior: one user-facing UDP Flow, packet count `2`,
-  Detected Protocol `DHCP`, empty service hint
+  Detected Protocol `DHCP`, empty service hint, structured selected-packet DHCP
+  Summary and `DHCP Message` Bytes, no DHCP-specific Stream behavior
 - Wireshark note: should decode both packets as BOOTP/DHCP
 
 ### `04_dhcp_bad_magic_cookie.pcap`
@@ -242,9 +253,8 @@ Unknown unsupported options should still be preserved generically.
   option, single IPv4 option, PRL, Ethernet Client Identifier, uint16 option,
   and End handling
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no dedicated DHCP Packet Summary or DHCP-specific Stream behavior
-- Target structured behavior: expose fixed header fields, ordered options, and
-  later a bounded `DHCP Message` byte view
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes, no
+  DHCP-specific Stream behavior
 
 ### `08_dhcp_structured_offer.pcap`
 
@@ -264,9 +274,8 @@ Unknown unsupported options should still be preserved generically.
   `sname` / `file` text, IPv4-list options, lease/T1/T2 integers,
   domain/message text, and Server Identifier
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no dedicated DHCP Packet Summary or DHCP-specific Stream behavior
-- Target structured behavior: expose fixed reply fields, ordered options, text
-  fields, and later a bounded `DHCP Message` byte view
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes, no
+  DHCP-specific Stream behavior
 
 ### `09_dhcp_option_overload.pcap`
 
@@ -283,12 +292,12 @@ Unknown unsupported options should still be preserved generically.
 - `sname` field: overloaded option area containing TFTP Server Name
   `tftp.example.test`, End, then zero-fill to `64` bytes
 - Purpose: target Option Overload semantics, main/file/sname option areas,
-  fixed field sizes, and End behavior; prevents future parsing from treating
+  fixed field sizes, and End behavior; prevents parsing from treating
   overloaded binary option areas as ordinary BOOTP strings
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no dedicated DHCP Packet Summary or DHCP-specific Stream behavior
-- Target structured behavior: expose main options and overloaded `file` /
-  `sname` option areas without expecting extra magic cookies in those fields
+  structured selected-packet DHCP Summary with main options and overloaded
+  `file` / `sname` option areas, `DHCP Message` Bytes, and no DHCP-specific
+  Stream behavior
 
 ### `10_dhcp_padding_unknown_end.pcap`
 
@@ -307,9 +316,8 @@ Unknown unsupported options should still be preserved generically.
   unknown-length/value preservation, End termination, and no accidental parsing
   of tail bytes after End
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no dedicated DHCP Packet Summary or DHCP-specific Stream behavior
-- Target structured behavior: expose only the options before End and preserve
-  or describe the post-End tail as non-option data
+  structured selected-packet DHCP Summary exposing only the options before End,
+  `DHCP Message` Bytes, and no DHCP-specific Stream behavior
 
 ### `11_dhcp_malformed_option_length.pcap`
 
@@ -323,11 +331,11 @@ Unknown unsupported options should still be preserved generically.
   declared length `10` but only three bytes of value `bad`; no End option is
   appended and the UDP payload ends immediately after those three bytes
 - Purpose: target distinction between cheap import-time DHCP recognition and
-  deep selected-packet option validation; future Summary should preserve fixed
+  deep selected-packet option validation; Summary should preserve fixed
   header and already parsed options, report the malformed Host Name boundary,
   avoid over-read, and avoid crashing
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  no dedicated DHCP Packet Summary or DHCP-specific Stream behavior
-- Target structured behavior: expose valid fixed header, valid cookie, valid
-  earlier Message Type, malformed Host Name with declared length `10` and
-  available value length `3`, and later a bounded `DHCP Message` byte view
+  structured selected-packet DHCP Summary exposing the valid fixed header,
+  valid cookie, valid earlier Message Type, malformed Host Name with declared
+  length `10` and available value length `3`, bounded `DHCP Message` Bytes,
+  and no DHCP-specific Stream behavior

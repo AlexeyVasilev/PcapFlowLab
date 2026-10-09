@@ -174,6 +174,14 @@ void expect_representative_rows() {
     const auto* dhcp = find_row("dhcp");
     PFL_REQUIRE(dhcp != nullptr);
     PFL_EXPECT(dhcp->protocol == "DHCPv4");
+    PFL_EXPECT(dhcp->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(dhcp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(dhcp->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(dhcp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(dhcp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(dhcp->notes.find("67/68") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("structured") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("DHCP Message") != std::string_view::npos);
 
     const auto* stun = find_row("stun");
     PFL_REQUIRE(stun != nullptr);

@@ -48,6 +48,15 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 ## DHCPv4
 
+These fixtures cover current DHCPv4 UDP/67-68 plus BOOTP/DHCP magic-cookie
+recognition and selected-packet structured inspection. Coverage includes
+Discover, Offer, Request/ACK, wrong-port and bad-cookie negatives, truncation
+before the cookie, BOOTP fixed-header fields, ordered common options,
+Parameter Request List names, Client Identifier, Option Overload with
+overloaded `file` and `sname` option areas, Pad / End handling, bytes after
+End, unknown options, malformed option length, selected-packet Summary, and
+`DHCP Message` Bytes coverage.
+
 `dhcp/01_dhcp_discover_broadcast.pcap`
 - Purpose: positive DHCPv4 Discover recognition baseline on UDP 68 -> 67.
 
@@ -67,19 +76,19 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
 
 `dhcp/07_dhcp_structured_discover.pcap`
-- Purpose: target structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, and End handling.
+- Purpose: structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, Summary, Bytes, and End handling.
 
 `dhcp/08_dhcp_structured_offer.pcap`
-- Purpose: target structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, and Server Identifier.
+- Purpose: structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, Server Identifier, Summary, and Bytes.
 
 `dhcp/09_dhcp_option_overload.pcap`
-- Purpose: target Option Overload coverage where the main option area declares both file and sname as DHCP option areas.
+- Purpose: Option Overload coverage where the main option area declares both file and sname as DHCP option areas.
 
 `dhcp/10_dhcp_padding_unknown_end.pcap`
-- Purpose: target Pad, unknown option, End termination, and deterministic post-End tail coverage.
+- Purpose: Pad, unknown option, End termination, and deterministic post-End tail coverage.
 
 `dhcp/11_dhcp_malformed_option_length.pcap`
-- Purpose: target malformed option-length robustness while preserving the current cheap DHCP detector contract.
+- Purpose: malformed option-length robustness while preserving the current cheap DHCP detector contract.
 
 ## SSH
 

@@ -94,15 +94,16 @@ identity, selected-packet Summary, Stream semantics, Service hints, and byte
 views are not identical for every protocol family.
 
 Notable post-`v0.3.0` additions and expansions include recognition-oriented
-support for MQTT, AMQP, SSH, BitTorrent, DHCPv4, SMTP, POP3, and IMAP,
-structured selected-packet coverage for NTP and STUN, plus continued hardening
+support for MQTT, AMQP, SSH, BitTorrent, SMTP, POP3, and IMAP, structured
+selected-packet coverage for NTP, STUN, and DHCPv4, plus continued hardening
 for TLS, QUIC, DNS/mDNS, HTTP, overlays, and encapsulation handling.
 
-MQTT, AMQP, mail protocols, SSH, BitTorrent, and DHCPv4 are recognition-oriented
-unless the current protocol catalog states deeper support. NTP and STUN now
-have selected-packet Summary/Bytes support, but not specialized Stream
-semantics. Do not infer full selected-packet or Stream parsing from recognition
-alone.
+MQTT, AMQP, mail protocols, SSH, and BitTorrent remain recognition-oriented
+unless the current protocol catalog states deeper support. NTP, STUN, and
+DHCPv4 now have selected-packet Summary/Bytes support, but not specialized
+Stream semantics. DHCPv4 adds ordered option parsing, Option Overload
+presentation, and a packet-local `DHCP Message` byte view. Do not infer full
+selected-packet or Stream parsing from recognition alone.
 
 ERF Ethernet support is capture/link-layer input support, not an application
 protocol. The first supported scope is deliberately narrow: `LINKTYPE_ERF`
