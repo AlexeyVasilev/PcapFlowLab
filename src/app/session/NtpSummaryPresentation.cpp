@@ -106,6 +106,9 @@ std::string format_fixed_16_16_unsigned(const std::uint32_t raw) {
     return format_fixed_16_16_magnitude(false, raw);
 }
 
+// RFC 1305 represents NTPv3 Root Delay and Root Dispersion as signed
+// 16.16 fixed-point fields. RFC 5905 represents both NTPv4 fields in
+// NTP short format, with an unsigned 16-bit seconds part.
 std::string format_ntp_short_by_version(const std::uint8_t version, const std::uint32_t raw) {
     return version == 3U
         ? format_fixed_16_16_signed(raw)

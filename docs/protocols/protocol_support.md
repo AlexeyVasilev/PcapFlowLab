@@ -298,7 +298,7 @@ The shared layered Summary model is intentionally conservative today.
   ordered option children when the selected UDP payload matches the supported
   DHCPv4 recognition contract.
 - STUN adds a packet-local structured Summary layer with header fields and ordered attribute children when the selected UDP payload is a supported STUN envelope.
-- For TLS, QUIC, DNS, HTTP, NTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
+- For TLS, QUIC, DNS, HTTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
 - ICMPv4 is now slightly stronger: layered Summary uses the shared bounded `IcmpInspectionParser -> IcmpMessage` model for common-header and selected type-specific metadata while still keeping checksum validation, quoted-packet recursive decoding, request/reply correlation, and ICMPv6 parity out of scope.
 
 ### Packet Details Summary
