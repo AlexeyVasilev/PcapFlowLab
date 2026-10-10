@@ -95,6 +95,10 @@ different responsibilities.
 - [Non-Terminal IP Flow Identity RFC](features/non-terminal-ip-flow-identity-rfc.md)
   Implemented Flow grouping contract for canonical ordered non-terminal IP
   endpoint context.
+- [Non-Terminal IP UI Integration RFC](features/non-terminal-ip-ui-integration-rfc.md)
+  Proposed Advanced Flow Filter, Protocol Path Statistics, and compact
+  grouping-provenance exposure for retained non-terminal IP Flow identity
+  metadata.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
   Previous stable v15 container/header and rebuild-required compatibility
   boundary.
