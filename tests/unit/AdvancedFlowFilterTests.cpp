@@ -4036,6 +4036,239 @@ void run_frontend_text_query_tests() {
     }
 }
 
+void run_non_terminal_ip_text_filter_tests() {
+    ScopedTestContext context {"advanced_flow_filter/non_terminal_ip_text"};
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 3\n"
+            "section.non_terminal_ip.enabled = false\n"
+            "non_terminal_ip.outer.include = 192.0.2.60\n"
+            "non_terminal_ip.intermediate.include = 10.60.0.0/24\n"
+            "non_terminal_ip.any.exclude = 2001:db8:60::/64\n"
+        );
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(parsed.document) == 3U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(parsed.document) == 0U);
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 3\n"
+                "section.non_terminal_ip.enabled = false\n"
+                "non_terminal_ip.outer.include = 192.0.2.60\n"
+                "non_terminal_ip.intermediate.include = 10.60.0.0/24\n"
+                "non_terminal_ip.any.exclude = 2001:0db8:0060:0000:0000:0000:0000:0000/64\n"
+            )
+        );
+        PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 3\n"
+            "section.non_terminal_ip.enabled = true\n"
+            "non_terminal_ip.outer.include = 2001:db8:60::1\n"
+            "non_terminal_ip.any.include = 192.0.2.0/24\n"
+        );
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(parsed.document) == 2U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(parsed.document) == 2U);
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 3\n"
+                "non_terminal_ip.outer.include = 2001:0db8:0060:0000:0000:0000:0000:0001\n"
+                "non_terminal_ip.any.include = 192.0.2.0/24\n"
+            )
+        );
+    }
+
+    expect_parse_status(
+        "format_version = 3\n"
+        "section.non_terminal_ip.enabled = maybe\n",
+        AdvancedFlowFilterTextParseStatus::invalid_value
+    );
+    expect_parse_status(
+        "format_version = 3\n"
+        "section.non_terminal_ip.enabled = false\n"
+        "section.non_terminal_ip.enabled = true\n",
+        AdvancedFlowFilterTextParseStatus::duplicate_scalar_key
+    );
+    expect_parse_status(
+        "format_version = 3\n"
+        "non_terminal_ip.outer.include = 300.1.2.3\n",
+        AdvancedFlowFilterTextParseStatus::invalid_ip_address
+    );
+    expect_parse_status(
+        "format_version = 3\n"
+        "non_terminal_ip.any.include = 2001:::1\n",
+        AdvancedFlowFilterTextParseStatus::invalid_ip_address
+    );
+    expect_parse_status(
+        "format_version = 3\n"
+        "non_terminal_ip.source.include = 192.0.2.60\n",
+        AdvancedFlowFilterTextParseStatus::unknown_key
+    );
+}
+
+void run_non_terminal_ip_frontend_query_tests() {
+    ScopedTestContext context {"advanced_flow_filter/non_terminal_ip_frontend_query"};
+
+    const auto expect_query_matches_baseline = [](
+        FrontendSessionAdapter& adapter,
+        const std::string_view filter_text,
+        const std::size_t configured_rule_count,
+        const std::size_t active_rule_count
+    ) {
+        const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+        const auto result = adapter.query_advanced_flows_text(filter_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(result.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(result.parse_status == AdvancedFlowFilterTextParseStatus::ok);
+        PFL_EXPECT(result.configured_rule_count == configured_rule_count);
+        PFL_EXPECT(result.active_rule_count == active_rule_count);
+        PFL_EXPECT(result.result_count_before_limit == baseline.result_count_before_limit);
+        expect_indices_equal(result.ordered_flow_indices, baseline.ordered_flow_indices);
+    };
+
+    const auto expect_query_matches_no_flows = [](
+        FrontendSessionAdapter& adapter,
+        const std::string_view filter_text
+    ) {
+        const auto result = adapter.query_advanced_flows_text(filter_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(result.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(result.parse_status == AdvancedFlowFilterTextParseStatus::ok);
+        PFL_EXPECT(result.result_count_before_limit == 0U);
+        PFL_EXPECT(result.ordered_flow_indices.empty());
+    };
+
+    {
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap")).opened);
+
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 192.0.2.60\n",
+            1U,
+            1U
+        );
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.intermediate.include = 10.60.0.10\n",
+            1U,
+            1U
+        );
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.any.include = 10.60.0.20\n",
+            1U,
+            1U
+        );
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 192.0.2.60\n"
+            "non_terminal_ip.intermediate.include = 203.0.113.60\n",
+            2U,
+            2U
+        );
+        expect_query_matches_no_flows(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 203.0.113.60\n"
+        );
+        expect_query_matches_no_flows(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 192.0.2.60\n"
+            "non_terminal_ip.any.exclude = 10.60.0.10\n"
+        );
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "section.non_terminal_ip.enabled = false\n"
+            "non_terminal_ip.outer.include = 203.0.113.60\n",
+            1U,
+            0U
+        );
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap")).opened);
+
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 2001:db8:60:1::1\n",
+            1U,
+            1U
+        );
+        expect_query_matches_baseline(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.outer.include = 2001:db8:60:1::/64\n",
+            1U,
+            1U
+        );
+        expect_query_matches_no_flows(
+            adapter,
+            "format_version = 3\n"
+            "non_terminal_ip.intermediate.include = 2001:db8:60:1::1\n"
+        );
+    }
+}
+
+void run_non_terminal_ip_index_roundtrip_tests() {
+    ScopedTestContext context {"advanced_flow_filter/non_terminal_ip_index_roundtrip"};
+
+    const auto filter_text =
+        "format_version = 3\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n";
+    const auto parsed = require_parse_success(filter_text);
+    const auto effective = session_detail::make_effective_advanced_flow_filter_spec(parsed.document);
+    const auto capture_path = fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap");
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_advanced_flow_filter_non_terminal_ip_roundtrip.idx";
+
+    CaptureSession raw_session {};
+    PFL_REQUIRE(raw_session.open_capture(capture_path));
+    const auto raw_result = raw_session.query_advanced_flows(effective);
+    PFL_REQUIRE(raw_result.status == AdvancedFlowQueryStatus::ok);
+    PFL_REQUIRE(!raw_result.ordered_flow_indices.empty());
+    PFL_REQUIRE(raw_session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    const auto loaded_result = loaded_session.query_advanced_flows(effective);
+    PFL_REQUIRE(loaded_result.status == AdvancedFlowQueryStatus::ok);
+    expect_indices_equal(loaded_result.ordered_flow_indices, raw_result.ordered_flow_indices);
+    PFL_EXPECT(loaded_result.result_count_before_limit == raw_result.result_count_before_limit);
+}
+
+void run_non_terminal_ip_import_settings_tests() {
+    ScopedTestContext context {"advanced_flow_filter/non_terminal_ip_import_settings"};
+
+    const auto parsed = require_parse_success(
+        "format_version = 3\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n"
+    );
+    const auto effective = session_detail::make_effective_advanced_flow_filter_spec(parsed.document);
+
+    CaptureSession ignored_context_session {};
+    PFL_REQUIRE(ignored_context_session.open_capture(
+        fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap"),
+        CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_non_terminal_ip_endpoints_when_grouping_flows = true},
+        }
+    ));
+    PFL_EXPECT(ignored_context_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+
+    const auto result = ignored_context_session.query_advanced_flows(effective);
+    PFL_EXPECT(result.status == AdvancedFlowQueryStatus::invalid_advanced_filter);
+    PFL_EXPECT(result.compile_status != AdvancedFlowFilterCompileStatus::ok);
+    PFL_EXPECT(result.ordered_flow_indices.empty());
+}
+
 void run_frontend_structured_document_tests() {
     ScopedTestContext context {"advanced_flow_filter/frontend_structured_document"};
 
@@ -5512,6 +5745,10 @@ void run_advanced_flow_filter_tests() {
     run_text_format_tests();
     run_metadata_only_evaluation_tests();
     run_frontend_text_query_tests();
+    run_non_terminal_ip_text_filter_tests();
+    run_non_terminal_ip_frontend_query_tests();
+    run_non_terminal_ip_index_roundtrip_tests();
+    run_non_terminal_ip_import_settings_tests();
     run_frontend_structured_document_tests();
 }
 
