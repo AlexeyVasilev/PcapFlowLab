@@ -55,7 +55,9 @@ before the cookie, BOOTP fixed-header fields, ordered common options,
 Parameter Request List names, Client Identifier, Option Overload with
 overloaded `file` and `sname` option areas, Pad / End handling, bytes after
 End, unknown options, malformed option length, selected-packet Summary, and
-`DHCP Message` Bytes coverage.
+`DHCP Message` Bytes coverage. Positive fixtures also exercise packet-local
+DHCP Stream rows, structured Stream Summary, and Stream Item `DHCP Message`
+Data without DHCP transaction reconstruction.
 
 `dhcp/01_dhcp_discover_broadcast.pcap`
 - Purpose: positive DHCPv4 Discover recognition baseline on UDP 68 -> 67.
@@ -64,7 +66,7 @@ End, unknown options, malformed option length, selected-packet Summary, and
 - Purpose: positive DHCPv4 Offer recognition baseline on reverse UDP 67 -> 68.
 
 `dhcp/03_dhcp_request_ack_bidirectional.pcap`
-- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow.
+- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow, including packet-local Request and ACK Stream rows.
 
 `dhcp/04_dhcp_bad_magic_cookie.pcap`
 - Purpose: negative DHCPv4 case showing ports 67/68 alone are insufficient without the valid magic cookie.
@@ -76,19 +78,19 @@ End, unknown options, malformed option length, selected-packet Summary, and
 - Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
 
 `dhcp/07_dhcp_structured_discover.pcap`
-- Purpose: structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, Summary, Bytes, and End handling.
+- Purpose: structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, Summary, Bytes, packet-local Stream Summary/Data, and End handling.
 
 `dhcp/08_dhcp_structured_offer.pcap`
-- Purpose: structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, Server Identifier, Summary, and Bytes.
+- Purpose: structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, Server Identifier, Summary, Bytes, and packet-local Stream Summary/Data.
 
 `dhcp/09_dhcp_option_overload.pcap`
-- Purpose: Option Overload coverage where the main option area declares both file and sname as DHCP option areas.
+- Purpose: Option Overload coverage where the main option area declares both file and sname as DHCP option areas, including preservation in packet-local Stream Summary.
 
 `dhcp/10_dhcp_padding_unknown_end.pcap`
-- Purpose: Pad, unknown option, End termination, and deterministic post-End tail coverage.
+- Purpose: Pad, unknown option, End termination, deterministic post-End tail coverage, and packet-local Stream labeling that ignores fake post-End ACK bytes.
 
 `dhcp/11_dhcp_malformed_option_length.pcap`
-- Purpose: malformed option-length robustness while preserving the current cheap DHCP detector contract.
+- Purpose: malformed option-length robustness while preserving the current cheap DHCP detector contract and packet-backed DHCP Stream Item Data.
 
 ## SSH
 

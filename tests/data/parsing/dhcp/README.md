@@ -21,8 +21,11 @@ inspection reports its malformed option boundary.
 
 Selected-packet DHCP inspection is packet-local and on demand. It exposes a
 dedicated DHCP Summary layer, ordered option presentation, selected scalar
-option title previews, and a bounded `DHCP Message` Bytes view. DHCP-specific
-Stream rows, Stream Item Data semantics, Service extraction, transaction
+option title previews, and a bounded `DHCP Message` Bytes view. Selected-flow
+Stream inspection is also packet-local: each individually recognized DHCP
+packet becomes one DHCP Stream item, Stream Summary reuses the structured DHCP
+Summary, and Stream Item Data exposes the terminal UDP payload as
+`DHCP Message`. Service extraction, transaction correlation, cross-Flow DHCP
 correlation, and lease/session reconstruction are not implemented.
 
 ## Generation
@@ -119,7 +122,10 @@ Current structural behavior:
 - End option termination;
 - Option Overload option areas in the main options, `file`, and `sname`;
 - malformed or truncated option preservation without over-read or crash;
-- selected-packet Bytes view named `DHCP Message`.
+- selected-packet Bytes view named `DHCP Message`;
+- packet-local Stream rows for individually recognized DHCP messages;
+- structured selected-Stream-item Summary reused from the parsed DHCP message;
+- selected-Stream-item Data named `DHCP Message` over the terminal UDP payload.
 
 Compact collapsed option-title previews are currently provided for DHCP Message
 Type, Subnet Mask, Requested IP Address, Broadcast Address, and Server
@@ -136,8 +142,6 @@ The current structured implementation does not include:
 - RFC3396 long-option concatenation;
 - DHCP authentication;
 - DHCPv6;
-- DHCP-specific Stream rows;
-- DHCP-specific Stream Item Data semantics;
 - Discover/Offer/Request/ACK transaction correlation;
 - `xid`-based session modeling;
 - lease/session lifecycle reconstruction;
@@ -161,7 +165,8 @@ Unknown unsupported options should still be preserved generically.
   ports
 - Expected current PFL behavior: one normal UDP Flow, Detected Protocol
   `DHCP`, empty service hint, structured selected-packet DHCP Summary and
-  `DHCP Message` Bytes, no protocol-aware Stream behavior
+  `DHCP Message` Bytes, one packet-local `DHCP Discover` Stream row, structured
+  Stream Summary, and Stream Item `DHCP Message` Data
 - Wireshark note: should decode as BOOTP/DHCP
 
 ### `02_dhcp_offer_broadcast.pcap`
@@ -177,7 +182,9 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: positive baseline proving the detector accepts the reverse DHCP port
   direction
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  structured selected-packet DHCP Summary and `DHCP Message` Bytes
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes, one
+  packet-local `DHCP Offer` Stream row, structured Stream Summary, and Stream
+  Item `DHCP Message` Data
 - Wireshark note: should decode as BOOTP/DHCP
 
 ### `03_dhcp_request_ack_bidirectional.pcap`
@@ -192,7 +199,8 @@ Unknown unsupported options should still be preserved generically.
   UDP Flow
 - Expected current PFL behavior: one user-facing UDP Flow, packet count `2`,
   Detected Protocol `DHCP`, empty service hint, structured selected-packet DHCP
-  Summary and `DHCP Message` Bytes, no DHCP-specific Stream behavior
+  Summary and `DHCP Message` Bytes, packet-local `DHCP Request` and `DHCP ACK`
+  Stream rows, structured Stream Summary, and Stream Item `DHCP Message` Data
 - Wireshark note: should decode both packets as BOOTP/DHCP
 
 ### `04_dhcp_bad_magic_cookie.pcap`
@@ -205,7 +213,7 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: negative baseline proving DHCP ports alone do not classify a Flow as
   DHCP
 - Expected current PFL behavior: normal UDP Flow, Detected Protocol must not be
-  `DHCP`, no crash
+  `DHCP`, generic UDP Stream behavior, no crash
 - Wireshark note: may decode conservatively as BOOTP or malformed/non-DHCP
 
 ### `05_dhcp_valid_payload_wrong_ports.pcap`
@@ -218,7 +226,7 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: negative baseline preserving the current port-gated recognition
   contract
 - Expected current PFL behavior: normal UDP Flow, Detected Protocol must not be
-  `DHCP`, no crash
+  `DHCP`, generic UDP Stream behavior, no crash
 - Wireshark note: payload is DHCP-shaped, but PcapFlowLab intentionally does
   not classify it without ports `67`/`68`
 
@@ -232,7 +240,7 @@ Unknown unsupported options should still be preserved generically.
 - Purpose: size-boundary negative case proving the detector does not read past
   available bytes
 - Expected current PFL behavior: normal UDP Flow, Detected Protocol must not be
-  `DHCP`, no crash
+  `DHCP`, generic UDP Stream behavior, no crash
 - Wireshark note: this is payload-short, not snaplen truncation
 
 ### `07_dhcp_structured_discover.pcap`
@@ -253,8 +261,9 @@ Unknown unsupported options should still be preserved generically.
   option, single IPv4 option, PRL, Ethernet Client Identifier, uint16 option,
   and End handling
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  structured selected-packet DHCP Summary and `DHCP Message` Bytes, no
-  DHCP-specific Stream behavior
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes,
+  packet-local `DHCP Discover` Stream row, structured Stream Summary, and
+  Stream Item `DHCP Message` Data
 
 ### `08_dhcp_structured_offer.pcap`
 
@@ -274,8 +283,9 @@ Unknown unsupported options should still be preserved generically.
   `sname` / `file` text, IPv4-list options, lease/T1/T2 integers,
   domain/message text, and Server Identifier
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
-  structured selected-packet DHCP Summary and `DHCP Message` Bytes, no
-  DHCP-specific Stream behavior
+  structured selected-packet DHCP Summary and `DHCP Message` Bytes,
+  packet-local `DHCP Offer` Stream row, structured Stream Summary, and Stream
+  Item `DHCP Message` Data
 
 ### `09_dhcp_option_overload.pcap`
 
@@ -296,8 +306,9 @@ Unknown unsupported options should still be preserved generically.
   overloaded binary option areas as ordinary BOOTP strings
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
   structured selected-packet DHCP Summary with main options and overloaded
-  `file` / `sname` option areas, `DHCP Message` Bytes, and no DHCP-specific
-  Stream behavior
+  `file` / `sname` option areas, `DHCP Message` Bytes, packet-local `DHCP ACK`
+  Stream row, structured Stream Summary preserving overloaded option areas, and
+  Stream Item `DHCP Message` Data
 
 ### `10_dhcp_padding_unknown_end.pcap`
 
@@ -317,7 +328,9 @@ Unknown unsupported options should still be preserved generically.
   of tail bytes after End
 - Expected current PFL behavior: Detected Protocol `DHCP`, empty service hint,
   structured selected-packet DHCP Summary exposing only the options before End,
-  `DHCP Message` Bytes, and no DHCP-specific Stream behavior
+  `DHCP Message` Bytes, packet-local `DHCP Request` Stream row, structured
+  Stream Summary that ignores the post-End fake ACK bytes for the label, and
+  Stream Item `DHCP Message` Data
 
 ### `11_dhcp_malformed_option_length.pcap`
 
@@ -338,4 +351,5 @@ Unknown unsupported options should still be preserved generically.
   structured selected-packet DHCP Summary exposing the valid fixed header,
   valid cookie, valid earlier Message Type, malformed Host Name with declared
   length `10` and available value length `3`, bounded `DHCP Message` Bytes,
-  and no DHCP-specific Stream behavior
+  packet-local `DHCP Discover` Stream row, structured Stream Summary preserving
+  the malformed option, and Stream Item `DHCP Message` Data

@@ -178,10 +178,11 @@ void expect_representative_rows() {
     PFL_EXPECT(dhcp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(dhcp->service == session_detail::SupportedProtocolCapabilityStatus::no);
     PFL_EXPECT(dhcp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
-    PFL_EXPECT(dhcp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(dhcp->stream == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(dhcp->notes.find("67/68") != std::string_view::npos);
-    PFL_EXPECT(dhcp->notes.find("structured") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("packet-local") != std::string_view::npos);
     PFL_EXPECT(dhcp->notes.find("DHCP Message") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("transaction") != std::string_view::npos);
 
     const auto* stun = find_row("stun");
     PFL_REQUIRE(stun != nullptr);
