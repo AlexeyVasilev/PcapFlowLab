@@ -4,9 +4,12 @@
 
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "core/services/DhcpInspectionParser.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
+#include "core/services/NtpInspectionParser.h"
+#include "core/services/StunInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
 
@@ -77,6 +80,96 @@ std::optional<DnsSummaryPresentationKind> resolve_dns_summary_presentation_kind(
     }
 
     return std::nullopt;
+}
+
+std::optional<NtpMessage> inspect_selected_packet_ntp_message(
+    const PacketDetails& details,
+    std::span<const std::uint8_t> transport_payload
+) noexcept {
+    if (!details.has_udp || transport_payload.empty()) {
+        return std::nullopt;
+    }
+
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        if (effective_payload.transport != EffectiveTransportKind::udp ||
+            effective_payload.role != EffectiveTransportRole::top_level) {
+            return std::nullopt;
+        }
+    }
+
+    const auto declared_payload_length = details.effective_transport_payload.has_value()
+        ? details.effective_transport_payload->declared_payload_length
+        : (details.udp.length >= 8U
+            ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(details.udp.length - 8U)}
+            : std::nullopt);
+    return inspect_supported_ntp_message(
+        transport_payload,
+        NtpRecognitionContext {
+            .src_port = details.udp.src_port,
+            .dst_port = details.udp.dst_port,
+            .declared_udp_payload_length = declared_payload_length.has_value()
+                ? std::optional<std::size_t> {static_cast<std::size_t>(*declared_payload_length)}
+                : std::nullopt,
+        }
+    );
+}
+
+std::optional<StunMessage> inspect_selected_packet_stun_message(
+    const PacketDetails& details,
+    std::span<const std::uint8_t> transport_payload
+) {
+    if (!details.has_udp || transport_payload.empty()) {
+        return std::nullopt;
+    }
+
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        if (effective_payload.transport != EffectiveTransportKind::udp ||
+            effective_payload.role != EffectiveTransportRole::top_level) {
+            return std::nullopt;
+        }
+    }
+
+    return inspect_supported_stun_message(transport_payload);
+}
+
+std::optional<DhcpMessage> inspect_selected_packet_dhcp_message(
+    const PacketDetails& details,
+    std::span<const std::uint8_t> transport_payload
+) {
+    if (!details.has_udp || transport_payload.empty()) {
+        return std::nullopt;
+    }
+
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        if (effective_payload.transport != EffectiveTransportKind::udp ||
+            effective_payload.role != EffectiveTransportRole::top_level) {
+            return std::nullopt;
+        }
+    }
+
+    return inspect_supported_dhcp_message(
+        transport_payload,
+        DhcpRecognitionContext {
+            .src_port = details.udp.src_port,
+            .dst_port = details.udp.dst_port,
+        }
+    );
+}
+
+NetworkAddressFamily resolve_selected_packet_ntp_terminal_address_family(const PacketDetails& details) noexcept {
+    if (!details.has_udp) {
+        return NetworkAddressFamily::unknown;
+    }
+
+    if (details.effective_transport_payload.has_value() &&
+        details.effective_transport_payload->role != EffectiveTransportRole::top_level) {
+        return NetworkAddressFamily::unknown;
+    }
+
+    return details.address_family;
 }
 
 bool has_confirmed_tls_summary_context(
@@ -377,6 +470,18 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     if (details.effective_transport_payload.has_value()) {
         const auto& effective_payload = *details.effective_transport_payload;
         if (effective_payload.transport == EffectiveTransportKind::udp) {
+            if (effective_payload.role == EffectiveTransportRole::top_level &&
+                options.ntp_message.has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
+            if (effective_payload.role == EffectiveTransportRole::top_level &&
+                options.stun_message.has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
+            if (effective_payload.role == EffectiveTransportRole::top_level &&
+                options.dhcp_message.has_value()) {
+                return TransportPayloadDisposition::claimed_by_supported_protocol;
+            }
             const auto dns_payload_is_owned = use_summary_dns_evidence
                 ? dns_payload_has_summary_ownership(
                     packet_bytes,
@@ -408,6 +513,15 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     }
 
     if (details.has_udp) {
+        if (options.ntp_message.has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+        if (options.stun_message.has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+        if (options.dhcp_message.has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
         const auto dns_payload_is_owned = use_summary_dns_evidence
             ? dns_payload_has_summary_ownership(packet_bytes, data_link_type, details, options, nullptr)
             : dns_payload_has_authoritative_ownership(packet_bytes, data_link_type, details, options, nullptr);
@@ -521,6 +635,10 @@ PacketSummaryOptions SelectedPacketSummaryPreparation::make_options() const {
     options.tls_summary_layers = tls_summary_layers;
     options.quic_presentation = quic_presentation;
     options.dns_summary_presentation_kind = dns_summary_presentation_kind;
+    options.dhcp_message = dhcp_message;
+    options.ntp_message = ntp_message;
+    options.stun_message = stun_message;
+    options.ntp_terminal_address_family = ntp_terminal_address_family;
     options.packet_data = packet_data;
     return options;
 }
@@ -550,6 +668,18 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     auto transport_payload = transport_payload_view.found
         ? std::vector<std::uint8_t>(transport_payload_view.payload.begin(), transport_payload_view.payload.end())
         : std::vector<std::uint8_t> {};
+    const auto ntp_message = inspect_selected_packet_ntp_message(
+        details,
+        std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+    );
+    const auto stun_message = inspect_selected_packet_stun_message(
+        details,
+        std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+    );
+    const auto dhcp_message = inspect_selected_packet_dhcp_message(
+        details,
+        std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+    );
 
     auto tls_packet_analysis =
         flow_index.has_value() &&
@@ -597,6 +727,10 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         .tls_summary_layers = {},
         .quic_presentation = std::move(quic_presentation),
         .dns_summary_presentation_kind = resolve_dns_summary_presentation_kind(session, details, flow_index),
+        .dhcp_message = dhcp_message,
+        .ntp_message = ntp_message,
+        .stun_message = stun_message,
+        .ntp_terminal_address_family = resolve_selected_packet_ntp_terminal_address_family(details),
         .packet_data = std::nullopt,
     };
 

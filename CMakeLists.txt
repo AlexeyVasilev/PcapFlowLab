@@ -111,7 +111,10 @@ add_library(
     src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
     src/core/services/DnsInspectionParser.cpp
+    src/core/services/DhcpInspectionParser.cpp
     src/core/services/IcmpInspectionParser.cpp
+    src/core/services/NtpInspectionParser.cpp
+    src/core/services/StunInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendStatisticsReport.cpp
     src/app/frontend/FrontendStatisticsOverview.cpp
@@ -132,7 +135,10 @@ add_library(
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SupportedProtocolCatalog.cpp
     src/app/session/DnsSummaryPresentation.cpp
+    src/app/session/DhcpSummaryPresentation.cpp
     src/app/session/IcmpSummaryPresentation.cpp
+    src/app/session/NtpSummaryPresentation.cpp
+    src/app/session/StunSummaryPresentation.cpp
     src/app/session/SelectedPacketSummaryPreparation.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp

@@ -697,12 +697,13 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
 SelectedStreamItemDataPresentation build_packet_payload_presentation(
     const CaptureSession& session,
     const std::size_t flow_index,
-    const StreamItemRow& row
+    const StreamItemRow& row,
+    const StreamItemDataSemanticKind semantic_kind = StreamItemDataSemanticKind::opaque_payload
 ) {
     if (row.packet_indices.size() != 1U) {
         return make_unavailable_presentation(
             row.stream_item_index,
-            StreamItemDataSemanticKind::opaque_payload,
+            semantic_kind,
             StreamItemDataState::unavailable,
             "This stream item is not backed by a single captured packet payload."
         );
@@ -712,7 +713,7 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
     if (!packet.has_value()) {
         return make_unavailable_presentation(
             row.stream_item_index,
-            StreamItemDataSemanticKind::opaque_payload,
+            semantic_kind,
             StreamItemDataState::unavailable,
             "The source packet for this stream item is no longer available."
         );
@@ -722,7 +723,7 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
     if (packet_bytes.empty()) {
         return make_unavailable_presentation(
             row.stream_item_index,
-            StreamItemDataSemanticKind::opaque_payload,
+            semantic_kind,
             StreamItemDataState::unavailable,
             "The captured packet bytes are not available."
         );
@@ -752,7 +753,7 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
                     : StreamItemDataState::complete;
                 return SelectedStreamItemDataPresentation {
                     .stream_item_index = row.stream_item_index,
-                    .semantic_kind = StreamItemDataSemanticKind::opaque_payload,
+                    .semantic_kind = semantic_kind,
                     .source_kind = StreamItemDataSourceKind::captured_packet_range,
                     .state = state,
                     .assembly_kind = StreamItemDataAssemblyKind::packet_local,
@@ -825,7 +826,9 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
 
     return make_unavailable_presentation(
         row.stream_item_index,
-        StreamItemDataSemanticKind::other,
+        semantic_kind == StreamItemDataSemanticKind::dhcp_message
+            ? StreamItemDataSemanticKind::dhcp_message
+            : StreamItemDataSemanticKind::other,
         StreamItemDataState::unavailable,
         "The selected stream item does not expose an authoritative packet-backed byte range in the current bounded row model."
     );
@@ -883,6 +886,8 @@ std::string to_string(const StreamItemDataSemanticKind semantic_kind) {
         return "quic_crypto_data";
     case StreamItemDataSemanticKind::opaque_payload:
         return "opaque_payload";
+    case StreamItemDataSemanticKind::dhcp_message:
+        return "dhcp_message";
     case StreamItemDataSemanticKind::other:
     default:
         return "other";
@@ -1003,6 +1008,15 @@ SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation
 
     if (flow_protocol == ProtocolId::tcp && is_packet_backed_tcp_payload_row(row)) {
         return build_tcp_payload_presentation(session, flow_index, row);
+    }
+
+    if (row.semantic_family == StreamItemSemanticFamily::dhcp && row.dhcp_summary.has_value()) {
+        return build_packet_payload_presentation(
+            session,
+            flow_index,
+            row,
+            StreamItemDataSemanticKind::dhcp_message
+        );
     }
 
     if (row.arp_summary.has_value()) {

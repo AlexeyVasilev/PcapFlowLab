@@ -106,13 +106,13 @@ limitations remain accurately described.
 | Application | HTTP/1.x | Yes | Yes | Yes | Yes | HTTP/1.x requests/responses and Host-derived Service information are supported. |
 | Application | DNS | Yes | Yes | Yes | Yes | Structured DNS over UDP is shown; Stream does not reconstruct DNS transactions. |
 | Application | mDNS | Yes | Yes | Yes | Yes | Multicast DNS and DNS-SD service information are parsed where available. |
-| Application | DHCPv4 | Yes | No | No | No | Recognized from BOOTP/DHCPv4 wire shape only; no dedicated message parser is exposed. |
+| Application | DHCPv4 | Yes | No | Yes | Yes | Recognized from UDP 67/68 plus the BOOTP/DHCP magic cookie. Structured packet inspection and packet-local DHCP Stream items expose BOOTP/options and DHCP Message data; transaction/lease state is not reconstructed. |
 | Application | SSH | Yes | No | No | No | Recognized from SSH banner only; structured SSH message parsing is not implemented. |
-| Application | STUN | Yes | No | No | No | Recognized from STUN message shape only; deeper STUN parsing is not implemented. |
+| Application | STUN | Yes | No | Yes | No | Structurally valid UDP STUN is recognized without port gating; selected packets expose structured headers/attributes and a STUN Message byte view. Integrity/fingerprint validation and STUN/ICE/TURN state tracking are not implemented. |
 | Application | BitTorrent | Yes | No | No | No | Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented. |
 | Application | MQTT | Yes | No | No | No | Recognized from a structurally validated CONNECT packet for MQTT 3.1, 3.1.1, and 5.0; deeper MQTT parsing is not implemented. |
 | Application | AMQP | Yes | No | No | No | Recognized from exact AMQP protocol headers for AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL negotiation; deeper AMQP frame parsing is not implemented. |
-| Application | NTP | Yes | No | No | No | Conservatively recognized for classic 48-byte NTPv3/NTPv4 client/server packets using UDP/123 direction semantics. Broader NTP modes and extensions are not yet automatically recognized. |
+| Application | NTP | Yes | No | Yes | No | Conservative 48-byte NTPv3/NTPv4 client/server recognition; selected packets expose structured NTP fields and an NTP Message byte view. Other modes, extensions, authentication/NTS, and era unfolding remain unsupported. |
 | Application | Mail protocols (SMTP / POP3 / IMAP) | Yes | No | No | No | Lightweight detection exists; structured mail-protocol parsing is not implemented. |
 <!-- END USER PROTOCOL CAPABILITY CATALOG -->
 
@@ -198,13 +198,13 @@ The current high-level detected-protocol families used by flow rows and Statisti
 | QUIC | Confirmed | QUIC long-header detection with optional deferred service enrichment. |
 | Possible QUIC | Heuristic / possible | Only appears when `use_possible_tls_quic` is enabled; default behavior remains off. |
 | SSH | Confirmed | Banner-based detection only. |
-| STUN | Confirmed | Cheap STUN message-shape detection only. |
+| STUN | Confirmed | Cheap outer UDP STUN envelope recognition requires a structurally valid message, exact Message Length, and Magic Cookie without a port requirement; ordered attribute parsing is deferred to selected-packet inspection. |
 | BitTorrent | Confirmed | Canonical 68-byte BitTorrent handshake detection only. |
 | MQTT | Confirmed | Structurally validated MQTT CONNECT detection only. |
 | AMQP | Confirmed | Exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol-header detection only. |
 | NTP | Confirmed | Conservative 48-byte NTPv3/NTPv4 client/server detection on UDP/123 direction semantics only. |
 | SMTP / POP3 / IMAP | Confirmed internal hints | Each protocol is detected independently and then aggregated into the Statistics row `Mail protocols`. |
-| DHCP | Confirmed | BOOTP/DHCP magic-cookie detection on UDP/67-68 only. |
+| DHCP | Confirmed | Cheap recognition requires UDP endpoints 67/68 in either direction plus the BOOTP/DHCP magic cookie at UDP payload offset 236; ordered option parsing is deferred to selected-packet inspection, and packet-local DHCP Stream presentation is deferred to selected-flow inspection. |
 | mDNS | Confirmed | Multicast DNS detection requires UDP/5353 plus multicast destination and valid DNS message shape. |
 
 Separate IGMP note:
@@ -256,12 +256,12 @@ surface under `Stream Item Data` where applicable.
 | DNS | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting supports DNS with QNAME-based service hints. Selected-packet `Summary` and packet-local selected-flow Stream items both reuse the shared `DnsInspectionParser -> DnsMessage -> DnsSummaryPresentation` path. Packet Details `Bytes` and Stream Item `Data` remain transport/item-owned bytes rather than transaction reconstruction. No transaction matching or DNS-over-TCP reconstruction is implemented. |
 | mDNS | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Detection still depends on UDP/5353 and multicast destination checks. Flow-level Service uses a bounded best-effort Question/PTR-owner/RR-owner hint, selected-packet `Summary` is structured, packet-local selected-flow Stream items expose the same bounded structured DNS wire model, and user-facing compact detected text is `mDNS`. |
 | HTTP | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet `Summary` appends a final HTTP layer using the existing packet-details formatter path. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction, and Stream Item `Data` now exposes exact authoritative bytes for request/response/partial rows through the same bounded ownership model rather than an HTTP document model; synthetic gap rows remain unavailable. |
-| DHCP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is open-time detection from BOOTP/DHCP shape checks only. Generic UDP-owned Stream Item `Data` may still exist where transport ownership is available, but there is no DHCP-specific Stream item model. |
-| STUN | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is hint-only. Generic transport-owned Stream Item `Data` may still exist, but no STUN-specific selected-packet or Stream semantics are implemented. |
+| DHCP | Supported | Not supported | Not supported | Supported | Supported | Supported | Supported | Supported | Current support keeps import-time work to cheap UDP 67/68 plus BOOTP/DHCP magic-cookie recognition. Selected-packet `Summary` exposes packet-local BOOTP fixed fields, ordered DHCP options, Parameter Request List names, compact previews for selected scalar options, Option Overload with distinct main/file/sname option areas, unknown option preservation, and conservative malformed-option bounds. Packet Details `Bytes` exposes a bounded packet-local `DHCP Message` view over the terminal UDP payload. Selected-flow Stream exposes one individually recognized DHCP packet as one packet-local DHCP message row; Stream Summary reuses the structured DHCP Summary and Stream Item `Data` exposes the packet-backed terminal UDP payload as `DHCP Message` without the UDP header. Stream presentation is scoped to the selected Flow; Discover/Offer/Request/ACK correlation, `xid` session modeling, lease lifecycle reconstruction, Service extraction, DHCPv6, RFC3396 option concatenation, and deep Option 43 / 82 / 119 / 121 / 125 semantics are not implemented. |
+| STUN | Supported | Not supported | Not supported | Supported | Supported | Not supported | Partial | Supported | Current support recognizes structurally valid UDP STUN envelopes without port gating and keeps import-time work to cheap outer-envelope checks. Selected-packet `Summary` exposes packet-local STUN header fields and ordered TLV attributes, including IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS forms, text attributes, integrity/fingerprint attributes as unvalidated values, unknown required/optional attributes, and conservative malformed inner-attribute bounds. Packet Details `Bytes` exposes a bounded packet-local `STUN Message` view. Generic UDP-owned Stream Item `Data` may still exist, but no STUN-specific Stream items, transaction reconstruction, HMAC/fingerprint validation, ICE/TURN state tracking, or service extraction is implemented. |
 | BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is canonical-handshake / hint recognition only. Generic transport-owned Stream Item `Data` may still exist, but no BitTorrent-specific Stream semantics are implemented. |
 | MQTT | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is structurally validated CONNECT hint recognition for MQTT 3.1, 3.1.1, and 5.0 over TCP only. Generic TCP-owned Stream Item `Data` may still exist, but no MQTT-specific selected-packet or Stream semantics are implemented. |
 | AMQP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exact AMQP 0-9-1 and AMQP 1.0 Core/TLS/SASL protocol headers over TCP only. TCP/5671 and TCP/5672 alone do not imply AMQP, ordinary TLS traffic on TCP/5671 is not inferred as AMQP, split protocol headers may be missed, and captures starting after negotiation may remain TCP. Generic TCP-owned Stream Item `Data` may still exist, but no AMQP-specific selected-packet, service extraction, Stream, or byte-view semantics are implemented. |
-| NTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support recognizes exactly 48-byte NTPv3/NTPv4 mode-3 client packets with destination UDP/123 and mode-4 server packets with source UDP/123 when stratum is `<= 16`. All Leap Indicator values, including `LI == 3`, are accepted. NTPv1/v2, symmetric modes 1/2, broadcast mode 5, control/private modes 6/7, extension fields, authenticated MACs, NTS, non-standard-port automatic detection, TCP, and longer packets are outside the first conservative automatic detector rather than classified as universally invalid NTP. Generic UDP-owned Stream Item `Data` may still exist, but no NTP-specific selected-packet, Stream, service extraction, timestamp decoding, or byte-view semantics are implemented. |
+| NTP | Supported | Not supported | Not supported | Supported | Supported | Not supported | Partial | Supported | Current support recognizes exactly 48-byte NTPv3/NTPv4 mode-3 client packets with destination UDP/123 and mode-4 server packets with source UDP/123 when stratum is `<= 16`. Selected-packet `Summary` exposes structured NTP fields, including version-aware Root Delay / Root Dispersion formatting and Era-0 timestamp presentation. Packet Details `Bytes` exposes a bounded packet-local `NTP Message` view for complete classic 48-byte messages. All Leap Indicator values, including `LI == 3`, are accepted. NTPv1/v2, symmetric modes 1/2, broadcast mode 5, control/private modes 6/7, extension fields, authenticated MACs, NTS, non-standard-port automatic detection, TCP, longer packets, request/response timing correlation, clock offset/delay analysis, era unfolding after the 2036 rollover, and NTP-specific Stream semantics are outside current support rather than classified as universally invalid NTP. Generic UDP-owned Stream Item `Data` may still exist, but no NTP-specific Stream item model is implemented. |
 | SSH | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is banner-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but no structured SSH message or Stream model is implemented. |
 | SMTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no SMTP-specific Stream model. |
 | POP3 | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no POP3-specific Stream model. |
@@ -290,13 +290,14 @@ The shared layered Summary model is intentionally conservative today.
 - TCP Summary now includes a first structured nested TCP options subtree under the TCP layer, but this remains selected-packet/on-demand only and does not affect open/import behavior.
 - It still does not expose full dedicated Summary subtrees for:
   - mDNS;
-  - DHCP;
-  - STUN;
   - BitTorrent;
   - MQTT;
   - AMQP;
-  - NTP;
   - SMTP / POP3 / IMAP / SSH.
+- DHCP adds a packet-local structured Summary layer with BOOTP fixed fields and
+  ordered option children when the selected UDP payload matches the supported
+  DHCPv4 recognition contract.
+- STUN adds a packet-local structured Summary layer with header fields and ordered attribute children when the selected UDP payload is a supported STUN envelope.
 - For TLS, QUIC, DNS, HTTP, and ICMPv6, layered Summary appends a conservative final protocol layer using the existing selected-packet formatter/fallback path instead of introducing a separate deep Summary parser.
 - ICMPv4 is now slightly stronger: layered Summary uses the shared bounded `IcmpInspectionParser -> IcmpMessage` model for common-header and selected type-specific metadata while still keeping checksum validation, quoted-packet recursive decoding, request/reply correlation, and ICMPv6 parity out of scope.
 
@@ -309,12 +310,25 @@ Selected-packet `Summary` currently has three main high-level patterns:
   - QUIC;
   - DNS;
   - HTTP;
+  - NTP;
+  - STUN;
+  - DHCP;
 - shared basic protocol text for:
   - ARP;
   - IGMP;
   - ICMP;
   - ICMPv6;
 - explicit conservative fallbacks for other packets.
+
+STUN attributes are represented as ordered structured children of the STUN
+Summary layer. This remains packet-local selected-packet inspection, not
+capture-wide transaction reconstruction.
+
+DHCP options are represented as ordered structured children of the DHCP Summary
+layer. BOOTP fixed-header fields are packet-local, selected scalar option
+titles may include compact decoded previews, and Option Overload keeps main,
+overloaded `file`, and overloaded `sname` option areas distinct. This is not
+capture-wide transaction or lease-state reconstruction.
 
 IPv4, IPv6, Ethernet, and VLAN currently contribute strongly to layered Summary rather than to any standalone selected-packet protocol pane, because that pane no longer exists in the UI.
 
@@ -325,6 +339,19 @@ Selected-packet `Bytes` is not a generic "deep application payload" system.
 - It can expose captured-packet roots, link/network/transport units, and selected derived protocol-unit views where current ownership/provenance exists.
 - For TCP and UDP packets it commonly includes extracted transport payload bytes.
 - For ARP packets it can show bounded ARP bytes through the selected-packet byte-presentation path.
+- For complete classic 48-byte NTPv3/NTPv4 packets it can show a bounded
+  packet-local `NTP Message` view; extension fields, MACs, and NTS are not
+  parsed as part of that view.
+- For structurally valid UDP STUN packets it can show a bounded packet-local
+  `STUN Message` view whose bounds follow `20 + Message Length`. Malformed
+  inner attributes do not necessarily invalidate the outer STUN byte view, and
+  no per-attribute byte views are currently provided.
+- For supported UDP DHCPv4 packets it can show a bounded packet-local
+  `DHCP Message` view that begins at the terminal UDP payload and is bounded by
+  current UDP payload ownership. DHCP has no separate overall DHCP
+  message-length field, malformed inner options do not necessarily invalidate
+  the whole DHCP Message byte view, and no per-option byte views are currently
+  provided.
 - For fragmented IP packets, byte extraction is intentionally conservative and may be empty.
 - For protocols such as ICMP, ICMPv6, and IGMP, the current model is still bounded per-packet byte views rather than a deep recursive inspector.
 
@@ -361,8 +388,13 @@ Selected-flow Stream currently supports only a subset of protocol-aware timeline
   - HTTP;
   - TLS;
   - QUIC;
+  - DHCP;
   - ARP.
 - Generic fallback rows remain common for plain TCP and UDP payloads.
+- DHCP stream behavior is packet-local:
+  - one recognized DHCP packet becomes one DHCP Stream item;
+  - DHCP transactions are not reconstructed or correlated across Flow boundaries;
+  - Stream Summary reuses the structured DHCP Summary and Stream Item Data exposes the terminal UDP payload as `DHCP Message`.
 - ARP stream behavior is intentionally simple:
   - one ARP packet becomes one stream item;
   - request/reply packets are not grouped together;
@@ -380,6 +412,15 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - IGMPv1/v2 reports and queries, same-group/source grouping cases, Router Alert / IPv4 IHL handling, safe unknown-type handling, partial IGMPv3 membership reports, bad checksum, and truncated / snaplen-truncated IGMP fixtures.
 - `dns`
   - structured DNS and mDNS parser / selected-packet Summary coverage, plus legacy DNS request/response baselines.
+- `dhcp`
+  - DHCPv4 Discover, Offer, and Request/ACK recognition on standard UDP
+    67/68 directions; wrong-port, bad-cookie, and truncation-before-cookie
+    negatives; structured BOOTP fixed-header presentation; common ordered
+    options; Parameter Request List names; Client Identifier; Option Overload
+    with overloaded `file` and `sname` option areas; Pad / End behavior; bytes
+    after End; unknown options; malformed option length; selected-packet
+    Summary; `DHCP Message` Bytes; packet-local DHCP Stream rows; structured
+    Stream Summary; and Stream Item `DHCP Message` Data coverage.
 - `http`
   - request/response and multi-message / partial-response coverage.
 - `mpls`
@@ -402,6 +443,12 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - TLS 1.2 / 1.3, constricted captures, and IPv6 variants.
 - `udp`
   - generic UDP payload, truncation, and checksum-oriented fixtures.
+- `ntp`
+  - NTPv3/NTPv4 client/server recognition, KoD, conservative negatives,
+    structured timestamp and fixed-point field presentation, unsynchronized
+    state, NTPv3-vs-NTPv4 Root Delay semantics, and Era-0 endpoint coverage.
+- `stun`
+  - STUN Binding Request / Success / Error classes, standard and non-standard UDP ports, historical detector negatives, ICE attributes, IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS forms, padding, unknown required/optional attributes, malformed inner TLV bounds, integrity/fingerprint presentation, selected-packet Summary, and `STUN Message` Bytes coverage.
 - `vlan`
   - single-tag 802.1Q, current two-tag QinQ, VLAN-tagged ARP, unknown inner EtherType, and malformed/truncated VLAN fixtures.
 - `vxlan`
@@ -431,6 +478,7 @@ Current protocol behavior is primarily exercised in:
 - `tests/unit/PacketPayloadTests.cpp`
 - `tests/unit/PacketProtocolDetailsTests.cpp`
 - `tests/unit/StreamQueryTests.cpp`
+- `tests/unit/DhcpPcapFixtureTests.cpp`
 - `tests/unit/ArpPcapFixtureTests.cpp`
 - `tests/unit/IgmpPcapFixtureTests.cpp`
 - `tests/unit/VlanPcapFixtureTests.cpp`
@@ -452,7 +500,25 @@ The current protocol-support pass intentionally does not claim support for:
 - MACsec decryption, ICV validation, MKA/SAK handling, or inner flow recovery;
 - PBB-TE, OAM/CFM, PBB control-plane behavior, or bridge-learning semantics;
 - PPPoE session-negotiation or control-plane semantics beyond conservative Discovery / PPP-control presentation;
-- MPLS LDP, BGP-labeled services, OAM, or MPLS-TP control-plane semantics.
+- MPLS LDP, BGP-labeled services, OAM, or MPLS-TP control-plane semantics;
+- NTPv1/v2 automatic recognition, NTP modes outside client/server `3`/`4`,
+  payloads longer than the classic 48-byte basic header, extension fields,
+  authentication MACs, NTS, non-standard-port recognition, request/response
+  timing correlation, clock offset/delay analysis, specialized NTP Stream
+  semantics, and NTP era unfolding after the 2036 rollover.
+- STUN HMAC validation, MESSAGE-INTEGRITY-SHA256 validation, FINGERPRINT CRC
+  validation, STUN-over-TCP, STUN-over-TLS/DTLS, TURN state or method
+  semantics beyond generic raw method visibility, request/response transaction
+  correlation, ICE state machines, candidate-pair construction, role-conflict
+  resolution, WebRTC session reconstruction, specialized STUN Stream semantics,
+  and STUN Service extraction.
+- DHCP Discover/Offer/Request/ACK transaction correlation, `xid` session
+  modeling, lease lifecycle reconstruction, client/server state machines,
+  Service extraction, DHCP authentication, DHCPv6, RFC3396 option
+  concatenation, deep Option 43 Vendor-Specific semantics, deep Option 82 Relay
+  Agent Information semantics, Option 119 Domain Search decoding/compression,
+  Option 121 Classless Static Route decoding, deep Option 125
+  vendor-identifying semantics, and cross-Flow DHCP transaction correlation.
 
 ## How To Update This Document
 

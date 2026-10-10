@@ -263,6 +263,10 @@ bool starts_with(const std::string_view value, const std::string_view prefix) {
     return value.rfind(prefix, 0U) == 0U;
 }
 
+bool contains_text(const std::string_view value, const std::string_view needle) {
+    return value.find(needle) != std::string_view::npos;
+}
+
 const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& rows, const std::string_view label) {
     const auto it = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
         return row.label == label;
@@ -589,6 +593,110 @@ const session_detail::PacketSummaryLayer* require_summary_child(
     const auto* child = find_summary_child(layer, id, occurrence);
     PFL_REQUIRE(child != nullptr);
     return child;
+}
+
+const session_detail::PacketSummaryField* find_descendant_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view label
+) {
+    if (const auto* field = find_summary_field(layer, label); field != nullptr) {
+        return field;
+    }
+    for (const auto& child : layer.children) {
+        if (const auto* field = find_descendant_summary_field(child, label); field != nullptr) {
+            return field;
+        }
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryLayer* find_descendant_layer_title_contains(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view title_fragment
+) {
+    for (const auto& child : layer.children) {
+        if (contains_text(child.title, title_fragment)) {
+            return &child;
+        }
+        if (const auto* descendant = find_descendant_layer_title_contains(child, title_fragment);
+            descendant != nullptr) {
+            return descendant;
+        }
+    }
+    return nullptr;
+}
+
+std::string flatten_summary_layer_text(const session_detail::PacketSummaryLayer& layer) {
+    std::string text = layer.id + "\n" + layer.title + "\n" + layer.marker_text + "\n";
+    for (const auto& field : layer.fields) {
+        text += field.label + "\n" + field.value + "\n";
+    }
+    for (const auto& child : layer.children) {
+        text += flatten_summary_layer_text(child);
+    }
+    return text;
+}
+
+void expect_descendant_summary_field_equals(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view label,
+    const std::string_view expected
+) {
+    const auto* field = find_descendant_summary_field(layer, label);
+    PFL_EXPECT(field != nullptr);
+    if (field != nullptr) {
+        PFL_EXPECT(field->value == expected);
+    }
+}
+
+void expect_descendant_summary_field_contains(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view label,
+    const std::string_view expected
+) {
+    const auto* field = find_descendant_summary_field(layer, label);
+    PFL_EXPECT(field != nullptr);
+    if (field != nullptr) {
+        PFL_EXPECT(contains_text(field->value, expected));
+    }
+}
+
+const session_detail::PacketSummaryLayer* expect_child_title_contains(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::size_t index,
+    const std::string_view expected_title
+) {
+    PFL_EXPECT(layer.children.size() > index);
+    if (layer.children.size() <= index) {
+        return nullptr;
+    }
+
+    const auto& child = layer.children[index];
+    PFL_EXPECT(contains_text(child.title, expected_title));
+    return &child;
+}
+
+const StreamItemRow& expect_future_dhcp_stream_row_or_first(
+    const std::vector<StreamItemRow>& rows,
+    const std::string_view label
+) {
+    PFL_REQUIRE(!rows.empty());
+    const auto* row = find_stream_row_by_label(rows, label);
+    PFL_EXPECT(row != nullptr);
+    return row != nullptr ? *row : rows.front();
+}
+
+void expect_single_packet_stream_row_payload(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const StreamItemRow& row
+) {
+    PFL_EXPECT(row.packet_count == 1U);
+    PFL_REQUIRE(row.packet_indices.size() == 1U);
+    const auto packet = session.find_packet(row.packet_indices.front());
+    PFL_REQUIRE(packet.has_value());
+    const auto payload = session.read_selected_flow_transport_payload(flow_index, *packet);
+    PFL_EXPECT(static_cast<std::size_t>(row.byte_count) == payload.size());
 }
 
 void expect_summary_child_titles(
@@ -3387,6 +3495,191 @@ void run_stream_query_tests() {
             PFL_REQUIRE(relabeled_generic_layer != nullptr);
             PFL_EXPECT(require_summary_field_value(*relabeled_generic_layer, "Kind") == "UDP payload");
         }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/03_dhcp_request_ack_bidirectional.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "DHCP Request");
+        PFL_EXPECT(rows[1].label == "DHCP ACK");
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({1U}));
+        expect_single_packet_stream_row_payload(session, 0U, rows[0]);
+        expect_single_packet_stream_row_payload(session, 0U, rows[1]);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/07_dhcp_structured_discover.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_dhcp_stream_row_or_first(rows, "DHCP Discover");
+        PFL_EXPECT(row.packet_indices == std::vector<std::uint64_t>({0U}));
+        expect_single_packet_stream_row_payload(session, 0U, row);
+        PFL_EXPECT(row.semantic_family != StreamItemSemanticFamily::generic);
+        PFL_EXPECT(!row.generic_summary.has_value());
+
+        const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0U));
+        const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
+        const auto* dhcp_layer = find_top_level_summary_layer(summary_layers, "dhcp");
+        PFL_REQUIRE(stream_item_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
+        PFL_REQUIRE(dhcp_layer != nullptr);
+        if (dhcp_layer != nullptr) {
+            expect_descendant_summary_field_contains(*dhcp_layer, "Operation", "BOOTREQUEST");
+            expect_descendant_summary_field_contains(*dhcp_layer, "Operation", "1");
+            expect_descendant_summary_field_equals(*dhcp_layer, "Transaction ID", "0x3903F327");
+            const auto* options = find_descendant_layer_title_contains(*dhcp_layer, "Options");
+            PFL_REQUIRE(options != nullptr);
+            if (options != nullptr) {
+                const auto* message_type = expect_child_title_contains(*options, 0U, "DHCP Message Type");
+                const auto* requested_ip = expect_child_title_contains(*options, 2U, "Requested IP Address");
+                if (message_type != nullptr) {
+                    expect_descendant_summary_field_contains(*message_type, "Value", "Discover");
+                }
+                if (requested_ip != nullptr) {
+                    expect_descendant_summary_field_equals(*requested_ip, "Address", "192.0.2.100");
+                }
+            }
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/08_dhcp_structured_offer.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_dhcp_stream_row_or_first(rows, "DHCP Offer");
+        expect_single_packet_stream_row_payload(session, 0U, row);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/09_dhcp_option_overload.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_dhcp_stream_row_or_first(rows, "DHCP ACK");
+        expect_single_packet_stream_row_payload(session, 0U, row);
+
+        const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0U));
+        const auto* dhcp_layer = find_top_level_summary_layer(summary_layers, "dhcp");
+        PFL_REQUIRE(dhcp_layer != nullptr);
+        if (dhcp_layer != nullptr) {
+            const auto* options = find_descendant_layer_title_contains(*dhcp_layer, "Options");
+            PFL_REQUIRE(options != nullptr);
+            if (options != nullptr) {
+                const auto* message_type = expect_child_title_contains(*options, 0U, "DHCP Message Type");
+                const auto* overload = expect_child_title_contains(*options, 1U, "Option Overload");
+                const auto* server_id = expect_child_title_contains(*options, 2U, "Server Identifier");
+                if (message_type != nullptr) {
+                    expect_descendant_summary_field_contains(*message_type, "Value", "ACK");
+                }
+                if (overload != nullptr) {
+                    const auto overload_text = flatten_summary_layer_text(*overload);
+                    PFL_EXPECT(contains_text(overload_text, "3"));
+                    PFL_EXPECT(contains_text(overload_text, "file"));
+                    PFL_EXPECT(contains_text(overload_text, "sname") || contains_text(overload_text, "Server Name"));
+                }
+                if (server_id != nullptr) {
+                    expect_descendant_summary_field_equals(*server_id, "Address", "192.0.2.1");
+                }
+            }
+
+            const auto* file_options = find_descendant_layer_title_contains(*dhcp_layer, "Overloaded File Options");
+            PFL_REQUIRE(file_options != nullptr);
+            if (file_options != nullptr) {
+                const auto* bootfile = expect_child_title_contains(*file_options, 0U, "Bootfile Name");
+                if (bootfile != nullptr) {
+                    expect_descendant_summary_field_equals(*bootfile, "Value", "bootx64.efi");
+                }
+            }
+
+            const auto* sname_options = find_descendant_layer_title_contains(*dhcp_layer, "Overloaded Server Name Options");
+            PFL_REQUIRE(sname_options != nullptr);
+            if (sname_options != nullptr) {
+                const auto* tftp = expect_child_title_contains(*sname_options, 0U, "TFTP Server Name");
+                if (tftp != nullptr) {
+                    expect_descendant_summary_field_equals(*tftp, "Value", "tftp.example.test");
+                }
+            }
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/10_dhcp_padding_unknown_end.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_dhcp_stream_row_or_first(rows, "DHCP Request");
+        PFL_EXPECT(row.label != "DHCP ACK");
+
+        const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0U));
+        const auto* dhcp_layer = find_top_level_summary_layer(summary_layers, "dhcp");
+        PFL_REQUIRE(dhcp_layer != nullptr);
+        if (dhcp_layer != nullptr) {
+            const auto dhcp_text = flatten_summary_layer_text(*dhcp_layer);
+            PFL_EXPECT(!contains_text(dhcp_text, "ignored-tail"));
+            PFL_EXPECT(!contains_text(dhcp_text, "ACK (5)"));
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dhcp/11_dhcp_malformed_option_length.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = expect_future_dhcp_stream_row_or_first(rows, "DHCP Discover");
+        expect_single_packet_stream_row_payload(session, 0U, row);
+
+        const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0U));
+        const auto* dhcp_layer = find_top_level_summary_layer(summary_layers, "dhcp");
+        PFL_REQUIRE(dhcp_layer != nullptr);
+        if (dhcp_layer != nullptr) {
+            expect_descendant_summary_field_equals(*dhcp_layer, "Transaction ID", "0x3903F32B");
+            const auto* options = find_descendant_layer_title_contains(*dhcp_layer, "Options");
+            PFL_REQUIRE(options != nullptr);
+            if (options != nullptr) {
+                const auto* message_type = expect_child_title_contains(*options, 0U, "DHCP Message Type");
+                const auto* host_name = expect_child_title_contains(*options, 1U, "Host Name");
+                if (message_type != nullptr) {
+                    expect_descendant_summary_field_contains(*message_type, "Value", "Discover");
+                }
+                if (host_name != nullptr) {
+                    expect_descendant_summary_field_equals(*host_name, "Declared Length", "10");
+                    expect_descendant_summary_field_equals(*host_name, "Available Value Length", "3");
+                    expect_descendant_summary_field_contains(*host_name, "Value", "bad");
+                    expect_descendant_summary_field_contains(*host_name, "Status", "malformed");
+                    expect_descendant_summary_field_contains(*host_name, "Warning", "extends beyond");
+                }
+            }
+        }
+    }
+
+    for (const auto* fixture : {
+             "parsing/dhcp/04_dhcp_bad_magic_cookie.pcap",
+             "parsing/dhcp/05_dhcp_valid_payload_wrong_ports.pcap",
+             "parsing/dhcp/06_dhcp_truncated_before_magic_cookie.pcap",
+         }) {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path(fixture), fast_options));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::generic);
+        PFL_REQUIRE(rows[0].generic_summary.has_value());
+        PFL_EXPECT(rows[0].generic_summary->semantic_kind == GenericStreamItemSemanticKind::udp_payload);
+
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0U));
+        PFL_EXPECT(find_top_level_summary_layer(summary_layers, "dhcp") == nullptr);
     }
 
     {

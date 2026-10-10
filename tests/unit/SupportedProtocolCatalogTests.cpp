@@ -132,6 +132,10 @@ void expect_representative_rows() {
         return row.stable_id == "ntp";
     });
     PFL_EXPECT(ntp_row_count == 1U);
+    const auto stun_row_count = std::count_if(rows.begin(), rows.end(), [](const auto& row) {
+        return row.stable_id == "stun";
+    });
+    PFL_EXPECT(stun_row_count == 1U);
 
     const auto* tls = find_row("tls");
     PFL_REQUIRE(tls != nullptr);
@@ -170,6 +174,27 @@ void expect_representative_rows() {
     const auto* dhcp = find_row("dhcp");
     PFL_REQUIRE(dhcp != nullptr);
     PFL_EXPECT(dhcp->protocol == "DHCPv4");
+    PFL_EXPECT(dhcp->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(dhcp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(dhcp->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(dhcp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(dhcp->stream == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(dhcp->notes.find("67/68") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("packet-local") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("DHCP Message") != std::string_view::npos);
+    PFL_EXPECT(dhcp->notes.find("transaction") != std::string_view::npos);
+
+    const auto* stun = find_row("stun");
+    PFL_REQUIRE(stun != nullptr);
+    PFL_EXPECT(stun->protocol == "STUN");
+    PFL_EXPECT(stun->category == session_detail::SupportedProtocolCategory::application);
+    PFL_EXPECT(stun->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(stun->service == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(stun->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
+    PFL_EXPECT(stun->stream == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(stun->notes.find("without port") != std::string_view::npos);
+    PFL_EXPECT(stun->notes.find("structured") != std::string_view::npos);
+    PFL_EXPECT(stun->notes.find("STUN Message") != std::string_view::npos);
 
     const auto* mqtt = find_row("mqtt");
     PFL_REQUIRE(mqtt != nullptr);
@@ -201,10 +226,12 @@ void expect_representative_rows() {
     PFL_EXPECT(ntp->category == session_detail::SupportedProtocolCategory::application);
     PFL_EXPECT(ntp->recognition == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(ntp->service == session_detail::SupportedProtocolCapabilityStatus::no);
-    PFL_EXPECT(ntp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::no);
+    PFL_EXPECT(ntp->packet_summary == session_detail::SupportedProtocolCapabilityStatus::yes);
     PFL_EXPECT(ntp->stream == session_detail::SupportedProtocolCapabilityStatus::no);
     PFL_EXPECT(ntp->notes.find("48-byte NTPv3/NTPv4") != std::string_view::npos);
-    PFL_EXPECT(ntp->notes.find("UDP/123 direction semantics") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("structured NTP fields") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("NTP Message byte view") != std::string_view::npos);
+    PFL_EXPECT(ntp->notes.find("Other modes") != std::string_view::npos);
 }
 
 void expect_markdown_escaping() {

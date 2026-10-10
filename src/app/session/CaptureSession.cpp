@@ -1,4 +1,5 @@
 ﻿#include "app/session/CaptureSession.h"
+#include "app/session/DhcpSummaryPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/PacketLocatorAccess.h"
@@ -45,6 +46,7 @@
 #include "core/io/PcapReader.h"
 #include "core/services/CaptureImportApplication.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/DhcpInspectionParser.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
 #include "core/services/FlowAnalysisService.h"
@@ -68,6 +70,7 @@ constexpr std::size_t kCaptureGeneralStatisticsTopSummaryCapacity = 20U;
 
 using session_detail::ListedConnectionRef;
 using session_detail::build_basic_protocol_details_text;
+using session_detail::build_dhcp_stream_label;
 using session_detail::build_open_failure_message;
 using session_detail::collect_packets;
 using session_detail::fallback_open_failure;
@@ -555,12 +558,14 @@ struct PacketLocalStreamClassification {
     std::string label {};
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
     std::optional<DnsStreamItemSummaryDetails> dns_summary {};
+    std::optional<DhcpStreamItemSummaryDetails> dhcp_summary {};
 };
 
 PacketLocalStreamClassification classify_packet_local_stream_item(
     const PacketDetails& details,
     const ProtocolId protocol,
-    const FlowProtocolHint flow_hint
+    const FlowProtocolHint flow_hint,
+    const std::span<const std::uint8_t> transport_payload
 ) {
     if (protocol == ProtocolId::tcp && details.has_http) {
         const auto http_summary = make_http_stream_summary_from_packet_details(details.http);
@@ -573,6 +578,25 @@ PacketLocalStreamClassification classify_packet_local_stream_item(
     }
 
     if (protocol == ProtocolId::udp) {
+        if (details.has_udp) {
+            auto dhcp_message = inspect_supported_dhcp_message(
+                transport_payload,
+                DhcpRecognitionContext {
+                    .src_port = details.udp.src_port,
+                    .dst_port = details.udp.dst_port,
+                }
+            );
+            if (dhcp_message.has_value()) {
+                DhcpStreamItemSummaryDetails dhcp_summary {
+                    .message = std::move(*dhcp_message),
+                };
+                return PacketLocalStreamClassification {
+                    .label = build_dhcp_stream_label(dhcp_summary.message),
+                    .dhcp_summary = std::move(dhcp_summary),
+                };
+            }
+        }
+
         if (const auto dns_summary = make_dns_stream_summary_from_packet_details(details, flow_hint);
             dns_summary.has_value()) {
             return PacketLocalStreamClassification {
@@ -2110,6 +2134,7 @@ void append_connection_stream_items_bounded(
         std::string label = fallback_stream_label(flow_protocol);
         std::optional<HttpStreamItemSummaryDetails> http_summary {};
         std::optional<DnsStreamItemSummaryDetails> dns_summary {};
+        std::optional<DhcpStreamItemSummaryDetails> dhcp_summary {};
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
@@ -2120,10 +2145,16 @@ void append_connection_stream_items_bounded(
                 PacketDetailsService details_service {};
                 if (const auto details = details_service.decode(packet_bytes, packet); details.has_value()) {
                     const auto classification =
-                        classify_packet_local_stream_item(*details, flow_protocol, connection_flow_hint);
+                        classify_packet_local_stream_item(
+                            *details,
+                            flow_protocol,
+                            connection_flow_hint,
+                            payload_span
+                        );
                     label = classification.label;
                     http_summary = classification.http_summary;
                     dns_summary = classification.dns_summary;
+                    dhcp_summary = classification.dhcp_summary;
                 }
             }
         }
@@ -2159,6 +2190,9 @@ void append_connection_stream_items_bounded(
             if (http_summary.has_value()) {
                 row.semantic_family = StreamItemSemanticFamily::http;
                 row.http_summary = std::move(http_summary);
+            } else if (dhcp_summary.has_value()) {
+                row.semantic_family = StreamItemSemanticFamily::dhcp;
+                row.dhcp_summary = std::move(dhcp_summary);
             } else if (dns_summary.has_value()) {
                 row.semantic_family = StreamItemSemanticFamily::dns;
                 row.dns_summary = std::move(dns_summary);

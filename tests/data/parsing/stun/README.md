@@ -1,10 +1,11 @@
 # STUN Parsing Fixtures
 
-This directory contains the planned permanent PCAP fixture set for current
-PcapFlowLab STUN recognition behavior.
+This directory contains the permanent PCAP fixture set for current PcapFlowLab
+STUN recognition behavior and structured selected-packet STUN presentation
+coverage.
 
-Current STUN support is detection-only. It lives in the application protocol
-hint path and recognizes STUN from an individual UDP transport payload when:
+Current open/import-time STUN support is deliberately cheap. It recognizes
+STUN from an individual UDP transport payload when:
 
 - payload size is at least `20` bytes;
 - the top two bits of the first byte are zero: `(payload[0] & 0xC0) == 0`;
@@ -16,35 +17,46 @@ Recognition is not port-gated. A valid STUN-shaped payload can be recognized
 on UDP `3478` or on a non-standard UDP port. Successful detection produces
 Detected Protocol `STUN`; service hint remains empty.
 
-PcapFlowLab does not currently parse STUN methods/classes for presentation,
-transaction IDs, attributes, TURN-specific data, ICE state, WebRTC sessions, or
-protocol-aware STUN Stream rows. It also does not parse STUN attributes such as
-`XOR-MAPPED-ADDRESS`, `USERNAME`, `MESSAGE-INTEGRITY`, `FINGERPRINT`,
-`ICE-CONTROLLING`, `ICE-CONTROLLED`, or `PRIORITY`.
+Selected-packet STUN inspection is deeper and on demand. For recognized UDP
+STUN messages, Packet Details `Summary` exposes the raw Message Type, decoded
+Method and Class, Message Length, Magic Cookie, full 96-bit Transaction ID, and
+ordered structured attributes. Current attribute presentation covers
+`MAPPED-ADDRESS`, `XOR-MAPPED-ADDRESS`, `USERNAME`, `MESSAGE-INTEGRITY`,
+`MESSAGE-INTEGRITY-SHA256`, `ERROR-CODE`, `REALM`, `NONCE`, `SOFTWARE`,
+`FINGERPRINT`, `ICE-CONTROLLING`, `ICE-CONTROLLED`, `PRIORITY`,
+`USE-CANDIDATE`, and unknown attributes. Packet Details `Bytes` exposes a
+packet-local `STUN Message` view.
 
-## Local Generation
+Attribute order is preserved, 4-byte padding is handled, malformed inner
+attributes are surfaced conservatively while preserving a valid outer STUN
+header, and unknown attributes remain visible with required/optional
+classification. Generic UDP Stream behavior is unchanged; there are no
+specialized STUN Stream rows and no Service extraction.
 
-The local helper script is intentionally not committed and should remain a
-local generation helper only:
+## Generation
+
+The deterministic generator is committed beside these fixtures:
 
 ```bash
-python tmp/generate_stun_pcaps.py --output-dir tests/data/parsing/stun --force
+python tests/data/parsing/stun/generate_stun_pcaps.py --output-dir tests/data/parsing/stun --force
 ```
 
 Run the command from the repository root after installing Scapy locally. The
-script creates the output directory, overwrites exactly the six fixture files
+script creates the output directory, overwrites exactly the eleven fixture files
 listed below when `--force` is supplied, emits classic Ethernet `.pcap` files,
-and prints only the generated paths.
+and prints only the generated paths. Fixtures `01`-`06` preserve the historical
+recognition recipe; fixtures `07`-`11` cover current structured selected-packet
+STUN inspection.
 
 To write into the current directory on a separate fixture-generation VM, `cd`
 to the desired output directory and run the script without `--output-dir`:
 
 ```bash
-python /path/to/tmp/generate_stun_pcaps.py --force
+python /path/to/tests/data/parsing/stun/generate_stun_pcaps.py --force
 ```
 
 Do not edit generated packet bytes by hand. If a fixture needs to change,
-adjust the local generator and regenerate the PCAPs.
+adjust the committed generator and regenerate the PCAPs.
 
 ## Shared Deterministic Values
 
@@ -52,6 +64,8 @@ adjust the local generator and regenerate the PCAPs.
 - Server MAC: `02:00:00:00:42:02`
 - Client IPv4: `192.0.2.30`
 - Server IPv4: `192.0.2.40`
+- Client IPv6: `2001:db8:1::30`
+- Server IPv6: `2001:db8:1::40`
 - Client UDP port: `51000`
 - Standard STUN server port: `3478`
 - Non-standard server port: `45678`
@@ -65,8 +79,15 @@ The STUN header is `20` bytes:
 - Magic Cookie: 4 bytes
 - Transaction ID: 12 bytes
 
-All normal positive fixtures use zero-attribute STUN messages with Message
-Length `0`, so the UDP payload length is exactly `20` bytes.
+Fixtures `01`-`06` use the historical fixed transaction ID above. Structured
+fixtures `07`-`11` use fixture-specific repeated-byte transaction IDs to keep
+attribute encoding deterministic and easy to inspect.
+
+For `XOR-MAPPED-ADDRESS`, IPv4 addresses are XORed with the magic cookie and
+IPv6 addresses are XORed with `Magic Cookie || Transaction ID`. Ports are XORed
+with the upper 16 bits of the magic cookie. `FINGERPRINT` attributes use the
+standard STUN CRC-32 over the message with the final attribute length included,
+then XOR the CRC with `0x5354554E`.
 
 ## Fixture Map
 
@@ -80,7 +101,8 @@ Length `0`, so the UDP payload length is exactly `20` bytes.
 - Purpose: positive baseline for common STUN Binding Request recognition on
   the standard STUN port
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint, no dedicated STUN Summary
+  service hint, structured STUN Summary header, and bounded `STUN Message`
+  byte view
 - Wireshark note: should decode as STUN
 
 ### `02_stun_binding_request_response.pcap`
@@ -94,7 +116,7 @@ Length `0`, so the UDP payload length is exactly `20` bytes.
 - Purpose: positive bidirectional Flow baseline showing method/class
   differences do not split the user-facing Flow
 - Expected current PFL behavior: one bidirectional UDP Flow, packet count `2`,
-  Detected Protocol `STUN`, empty service hint
+  Detected Protocol `STUN`, empty service hint, structured STUN Summary
 - Boundary: PcapFlowLab does not currently associate transaction IDs
   semantically
 
@@ -107,7 +129,7 @@ Length `0`, so the UDP payload length is exactly `20` bytes.
   transaction ID
 - Purpose: positive baseline preserving current non-port-gated STUN detection
 - Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
-  service hint
+  service hint, structured STUN Summary
 - Wireshark note: automatic STUN dissection on non-standard ports may vary by
   Wireshark configuration or heuristic behavior
 
@@ -150,8 +172,87 @@ Length `0`, so the UDP payload length is exactly `20` bytes.
 - Wireshark note: may decode as malformed/truncated STUN; PcapFlowLab requires
   a structurally complete message for confirmed detection
 
-## Future Parsing Boundary
+### `07_stun_binding_ice_exchange.pcap`
 
-These fixtures preserve current detection-only behavior. Future STUN, TURN,
-ICE, or WebRTC-related parsing may add deeper presentation, but those
-capabilities are not implemented by the current fixture contract.
+- Packets: `2`
+- Packet 1: client `51000` -> server `3478`, Binding Request `0x0001`
+- Packet 2: server `3478` -> client `51000`, Binding Success Response
+  `0x0101`
+- Transaction ID: fixture-specific deterministic ID reused by request and
+  response
+- Request attributes: `USERNAME` value `remote:local`, `PRIORITY`
+  `1845501695`, `ICE-CONTROLLING` `0x1122334455667788`, zero-length
+  `USE-CANDIDATE`, deterministic `MESSAGE-INTEGRITY`, valid `FINGERPRINT`
+- Response attributes: IPv4 `XOR-MAPPED-ADDRESS` for
+  `203.0.113.25:54321`, `SOFTWARE` value `PFL STUN fixture`,
+  deterministic `MESSAGE-INTEGRITY-SHA256`, valid `FINGERPRINT`
+- Purpose: structured STUN/ICE attribute presentation coverage while
+  preserving current open-time recognition behavior
+- Expected current PFL behavior: one bidirectional UDP Flow, packet count `2`,
+  Detected Protocol `STUN`, empty service hint, structured STUN Summary
+
+### `08_stun_binding_success_xor_mapped_ipv6.pcap`
+
+- Packets: `1`
+- Direction: IPv6 server to client
+- IPv6/UDP: `2001:db8:1::40:3478` -> `2001:db8:1::30:51000`
+- STUN: Binding Success Response `0x0101`
+- Attributes: IPv6 `XOR-MAPPED-ADDRESS` for
+  `2001:db8:ffff::25:54321`, IPv6 `MAPPED-ADDRESS` for
+  `2001:db8:ffff::26:54322`
+- Purpose: IPv6 address-family coverage for mapped-address attribute decoding
+- Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
+  service hint, structured STUN Summary header, and bounded `STUN Message`
+  byte view
+
+### `09_stun_binding_error_response.pcap`
+
+- Packets: `1`
+- Direction: server to client
+- IPv4/UDP: `192.0.2.40:3478` -> `192.0.2.30:51000`
+- STUN: Binding Error Response `0x0111`
+- Attributes: `ERROR-CODE` `401 Unauthorized`, `REALM` value `example.org`,
+  `NONCE` value `pfl-stun-nonce-0001`, `SOFTWARE` value `PFL STUN fixture`
+- Purpose: structured error-response and text-attribute coverage
+- Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
+  service hint, structured STUN Summary
+
+### `10_stun_attribute_padding_and_unknown.pcap`
+
+- Packets: `1`
+- Direction: client to server
+- IPv4/UDP: `192.0.2.30:51000` -> `192.0.2.40:3478`
+- STUN: Binding Request `0x0001`
+- Attributes: `USERNAME` value `pad-nine!` with 9-byte value and 3 bytes of
+  zero padding, `ICE-CONTROLLED` `0x8877665544332211`, unknown required
+  attribute `0x1234`, unknown optional attribute `0x8123` with 3-byte value and
+  1 byte of zero padding
+- Purpose: attribute padding, alignment, and unknown-attribute
+  preservation coverage
+- Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
+  service hint, structured STUN Summary
+
+### `11_stun_malformed_attribute_length.pcap`
+
+- Packets: `1`
+- Direction: client to server
+- IPv4/UDP: `192.0.2.30:51000` -> `192.0.2.40:3478`
+- STUN: Binding Request `0x0001` with a structurally valid outer STUN envelope
+- Malformed body: Message Length is `8`; the single `USERNAME` attribute
+  declares Length `8` but only 4 value bytes are present after the attribute
+  header
+- Purpose: parser robustness coverage for malformed inner attributes
+  without weakening the current outer-envelope detector
+- Expected current PFL behavior: one UDP Flow, Detected Protocol `STUN`, empty
+  service hint, structured STUN Summary with malformed attribute warning,
+  bounded `STUN Message` byte view, no crash
+
+## Current Limitations
+
+Current STUN support intentionally does not implement HMAC validation for
+`MESSAGE-INTEGRITY`, `MESSAGE-INTEGRITY-SHA256` validation, `FINGERPRINT` CRC
+validation, STUN-over-TCP, STUN-over-TLS/DTLS, TURN state/method semantics
+beyond generic raw method visibility, request/response transaction correlation,
+an ICE state machine, candidate-pair construction, role-conflict resolution,
+WebRTC session reconstruction, specialized STUN Stream rows, or Service
+extraction. These are unsupported limitations, not malformed-STUN conditions.

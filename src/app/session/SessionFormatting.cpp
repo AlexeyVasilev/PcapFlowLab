@@ -7,7 +7,10 @@
 #include <string_view>
 
 #include "app/session/DnsSummaryPresentation.h"
+#include "app/session/DhcpSummaryPresentation.h"
 #include "app/session/IcmpSummaryPresentation.h"
+#include "app/session/NtpSummaryPresentation.h"
+#include "app/session/StunSummaryPresentation.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::session_detail {
@@ -5113,6 +5116,14 @@ std::optional<PacketSummaryLayer> build_dns_stream_summary_layer(const StreamIte
     return build_dns_summary_layer(row.dns_summary->message, presentation_kind);
 }
 
+std::optional<PacketSummaryLayer> build_dhcp_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.dhcp_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    return build_dhcp_summary_layer(row.dhcp_summary->message);
+}
+
 std::optional<PacketSummaryLayer> build_generic_stream_summary_layer(const StreamItemRow& row) {
     if (!row.generic_summary.has_value()) {
         return std::nullopt;
@@ -5470,6 +5481,18 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(
     }
     if (const auto icmpv6_layer = build_icmpv6_summary_layer(details); icmpv6_layer.has_value()) {
         return icmpv6_layer;
+    }
+
+    if (options.ntp_message.has_value()) {
+        return build_ntp_summary_layer(*options.ntp_message, options.ntp_terminal_address_family);
+    }
+
+    if (options.stun_message.has_value()) {
+        return build_stun_summary_layer(*options.stun_message);
+    }
+
+    if (options.dhcp_message.has_value()) {
+        return build_dhcp_summary_layer(*options.dhcp_message);
     }
 
     if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {
@@ -6081,6 +6104,8 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     if (tls_layers.empty()) {
         if (const auto http_layer = build_http_stream_summary_layer(row); http_layer.has_value()) {
             layers.push_back(*http_layer);
+        } else if (const auto dhcp_layer = build_dhcp_stream_summary_layer(row); dhcp_layer.has_value()) {
+            layers.push_back(*dhcp_layer);
         } else if (const auto dns_layer = build_dns_stream_summary_layer(row); dns_layer.has_value()) {
             layers.push_back(*dns_layer);
         } else if (const auto arp_layer = build_arp_stream_summary_layer(row); arp_layer.has_value()) {

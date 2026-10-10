@@ -18,8 +18,11 @@
 #include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
+#include "core/services/DhcpInspectionParser.h"
+#include "core/services/NtpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
+#include "core/services/StunInspectionParser.h"
 
 namespace pfl {
 
@@ -30,10 +33,7 @@ constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
-constexpr std::uint16_t kDhcpServerPort = 67;
-constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
-constexpr std::uint16_t kNtpPort = 123;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
@@ -50,13 +50,6 @@ constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
-constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
-constexpr std::size_t kStunHeaderSize = 20U;
-constexpr std::size_t kNtpBasicHeaderSize = 48U;
-constexpr std::size_t kBootpFixedHeaderSize = 236U;
-constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
-constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
-constexpr std::uint32_t kDhcpMagicCookie = 0x63825363U;
 constexpr std::string_view kBitTorrentHandshakeProtocol = "BitTorrent protocol";
 constexpr std::size_t kBitTorrentHandshakeSize = 68U;
 constexpr std::uint8_t kMqttConnectFixedHeaderByte = 0x10U;
@@ -133,10 +126,6 @@ std::string format_mac_address(std::span<const std::uint8_t> address) {
 
 bool has_port(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port) noexcept {
     return left == port || right == port;
-}
-
-bool has_port_pair(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port_a, const std::uint16_t port_b) noexcept {
-    return (left == port_a && right == port_b) || (left == port_b && right == port_a);
 }
 
 bool is_mdns_destination_port(const std::uint16_t port) noexcept {
@@ -346,27 +335,6 @@ bool looks_like_ssh_banner(std::span<const std::uint8_t> payload) noexcept {
     return payload.size() >= 4U && payload_as_text(payload).starts_with("SSH-");
 }
 
-bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
-    if (payload.size() < kStunHeaderSize) {
-        return false;
-    }
-
-    if ((payload[0] & 0xC0U) != 0U) {
-        return false;
-    }
-
-    const auto message_length = static_cast<std::size_t>(read_be16(payload, 2U));
-    if ((message_length % 4U) != 0U) {
-        return false;
-    }
-
-    if (payload.size() != (kStunHeaderSize + message_length)) {
-        return false;
-    }
-
-    return read_be32(payload, 4U) == kStunMagicCookie;
-}
-
 std::optional<std::size_t> declared_udp_payload_length_for_terminal_payload(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t payload_offset
@@ -393,36 +361,16 @@ bool looks_like_ntp_message(std::span<const std::uint8_t> packet_bytes,
                             const std::size_t payload_offset,
                             const std::uint16_t src_port,
                             const std::uint16_t dst_port) noexcept {
-    if (payload.size() != kNtpBasicHeaderSize) {
-        return false;
-    }
-
     const auto declared_udp_payload_length =
         declared_udp_payload_length_for_terminal_payload(packet_bytes, payload_offset);
-    if (!declared_udp_payload_length.has_value() ||
-        *declared_udp_payload_length != kNtpBasicHeaderSize) {
-        return false;
-    }
-
-    const auto version = static_cast<std::uint8_t>((payload[0] >> 3U) & 0x07U);
-    if (version != 3U && version != 4U) {
-        return false;
-    }
-
-    const auto mode = static_cast<std::uint8_t>(payload[0] & 0x07U);
-    if (mode == 3U) {
-        if (dst_port != kNtpPort) {
-            return false;
+    return inspect_supported_ntp_message(
+        payload,
+        NtpRecognitionContext {
+            .src_port = src_port,
+            .dst_port = dst_port,
+            .declared_udp_payload_length = declared_udp_payload_length,
         }
-    } else if (mode == 4U) {
-        if (src_port != kNtpPort) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    return payload[1] <= 16U;
+    ).has_value();
 }
 
 bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
@@ -644,14 +592,6 @@ bool looks_like_imap_payload(std::span<const std::uint8_t> payload) noexcept {
     ++index;
     const auto command = payload_text.substr(index);
     return command.starts_with("LOGIN ") || command.starts_with("CAPABILITY") || command == "LOGIN";
-}
-
-bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
-    if (payload.size() < kDhcpMinPayloadSize) {
-        return false;
-    }
-
-    return read_be32(payload, kDhcpMagicCookieOffset) == kDhcpMagicCookie;
 }
 
 std::optional<std::string> extract_http_host(std::span<const std::uint8_t> payload) {
@@ -1360,7 +1300,7 @@ FlowHintUpdate detect_ssh_hint(std::span<const std::uint8_t> payload) {
 }
 
 FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
-    if (!looks_like_stun_message(payload)) {
+    if (!stun_message_matches_current_support_contract(payload)) {
         return {};
     }
 
@@ -1386,11 +1326,12 @@ FlowHintUpdate detect_ntp_hint(std::span<const std::uint8_t> packet_bytes,
 FlowHintUpdate detect_dhcp_hint(std::span<const std::uint8_t> payload,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port) {
-    if (!has_port_pair(src_port, dst_port, kDhcpClientPort, kDhcpServerPort)) {
-        return {};
-    }
-
-    if (!looks_like_dhcp_message(payload)) {
+    if (!dhcp_message_matches_current_support_contract(
+            payload,
+            DhcpRecognitionContext {
+                .src_port = src_port,
+                .dst_port = dst_port,
+            })) {
         return {};
     }
 

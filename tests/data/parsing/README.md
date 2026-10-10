@@ -48,6 +48,17 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 ## DHCPv4
 
+These fixtures cover current DHCPv4 UDP/67-68 plus BOOTP/DHCP magic-cookie
+recognition and selected-packet structured inspection. Coverage includes
+Discover, Offer, Request/ACK, wrong-port and bad-cookie negatives, truncation
+before the cookie, BOOTP fixed-header fields, ordered common options,
+Parameter Request List names, Client Identifier, Option Overload with
+overloaded `file` and `sname` option areas, Pad / End handling, bytes after
+End, unknown options, malformed option length, selected-packet Summary, and
+`DHCP Message` Bytes coverage. Positive fixtures also exercise packet-local
+DHCP Stream rows, structured Stream Summary, and Stream Item `DHCP Message`
+Data without DHCP transaction reconstruction.
+
 `dhcp/01_dhcp_discover_broadcast.pcap`
 - Purpose: positive DHCPv4 Discover recognition baseline on UDP 68 -> 67.
 
@@ -55,7 +66,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: positive DHCPv4 Offer recognition baseline on reverse UDP 67 -> 68.
 
 `dhcp/03_dhcp_request_ack_bidirectional.pcap`
-- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow.
+- Purpose: DHCPv4 Request/ACK bidirectional grouping baseline in one UDP flow, including packet-local Request and ACK Stream rows.
 
 `dhcp/04_dhcp_bad_magic_cookie.pcap`
 - Purpose: negative DHCPv4 case showing ports 67/68 alone are insufficient without the valid magic cookie.
@@ -65,6 +76,21 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 `dhcp/06_dhcp_truncated_before_magic_cookie.pcap`
 - Purpose: negative DHCPv4 boundary case where the payload ends before the complete magic cookie is available.
+
+`dhcp/07_dhcp_structured_discover.pcap`
+- Purpose: structured DHCP Discover coverage for BOOTREQUEST fields, broadcast flag, chaddr, text options, Requested IP, PRL, Client Identifier, Maximum Message Size, Vendor Class Identifier, Summary, Bytes, packet-local Stream Summary/Data, and End handling.
+
+`dhcp/08_dhcp_structured_offer.pcap`
+- Purpose: structured DHCP Offer coverage for BOOTREPLY fields, yiaddr/siaddr, normal sname/file text, IPv4-list options, lease/T1/T2 integers, domain/message text, Server Identifier, Summary, Bytes, and packet-local Stream Summary/Data.
+
+`dhcp/09_dhcp_option_overload.pcap`
+- Purpose: Option Overload coverage where the main option area declares both file and sname as DHCP option areas, including preservation in packet-local Stream Summary.
+
+`dhcp/10_dhcp_padding_unknown_end.pcap`
+- Purpose: Pad, unknown option, End termination, deterministic post-End tail coverage, and packet-local Stream labeling that ignores fake post-End ACK bytes.
+
+`dhcp/11_dhcp_malformed_option_length.pcap`
+- Purpose: malformed option-length robustness while preserving the current cheap DHCP detector contract and packet-backed DHCP Stream Item Data.
 
 ## SSH
 
@@ -85,6 +111,14 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 ## STUN
 
+These fixtures cover current UDP STUN recognition and selected-packet
+structured inspection. Coverage includes Binding Request / Success / Error
+classes, standard and non-standard UDP ports, historical detector negatives,
+ICE attributes, IPv4/IPv6 MAPPED-ADDRESS and XOR-MAPPED-ADDRESS attributes,
+padding, unknown required/optional attributes, malformed inner TLV bounds,
+integrity/fingerprint presentation, selected-packet Summary, and `STUN Message`
+Bytes coverage.
+
 `stun/01_stun_binding_request_3478.pcap`
 - Purpose: standard positive STUN Binding Request baseline.
 
@@ -102,6 +136,21 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 `stun/06_stun_declared_length_mismatch.pcap`
 - Purpose: exact declared-length boundary negative case.
+
+`stun/07_stun_binding_ice_exchange.pcap`
+- Purpose: structured STUN/ICE Binding request/response coverage with USERNAME, PRIORITY, ICE-CONTROLLING, USE-CANDIDATE, MESSAGE-INTEGRITY, MESSAGE-INTEGRITY-SHA256, XOR-MAPPED-ADDRESS, SOFTWARE, FINGERPRINT, Summary, and Bytes expectations.
+
+`stun/08_stun_binding_success_xor_mapped_ipv6.pcap`
+- Purpose: IPv6 mapped-address coverage for XOR-MAPPED-ADDRESS and MAPPED-ADDRESS attributes.
+
+`stun/09_stun_binding_error_response.pcap`
+- Purpose: Binding Error Response coverage for ERROR-CODE, REALM, NONCE, and SOFTWARE attributes.
+
+`stun/10_stun_attribute_padding_and_unknown.pcap`
+- Purpose: attribute padding and unknown required/optional attribute coverage.
+
+`stun/11_stun_malformed_attribute_length.pcap`
+- Purpose: malformed inner-attribute-length robustness coverage with a valid outer STUN envelope.
 
 ## BitTorrent
 
@@ -250,9 +299,11 @@ are AMQP positive cases and fixtures 06-10 are AMQP negative cases.
 
 ## NTP
 
-These fixtures define the first conservative NTP detection-only behavior.
-Fixtures 01-05 are current positive cases and fixtures 06-10 are
-first-contract negatives or intentionally unsupported first-version forms.
+These fixtures define the conservative NTPv3/NTPv4 UDP/123 recognition
+contract and structured selected-packet inspection byte contracts. Fixtures
+01-05 are positive cases, fixtures 06-10 are first-contract negatives or
+intentionally unsupported first-version forms, and fixtures 11-16 cover
+structured Summary / byte-view presentation.
 
 `ntp/01_ntpv4_client_request_port123.pcap`
 - Purpose: NTPv4 mode-3 client request positive baseline on destination UDP/123.
@@ -283,6 +334,24 @@ first-contract negatives or intentionally unsupported first-version forms.
 
 `ntp/10_ntpv4_truncated_47_byte_header.pcap`
 - Purpose: 47-byte truncated basic-header boundary negative case.
+
+`ntp/11_ntpv4_structured_exchange.pcap`
+- Purpose: two-packet NTPv4 client/server exchange for structured Summary and byte-view coverage.
+
+`ntp/12_ntpv3_structured_server_response.pcap`
+- Purpose: NTPv3 server response with deterministic nonzero root and timestamp fields for structured presentation coverage.
+
+`ntp/13_ntpv4_unsynchronized_stratum16.pcap`
+- Purpose: NTPv4 unsynchronized LI `3`, stratum `16`, and IPv4 secondary Reference ID formatting coverage.
+
+`ntp/14_ntpv4_large_root_delay.pcap`
+- Purpose: NTPv4 server response covering unsigned Root Delay / Root Dispersion fixed-point formatting with a large raw Root Delay.
+
+`ntp/15_ntpv4_era0_last_second.pcap`
+- Purpose: NTPv4 Era 0 last-second timestamp boundary without era-unfolding inference.
+
+`ntp/16_ntpv3_signed_root_delay.pcap`
+- Purpose: NTPv3 server response covering signed Root Delay / Root Dispersion fixed-point formatting.
 
 ## ICMP
 
