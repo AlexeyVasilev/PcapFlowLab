@@ -4400,13 +4400,31 @@ session_detail::AdvancedFlowQueryResult CaptureSession::query_advanced_flows(
             std::span<const std::size_t>(candidate_flow_indices->data(), candidate_flow_indices->size())
         }
         : std::nullopt;
+    const session_detail::AdvancedFlowFilterEvaluationContext evaluation_context {
+        .non_terminal_ip_context_registry = uses_v16_storage()
+            ? &v16_storage_->fast_statistics_tier.non_terminal_ip_context_registry
+            : &state_.non_terminal_ip_context_registry,
+        .non_terminal_ip_metadata = flow_grouping_ignores_non_terminal_ip_endpoints_
+            ? session_detail::AdvancedFlowFilterNonTerminalIpMetadataAvailability::discarded_at_import
+            : session_detail::AdvancedFlowFilterNonTerminalIpMetadataAvailability::available,
+    };
     const auto filter_result = uses_v16_storage()
-        ? session_detail::evaluate_advanced_flow_filter(v16_storage_->flows, compile_result.filter, candidate_span)
-        : session_detail::evaluate_advanced_flow_filter(listed_connections(), compile_result.filter, candidate_span);
+        ? session_detail::evaluate_advanced_flow_filter(v16_storage_->flows, compile_result.filter, candidate_span, evaluation_context)
+        : session_detail::evaluate_advanced_flow_filter(listed_connections(), compile_result.filter, candidate_span, evaluation_context);
     if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::invalid_candidate_index) {
         return session_detail::AdvancedFlowQueryResult {
             .status = session_detail::AdvancedFlowQueryStatus::invalid_flow_index,
             .invalid_flow_index = filter_result.invalid_candidate_index,
+        };
+    }
+    if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable,
+        };
+    }
+    if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::missing_non_terminal_ip_context,
         };
     }
 

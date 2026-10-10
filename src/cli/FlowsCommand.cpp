@@ -500,6 +500,21 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
                 .stderr_text = render_advanced_flow_filter_compile_error(*options.advanced_filter_path, query_result) + '\n',
             };
         }
+        if (query_result.status == FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text =
+                    "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.\n",
+            };
+        }
+        if (query_result.status == FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Advanced filter could not resolve retained non-terminal IP metadata.\n",
+            };
+        }
 
         ordered_flow_indices = std::move(query_result.ordered_flow_indices);
         result_count_before_limit = query_result.result_count_before_limit;

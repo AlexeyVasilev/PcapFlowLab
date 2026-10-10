@@ -4264,8 +4264,8 @@ void run_non_terminal_ip_import_settings_tests() {
     PFL_EXPECT(ignored_context_session.flow_grouping_ignores_non_terminal_ip_endpoints());
 
     const auto result = ignored_context_session.query_advanced_flows(effective);
-    PFL_EXPECT(result.status == AdvancedFlowQueryStatus::invalid_advanced_filter);
-    PFL_EXPECT(result.compile_status != AdvancedFlowFilterCompileStatus::ok);
+    PFL_EXPECT(result.status == AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable);
+    PFL_EXPECT(result.compile_status == AdvancedFlowFilterCompileStatus::ok);
     PFL_EXPECT(result.ordered_flow_indices.empty());
 }
 

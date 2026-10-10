@@ -198,6 +198,10 @@ std::string advanced_flow_query_status_json(const pfl::FrontendAdvancedFlowQuery
         return json_string("invalid_limit");
     case pfl::FrontendAdvancedFlowQueryStatus::invalid_advanced_filter:
         return json_string("invalid_advanced_filter");
+    case pfl::FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return json_string("non_terminal_ip_metadata_unavailable");
+    case pfl::FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return json_string("missing_non_terminal_ip_context");
     }
 
     return json_string("invalid_advanced_filter");
@@ -323,6 +327,10 @@ std::string advanced_flow_query_error_text(const pfl::FrontendAdvancedFlowQueryR
             return "Advanced filter is invalid: " + result.compile_issue->category + '.';
         }
         return "Advanced filter is invalid.";
+    case pfl::FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.";
+    case pfl::FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return "Advanced filter could not resolve retained non-terminal IP metadata.";
     }
 
     return "Advanced filter query failed.";

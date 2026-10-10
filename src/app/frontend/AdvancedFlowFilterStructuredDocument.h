@@ -20,6 +20,8 @@ enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
     invalid_flow_index,
     invalid_limit,
     invalid_advanced_filter,
+    non_terminal_ip_metadata_unavailable,
+    missing_non_terminal_ip_context,
 };
 
 struct FrontendAdvancedFlowTextParseIssue {

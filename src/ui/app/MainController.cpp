@@ -7789,6 +7789,19 @@ void MainController::refreshAdvancedFlowFilter() {
         flow_model_.clearAdvancedFilterFlowIndices();
         setStatusText(QStringLiteral("Advanced filter could not be applied because the limit is invalid."), true);
         break;
+    case session_detail::AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(
+            QStringLiteral(
+                "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."
+            ),
+            true
+        );
+        break;
+    case session_detail::AdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not resolve retained non-terminal IP metadata."), true);
+        break;
     }
 
     synchronizeFlowSelection();

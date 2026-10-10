@@ -931,6 +931,19 @@ std::optional<AdvancedFlowFilterEndpointScope> parse_endpoint_scope_token(const 
     return std::nullopt;
 }
 
+std::optional<AdvancedFlowFilterNonTerminalIpScope> parse_non_terminal_ip_scope_token(const std::string_view token) {
+    if (token == "outer") {
+        return AdvancedFlowFilterNonTerminalIpScope::outer;
+    }
+    if (token == "intermediate") {
+        return AdvancedFlowFilterNonTerminalIpScope::intermediate;
+    }
+    if (token == "any") {
+        return AdvancedFlowFilterNonTerminalIpScope::any;
+    }
+    return std::nullopt;
+}
+
 std::optional<AdvancedFlowFilterStringCaseSensitivity> parse_case_sensitivity_token(const std::string_view token) {
     if (token == "ci") {
         return AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive;
@@ -1553,6 +1566,18 @@ std::string format_endpoint_scope_token(const AdvancedFlowFilterEndpointScope sc
     return {};
 }
 
+std::string format_non_terminal_ip_scope_token(const AdvancedFlowFilterNonTerminalIpScope scope) {
+    switch (scope) {
+    case AdvancedFlowFilterNonTerminalIpScope::outer:
+        return "outer";
+    case AdvancedFlowFilterNonTerminalIpScope::intermediate:
+        return "intermediate";
+    case AdvancedFlowFilterNonTerminalIpScope::any:
+        return "any";
+    }
+    return {};
+}
+
 std::string format_service_case_token(const AdvancedFlowFilterStringCaseSensitivity sensitivity) {
     switch (sensitivity) {
     case AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive:
@@ -1733,6 +1758,7 @@ bool is_scalar_key(const std::string_view key) {
         key == "section.directionality.enabled" ||
         key == "section.ports.enabled" ||
         key == "section.ip_addresses.enabled" ||
+        key == "section.non_terminal_ip.enabled" ||
         key == "section.time.enabled" ||
         key == "section.traffic.enabled" ||
         key == "section.service.enabled" ||
@@ -1813,6 +1839,8 @@ bool assign_section_enabled_state(
         states.ports = enabled;
     } else if (section_key == "ip_addresses") {
         states.ip_addresses = enabled;
+    } else if (section_key == "non_terminal_ip") {
+        states.non_terminal_ip = enabled;
     } else if (section_key == "time") {
         states.time = enabled;
     } else if (section_key == "traffic") {
@@ -1848,6 +1876,7 @@ void append_non_default_section_state_lines(
     append_if_disabled("directionality", section_states.directionality);
     append_if_disabled("ports", section_states.ports);
     append_if_disabled("ip_addresses", section_states.ip_addresses);
+    append_if_disabled("non_terminal_ip", section_states.non_terminal_ip);
     append_if_disabled("time", section_states.time);
     append_if_disabled("traffic", section_states.traffic);
     append_if_disabled("service", section_states.service);
@@ -2497,6 +2526,142 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                                 std::string(key),
                                 {},
                                 "Unknown IP action."
+                            );
+                        }
+                    }
+                } else if (root == "non_terminal_ip" && key_segments.values.size() == 3U) {
+                    const auto scope = parse_non_terminal_ip_scope_token(key_segments.values[1]);
+                    if (!scope.has_value()) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown non-terminal IP scope."
+                        );
+                    }
+
+                    const auto slash = value.find('/');
+                    const auto address_text = slash == std::string_view::npos ? value : value.substr(0U, slash);
+                    const auto prefix_text = slash == std::string_view::npos ? std::string_view {} : value.substr(slash + 1U);
+                    if (value.find('/', slash == std::string_view::npos ? 0U : slash + 1U) != std::string_view::npos) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::invalid_ip_address,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Invalid IP/CIDR syntax."
+                        );
+                    }
+
+                    if (address_text.find(':') != std::string_view::npos) {
+                        const auto address = parse_ipv6_address(address_text);
+                        if (!address.has_value()) {
+                            return make_parse_error(
+                                AdvancedFlowFilterTextParseStatus::invalid_ip_address,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Invalid IPv6 address."
+                            );
+                        }
+
+                        AdvancedFlowFilterNonTerminalIpv6Predicate predicate {
+                            .match_kind = slash == std::string_view::npos
+                                ? AdvancedFlowFilterAddressMatchKind::exact
+                                : AdvancedFlowFilterAddressMatchKind::cidr,
+                            .scope = *scope,
+                            .value = *address,
+                            .prefix_length = slash == std::string_view::npos
+                                ? static_cast<std::uint8_t>(128U)
+                                : static_cast<std::uint8_t>(0U),
+                        };
+                        if (slash != std::string_view::npos) {
+                            const auto prefix = narrow_uint8(parse_uint64_decimal(prefix_text));
+                            if (!prefix.ok) {
+                                return make_parse_error(
+                                    prefix.overflow
+                                        ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                        : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                    line_number,
+                                    value_column + slash + 1U,
+                                    std::string(key),
+                                    std::string(value),
+                                    "Invalid IPv6 prefix length."
+                                );
+                            }
+                            predicate.prefix_length = prefix.value;
+                        }
+
+                        if (key_segments.values[2] == "include") {
+                            configured_spec.non_terminal_ip.ipv6_include.push_back(predicate);
+                        } else if (key_segments.values[2] == "exclude") {
+                            configured_spec.non_terminal_ip.ipv6_exclude.push_back(predicate);
+                        } else {
+                            return make_parse_error(
+                                AdvancedFlowFilterTextParseStatus::unknown_key,
+                                line_number,
+                                1U,
+                                std::string(key),
+                                {},
+                                "Unknown non-terminal IP action."
+                            );
+                        }
+                    } else {
+                        const auto address = parse_ipv4_address(address_text);
+                        if (!address.has_value()) {
+                            return make_parse_error(
+                                AdvancedFlowFilterTextParseStatus::invalid_ip_address,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Invalid IPv4 address."
+                            );
+                        }
+
+                        AdvancedFlowFilterNonTerminalIpv4Predicate predicate {
+                            .match_kind = slash == std::string_view::npos
+                                ? AdvancedFlowFilterAddressMatchKind::exact
+                                : AdvancedFlowFilterAddressMatchKind::cidr,
+                            .scope = *scope,
+                            .value = *address,
+                            .prefix_length = slash == std::string_view::npos
+                                ? static_cast<std::uint8_t>(32U)
+                                : static_cast<std::uint8_t>(0U),
+                        };
+                        if (slash != std::string_view::npos) {
+                            const auto prefix = narrow_uint8(parse_uint64_decimal(prefix_text));
+                            if (!prefix.ok) {
+                                return make_parse_error(
+                                    prefix.overflow
+                                        ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                        : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                    line_number,
+                                    value_column + slash + 1U,
+                                    std::string(key),
+                                    std::string(value),
+                                    "Invalid IPv4 prefix length."
+                                );
+                            }
+                            predicate.prefix_length = prefix.value;
+                        }
+
+                        if (key_segments.values[2] == "include") {
+                            configured_spec.non_terminal_ip.ipv4_include.push_back(predicate);
+                        } else if (key_segments.values[2] == "exclude") {
+                            configured_spec.non_terminal_ip.ipv4_exclude.push_back(predicate);
+                        } else {
+                            return make_parse_error(
+                                AdvancedFlowFilterTextParseStatus::unknown_key,
+                                line_number,
+                                1U,
+                                std::string(key),
+                                {},
+                                "Unknown non-terminal IP action."
                             );
                         }
                     }
@@ -3210,6 +3375,64 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
                 ? address
                 : address + "/" + std::to_string(predicate.prefix_length)
         );
+    }
+
+    const auto non_terminal_scopes = std::array {
+        AdvancedFlowFilterNonTerminalIpScope::outer,
+        AdvancedFlowFilterNonTerminalIpScope::intermediate,
+        AdvancedFlowFilterNonTerminalIpScope::any,
+    };
+    const auto append_non_terminal_predicates = [&](const std::string_view action) -> bool {
+        const bool include = action == "include";
+        const auto& ipv4_predicates = include ? spec.non_terminal_ip.ipv4_include : spec.non_terminal_ip.ipv4_exclude;
+        const auto& ipv6_predicates = include ? spec.non_terminal_ip.ipv6_include : spec.non_terminal_ip.ipv6_exclude;
+        for (const auto scope_value : non_terminal_scopes) {
+            for (const auto& predicate : ipv4_predicates) {
+                if (predicate.scope != scope_value) {
+                    continue;
+                }
+                const auto scope = format_non_terminal_ip_scope_token(predicate.scope);
+                if (scope.empty()) {
+                    result = make_format_error(
+                        "non_terminal_ip",
+                        "Spec contains an unrepresentable non-terminal IPv4 scope."
+                    );
+                    return false;
+                }
+                const auto address = format_ipv4_address(predicate.value);
+                append_line(
+                    "non_terminal_ip." + scope + "." + std::string(action),
+                    predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact
+                        ? address
+                        : address + "/" + std::to_string(predicate.prefix_length)
+                );
+            }
+            for (const auto& predicate : ipv6_predicates) {
+                if (predicate.scope != scope_value) {
+                    continue;
+                }
+                const auto scope = format_non_terminal_ip_scope_token(predicate.scope);
+                if (scope.empty()) {
+                    result = make_format_error(
+                        "non_terminal_ip",
+                        "Spec contains an unrepresentable non-terminal IPv6 scope."
+                    );
+                    return false;
+                }
+                const auto address = format_ipv6_address(predicate.value);
+                append_line(
+                    "non_terminal_ip." + scope + "." + std::string(action),
+                    predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact
+                        ? address
+                        : address + "/" + std::to_string(predicate.prefix_length)
+                );
+            }
+        }
+        return true;
+    };
+
+    if (!append_non_terminal_predicates("include") || !append_non_terminal_predicates("exclude")) {
+        return result;
     }
 
     for (const auto& predicate : spec.service.include) {

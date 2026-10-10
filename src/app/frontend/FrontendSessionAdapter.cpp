@@ -3181,6 +3181,14 @@ FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows(
             .compile_status = query_result.compile_status,
             .compile_issue = query_result.compile_issue,
         };
+    case session_detail::AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable,
+        };
+    case session_detail::AdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context,
+        };
     }
 
     return FrontendAdvancedFlowQueryResult {};

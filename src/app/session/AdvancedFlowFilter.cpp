@@ -270,6 +270,44 @@ bool is_valid_ipv6_address_predicate_shape(const AdvancedFlowFilterIpv6AddressPr
     }
 }
 
+bool is_valid_non_terminal_ip_scope(const AdvancedFlowFilterNonTerminalIpScope scope) noexcept {
+    switch (scope) {
+    case AdvancedFlowFilterNonTerminalIpScope::outer:
+    case AdvancedFlowFilterNonTerminalIpScope::intermediate:
+    case AdvancedFlowFilterNonTerminalIpScope::any:
+        return true;
+    }
+    return false;
+}
+
+bool is_valid_ipv4_address_predicate_shape(const AdvancedFlowFilterNonTerminalIpv4Predicate& predicate) noexcept {
+    if (!is_valid_non_terminal_ip_scope(predicate.scope)) {
+        return false;
+    }
+    switch (predicate.match_kind) {
+    case AdvancedFlowFilterAddressMatchKind::exact:
+        return predicate.prefix_length == 32U;
+    case AdvancedFlowFilterAddressMatchKind::cidr:
+        return predicate.prefix_length <= 32U;
+    default:
+        return false;
+    }
+}
+
+bool is_valid_ipv6_address_predicate_shape(const AdvancedFlowFilterNonTerminalIpv6Predicate& predicate) noexcept {
+    if (!is_valid_non_terminal_ip_scope(predicate.scope)) {
+        return false;
+    }
+    switch (predicate.match_kind) {
+    case AdvancedFlowFilterAddressMatchKind::exact:
+        return predicate.prefix_length == 128U;
+    case AdvancedFlowFilterAddressMatchKind::cidr:
+        return predicate.prefix_length <= 128U;
+    default:
+        return false;
+    }
+}
+
 CompiledAdvancedFlowFilterIpv4CidrPredicate compile_ipv4_address_predicate(
     const AdvancedFlowFilterIpv4AddressPredicate& predicate
 ) noexcept {
@@ -290,6 +328,32 @@ CompiledAdvancedFlowFilterIpv6CidrPredicate compile_ipv6_address_predicate(
     const auto prefix_length =
         predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact ? static_cast<std::uint8_t>(128U) : predicate.prefix_length;
     return CompiledAdvancedFlowFilterIpv6CidrPredicate {
+        .scope = predicate.scope,
+        .network = normalize_ipv6_network(predicate.value, prefix_length),
+        .prefix_length = prefix_length,
+    };
+}
+
+CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate compile_non_terminal_ipv4_address_predicate(
+    const AdvancedFlowFilterNonTerminalIpv4Predicate& predicate
+) noexcept {
+    const auto prefix_length =
+        predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact ? static_cast<std::uint8_t>(32U) : predicate.prefix_length;
+    const auto mask = ipv4_prefix_mask(prefix_length);
+    return CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate {
+        .scope = predicate.scope,
+        .network = predicate.value & mask,
+        .mask = mask,
+        .prefix_length = prefix_length,
+    };
+}
+
+CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate compile_non_terminal_ipv6_address_predicate(
+    const AdvancedFlowFilterNonTerminalIpv6Predicate& predicate
+) noexcept {
+    const auto prefix_length =
+        predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact ? static_cast<std::uint8_t>(128U) : predicate.prefix_length;
+    return CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate {
         .scope = predicate.scope,
         .network = normalize_ipv6_network(predicate.value, prefix_length),
         .prefix_length = prefix_length,
@@ -364,6 +428,16 @@ QuicVersionHint quic_version_hint_value(const ListedConnectionRef& connection) n
 
 QuicVersionHint quic_version_hint_value(const CanonicalFlowMetadata& flow) noexcept {
     return flow.quic_version;
+}
+
+NonTerminalIpContextId non_terminal_ip_context_id(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4->key.non_terminal_ip_context_id
+        : connection.ipv6->key.non_terminal_ip_context_id;
+}
+
+NonTerminalIpContextId non_terminal_ip_context_id(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.non_terminal_ip_context_id;
 }
 
 std::pair<std::uint16_t, std::uint16_t> oriented_ports(const ConnectionV4& connection) noexcept {
@@ -864,6 +938,34 @@ bool matches_ipv6_cidr_address(
     return (address[full_bytes] & mask) == predicate.network[full_bytes];
 }
 
+bool matches_ipv4_cidr_address(
+    const std::uint32_t address,
+    const CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate& predicate
+) noexcept {
+    return (address & predicate.mask) == predicate.network;
+}
+
+bool matches_ipv6_cidr_address(
+    const std::array<std::uint8_t, 16>& address,
+    const CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate& predicate
+) noexcept {
+    const auto full_bytes = static_cast<std::size_t>(predicate.prefix_length / 8U);
+    const auto partial_bits = static_cast<std::uint8_t>(predicate.prefix_length % 8U);
+
+    for (std::size_t index = 0; index < full_bytes; ++index) {
+        if (address[index] != predicate.network[index]) {
+            return false;
+        }
+    }
+
+    if (partial_bits == 0U) {
+        return true;
+    }
+
+    const auto mask = static_cast<std::uint8_t>(0xFFU << (8U - partial_bits));
+    return (address[full_bytes] & mask) == predicate.network[full_bytes];
+}
+
 bool matches_ipv4_cidr_predicate(
     const std::uint32_t endpoint_a_addr,
     const std::uint32_t endpoint_b_addr,
@@ -953,6 +1055,111 @@ bool matches_address_criteria(
 
     for (const auto& predicate : criteria.ipv6_exclude) {
         if (matches_ipv6_cidr_predicate(endpoint_a_addr, endpoint_b_addr, predicate)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::uint32_t non_terminal_ipv4_address_value(const std::array<std::uint8_t, 16>& bytes) noexcept {
+    return (static_cast<std::uint32_t>(bytes[0]) << 24U) |
+        (static_cast<std::uint32_t>(bytes[1]) << 16U) |
+        (static_cast<std::uint32_t>(bytes[2]) << 8U) |
+        static_cast<std::uint32_t>(bytes[3]);
+}
+
+bool non_terminal_ip_level_in_scope(
+    const AdvancedFlowFilterNonTerminalIpScope scope,
+    const std::size_t level_index
+) noexcept {
+    switch (scope) {
+    case AdvancedFlowFilterNonTerminalIpScope::outer:
+        return level_index == 0U;
+    case AdvancedFlowFilterNonTerminalIpScope::intermediate:
+        return level_index > 0U;
+    case AdvancedFlowFilterNonTerminalIpScope::any:
+        return true;
+    }
+    return false;
+}
+
+bool matches_non_terminal_ipv4_predicate(
+    const NonTerminalIpContext& context,
+    const CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate& predicate
+) noexcept {
+    for (std::size_t index = 0U; index < context.size(); ++index) {
+        if (!non_terminal_ip_level_in_scope(predicate.scope, index)) {
+            continue;
+        }
+        const auto& level = context[index];
+        if (level.family != NonTerminalIpAddressFamily::ipv4) {
+            continue;
+        }
+        if (matches_ipv4_cidr_address(non_terminal_ipv4_address_value(level.source), predicate) ||
+            matches_ipv4_cidr_address(non_terminal_ipv4_address_value(level.destination), predicate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matches_non_terminal_ipv6_predicate(
+    const NonTerminalIpContext& context,
+    const CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate& predicate
+) noexcept {
+    for (std::size_t index = 0U; index < context.size(); ++index) {
+        if (!non_terminal_ip_level_in_scope(predicate.scope, index)) {
+            continue;
+        }
+        const auto& level = context[index];
+        if (level.family != NonTerminalIpAddressFamily::ipv6) {
+            continue;
+        }
+        if (matches_ipv6_cidr_address(level.source, predicate) ||
+            matches_ipv6_cidr_address(level.destination, predicate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matches_non_terminal_ip_criteria(
+    const CompiledAdvancedFlowFilterNonTerminalIpCriteria& criteria,
+    const NonTerminalIpContext& context
+) noexcept {
+    if (!criteria.has_include_predicates() && !criteria.has_exclude_predicates()) {
+        return true;
+    }
+
+    bool include_match = !criteria.has_include_predicates();
+    if (!include_match) {
+        for (const auto& predicate : criteria.ipv4_include) {
+            if (matches_non_terminal_ipv4_predicate(context, predicate)) {
+                include_match = true;
+                break;
+            }
+        }
+    }
+    if (!include_match) {
+        for (const auto& predicate : criteria.ipv6_include) {
+            if (matches_non_terminal_ipv6_predicate(context, predicate)) {
+                include_match = true;
+                break;
+            }
+        }
+    }
+    if (!include_match) {
+        return false;
+    }
+
+    for (const auto& predicate : criteria.ipv4_exclude) {
+        if (matches_non_terminal_ipv4_predicate(context, predicate)) {
+            return false;
+        }
+    }
+    for (const auto& predicate : criteria.ipv6_exclude) {
+        if (matches_non_terminal_ipv6_predicate(context, predicate)) {
             return false;
         }
     }
@@ -1508,6 +1715,57 @@ AdvancedFlowFilterCompileResult compile_address_criteria(
     return {};
 }
 
+AdvancedFlowFilterCompileResult compile_non_terminal_ip_criteria(
+    const AdvancedFlowFilterNonTerminalIpCriteria& spec,
+    CompiledAdvancedFlowFilterNonTerminalIpCriteria& compiled
+) {
+    for (std::size_t index = 0; index < spec.ipv4_include.size(); ++index) {
+        if (!is_valid_ipv4_address_predicate_shape(spec.ipv4_include[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "non_terminal_ip",
+                index
+            );
+        }
+        compiled.ipv4_include.push_back(compile_non_terminal_ipv4_address_predicate(spec.ipv4_include[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv4_exclude.size(); ++index) {
+        if (!is_valid_ipv4_address_predicate_shape(spec.ipv4_exclude[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "non_terminal_ip",
+                index
+            );
+        }
+        compiled.ipv4_exclude.push_back(compile_non_terminal_ipv4_address_predicate(spec.ipv4_exclude[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv6_include.size(); ++index) {
+        if (!is_valid_ipv6_address_predicate_shape(spec.ipv6_include[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "non_terminal_ip",
+                index
+            );
+        }
+        compiled.ipv6_include.push_back(compile_non_terminal_ipv6_address_predicate(spec.ipv6_include[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv6_exclude.size(); ++index) {
+        if (!is_valid_ipv6_address_predicate_shape(spec.ipv6_exclude[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "non_terminal_ip",
+                index
+            );
+        }
+        compiled.ipv6_exclude.push_back(compile_non_terminal_ipv6_address_predicate(spec.ipv6_exclude[index]));
+    }
+
+    return {};
+}
+
 AdvancedFlowFilterCompileResult compile_service_criteria(
     const AdvancedFlowFilterServiceCriteria& spec,
     CompiledAdvancedFlowFilterServiceCriteria& compiled
@@ -1684,21 +1942,27 @@ std::size_t count_time_atomic_rules(const AdvancedFlowFilterTimeCriteria& time) 
         count_range_atomic_rules(time.duration_us);
 }
 
+struct AdvancedFlowFilterFlowMatchResult {
+    AdvancedFlowFilterEvaluationStatus status {AdvancedFlowFilterEvaluationStatus::ok};
+    bool matches {false};
+};
+
 template <typename FlowLike>
-bool matches_compiled_advanced_flow_filter(
+AdvancedFlowFilterFlowMatchResult matches_compiled_advanced_flow_filter(
     const FlowLike& flow,
-    const CompiledAdvancedFlowFilter& filter
+    const CompiledAdvancedFlowFilter& filter,
+    const AdvancedFlowFilterEvaluationContext& context
 ) noexcept {
     if (!matches_address_family_criteria(filter.address_family, flow.family)) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(flow))) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_protocol_membership(filter.flow_protocol, flow_protocol_id(flow))) {
-        return false;
+        return {.matches = false};
     }
 
     AnalysisSettings hint_settings {};
@@ -1706,46 +1970,70 @@ bool matches_compiled_advanced_flow_filter(
     if (!matches_detected_protocol_membership(
             filter.detected_protocol,
             flow_effective_protocol_hint(flow, hint_settings))) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_tls_version_criteria(filter.tls_version, flow)) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_quic_version_criteria(filter.quic_version, flow)) {
-        return false;
+        return {.matches = false};
     }
 
     const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(flow);
     if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_aggregate_criteria(filter.aggregate, flow)) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_directionality_criteria(filter.directionality, flow)) {
-        return false;
+        return {.matches = false};
     }
 
     if (!matches_address_criteria(filter.addresses, flow)) {
-        return false;
+        return {.matches = false};
+    }
+
+    if (filter.non_terminal_ip.has_include_predicates() || filter.non_terminal_ip.has_exclude_predicates()) {
+        if (context.non_terminal_ip_metadata == AdvancedFlowFilterNonTerminalIpMetadataAvailability::discarded_at_import) {
+            return {.status = AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable};
+        }
+        if (context.non_terminal_ip_context_registry == nullptr) {
+            return {.status = AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context};
+        }
+
+        const NonTerminalIpContext empty_context {};
+        const NonTerminalIpContext* non_terminal_context = &empty_context;
+        const auto context_id = non_terminal_ip_context_id(flow);
+        if (context_id != kEmptyNonTerminalIpContextId) {
+            non_terminal_context = context.non_terminal_ip_context_registry->find(context_id);
+            if (non_terminal_context == nullptr) {
+                return {.status = AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context};
+            }
+        }
+
+        if (!matches_non_terminal_ip_criteria(filter.non_terminal_ip, *non_terminal_context)) {
+            return {.matches = false};
+        }
     }
 
     if (!matches_time_criteria(filter.time, flow)) {
-        return false;
+        return {.matches = false};
     }
 
-    return matches_service_criteria(filter.service, service_hint_value(flow));
+    return {.matches = matches_service_criteria(filter.service, service_hint_value(flow))};
 }
 
 template <typename FlowLike>
 AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
     std::span<const FlowLike> flows,
     const CompiledAdvancedFlowFilter& filter,
-    const std::optional<std::span<const std::size_t>> candidate_flow_indices
+    const std::optional<std::span<const std::size_t>> candidate_flow_indices,
+    const AdvancedFlowFilterEvaluationContext& context
 ) {
     AdvancedFlowFilterResult result {};
 
@@ -1769,7 +2057,13 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
         result.matching_flow_indices.reserve(candidate_indices.size());
 
         for (const auto index : candidate_indices) {
-            if (matches_compiled_advanced_flow_filter(flows[index], filter)) {
+            const auto match = matches_compiled_advanced_flow_filter(flows[index], filter, context);
+            if (match.status != AdvancedFlowFilterEvaluationStatus::ok) {
+                result.status = match.status;
+                result.matching_flow_indices.clear();
+                return result;
+            }
+            if (match.matches) {
                 result.matching_flow_indices.push_back(index);
             }
         }
@@ -1779,7 +2073,13 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
 
     result.matching_flow_indices.reserve(flows.size());
     for (std::size_t index = 0; index < flows.size(); ++index) {
-        if (matches_compiled_advanced_flow_filter(flows[index], filter)) {
+        const auto match = matches_compiled_advanced_flow_filter(flows[index], filter, context);
+        if (match.status != AdvancedFlowFilterEvaluationStatus::ok) {
+            result.status = match.status;
+            result.matching_flow_indices.clear();
+            return result;
+        }
+        if (match.matches) {
             result.matching_flow_indices.push_back(index);
         }
     }
@@ -1813,6 +2113,14 @@ bool CompiledAdvancedFlowFilterAddressCriteria::has_include_predicates() const n
 }
 
 bool CompiledAdvancedFlowFilterAddressCriteria::has_exclude_predicates() const noexcept {
+    return !ipv4_exclude.empty() || !ipv6_exclude.empty();
+}
+
+bool CompiledAdvancedFlowFilterNonTerminalIpCriteria::has_include_predicates() const noexcept {
+    return !ipv4_include.empty() || !ipv6_include.empty();
+}
+
+bool CompiledAdvancedFlowFilterNonTerminalIpCriteria::has_exclude_predicates() const noexcept {
     return !ipv4_exclude.empty() || !ipv6_exclude.empty();
 }
 
@@ -1853,6 +2161,11 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
         return error;
     }
 
+    if (const auto error = compile_non_terminal_ip_criteria(spec.non_terminal_ip, result.filter.non_terminal_ip);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
+
     if (const auto error = compile_time_criteria(spec.time, result.filter.time);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
         return error;
@@ -1874,17 +2187,19 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
 AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     std::span<const ListedConnectionRef> connections,
     const CompiledAdvancedFlowFilter& filter,
-    const std::optional<std::span<const std::size_t>> candidate_flow_indices
+    const std::optional<std::span<const std::size_t>> candidate_flow_indices,
+    const AdvancedFlowFilterEvaluationContext context
 ) {
-    return evaluate_advanced_flow_filter_impl(connections, filter, candidate_flow_indices);
+    return evaluate_advanced_flow_filter_impl(connections, filter, candidate_flow_indices, context);
 }
 
 AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     std::span<const CanonicalFlowMetadata> flows,
     const CompiledAdvancedFlowFilter& filter,
-    const std::optional<std::span<const std::size_t>> candidate_flow_indices
+    const std::optional<std::span<const std::size_t>> candidate_flow_indices,
+    const AdvancedFlowFilterEvaluationContext context
 ) {
-    return evaluate_advanced_flow_filter_impl(flows, filter, candidate_flow_indices);
+    return evaluate_advanced_flow_filter_impl(flows, filter, candidate_flow_indices, context);
 }
 
 AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(
@@ -1916,6 +2231,9 @@ AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(
     }
     if (!section_states.ip_addresses) {
         effective.addresses = {};
+    }
+    if (!section_states.non_terminal_ip) {
+        effective.non_terminal_ip = {};
     }
     if (!section_states.time) {
         effective.time = {};
@@ -1965,6 +2283,10 @@ std::size_t count_advanced_flow_filter_atomic_rules(const AdvancedFlowFilterSpec
         spec.addresses.ipv4_exclude.size() +
         spec.addresses.ipv6_include.size() +
         spec.addresses.ipv6_exclude.size() +
+        spec.non_terminal_ip.ipv4_include.size() +
+        spec.non_terminal_ip.ipv4_exclude.size() +
+        spec.non_terminal_ip.ipv6_include.size() +
+        spec.non_terminal_ip.ipv6_exclude.size() +
         count_time_atomic_rules(spec.time) +
         count_aggregate_atomic_rules(spec.aggregate) +
         spec.service.include.size() +
