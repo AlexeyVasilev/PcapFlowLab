@@ -3293,6 +3293,14 @@ std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_p
     return build_frontend_protocol_path_statistics(session_.protocol_path_summary(mode));
 }
 
+std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_non_terminal_ip_applicability() const noexcept {
+    if (!session_.has_capture()) {
+        return std::nullopt;
+    }
+
+    return !session_.flow_grouping_ignores_non_terminal_ip_endpoints();
+}
+
 std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_protocol_path_predicate_applicability(
     const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
 ) const {

@@ -243,6 +243,16 @@ pub struct AdvancedFlowFilterIpAddressSectionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterNonTerminalIpSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterTrafficRowDto {
     pub metric_id: String,
     pub unit_id: String,
@@ -349,6 +359,7 @@ pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub traffic_distribution: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub non_terminal_ip_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub protocol_path_selector_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub contains_layer_identifier_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub contains_layer_kind: Vec<AdvancedFlowFilterContainsLayerOptionDto>,
@@ -365,6 +376,7 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub directionality: AdvancedFlowFilterFiniteSectionDto,
     pub ports: AdvancedFlowFilterPortSectionDto,
     pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
+    pub non_terminal_ip: AdvancedFlowFilterNonTerminalIpSectionDto,
     pub time: AdvancedFlowFilterTimeSectionDto,
     pub traffic: AdvancedFlowFilterTrafficSectionDto,
     pub service: AdvancedFlowFilterServiceSectionDto,

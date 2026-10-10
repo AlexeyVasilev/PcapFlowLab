@@ -96,6 +96,13 @@ constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterEndpointSc
         {session_detail::AdvancedFlowFilterEndpointScope::endpoint_b, "b", "Endpoint B"},
     }};
 
+constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterNonTerminalIpScope>, 3>
+    kNonTerminalIpScopeDescriptors {{
+        {session_detail::AdvancedFlowFilterNonTerminalIpScope::outer, "outer", "Outer"},
+        {session_detail::AdvancedFlowFilterNonTerminalIpScope::intermediate, "intermediate", "Intermediate"},
+        {session_detail::AdvancedFlowFilterNonTerminalIpScope::any, "any", "Any non-terminal IP"},
+    }};
+
 constexpr std::array<EnumDescriptor<ProtocolPathStatisticsMode>, 3> kProtocolPathSelectorModeDescriptors {{
     {ProtocolPathStatisticsMode::kind_overview, "kind", "Kind overview"},
     {ProtocolPathStatisticsMode::identity_tree, "identity", "Identity tree"},
@@ -492,6 +499,7 @@ FrontendAdvancedFlowFilterStructuredOptionCatalogDto build_option_catalog() {
     append_catalog(kDirectionalityDescriptors, catalog.directionality);
     append_catalog(kTrafficDistributionDescriptors, catalog.traffic_distribution);
     append_catalog(kPortScopeDescriptors, catalog.endpoint_scope);
+    append_catalog(kNonTerminalIpScopeDescriptors, catalog.non_terminal_ip_scope);
     append_catalog(kProtocolPathSelectorModeDescriptors, catalog.protocol_path_selector_mode);
     append_catalog(kContainsLayerIdentifierModeDescriptors, catalog.contains_layer_identifier_mode);
     for (const auto& descriptor : session_detail::protocol_path_contains_layer_descriptors()) {
@@ -783,6 +791,97 @@ bool encode_ip_rows(
     }
 
     return true;
+}
+
+FrontendAdvancedFlowFilterIpAddressRowDto non_terminal_ipv4_row_from_predicate(
+    const session_detail::AdvancedFlowFilterNonTerminalIpv4Predicate& predicate,
+    const EnumDescriptor<session_detail::AdvancedFlowFilterNonTerminalIpScope>* scope_descriptor
+) {
+    return FrontendAdvancedFlowFilterIpAddressRowDto {
+        .scope_id = scope_descriptor->stable_id,
+        .subnet_enabled = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
+        .address_text = session_detail::format_ipv4_address(predicate.value),
+        .prefix_text = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr
+            ? std::to_string(predicate.prefix_length)
+            : std::string {},
+    };
+}
+
+FrontendAdvancedFlowFilterIpAddressRowDto non_terminal_ipv6_row_from_predicate(
+    const session_detail::AdvancedFlowFilterNonTerminalIpv6Predicate& predicate,
+    const EnumDescriptor<session_detail::AdvancedFlowFilterNonTerminalIpScope>* scope_descriptor
+) {
+    return FrontendAdvancedFlowFilterIpAddressRowDto {
+        .scope_id = scope_descriptor->stable_id,
+        .subnet_enabled = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
+        .address_text = session_detail::format_ipv6_address(predicate.value),
+        .prefix_text = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr
+            ? std::to_string(predicate.prefix_length)
+            : std::string {},
+    };
+}
+
+bool encode_non_terminal_ip_rows(
+    const std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv4Predicate>& ipv4_predicates,
+    const std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv6Predicate>& ipv6_predicates,
+    const std::string_view group,
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto>& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    out.clear();
+    out.reserve(ipv4_predicates.size() + ipv6_predicates.size());
+
+    for (const auto& predicate : ipv4_predicates) {
+        const auto* scope_descriptor = descriptor_for_value(kNonTerminalIpScopeDescriptors, predicate.scope);
+        if (scope_descriptor == nullptr) {
+            result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+            result.update_issue = make_update_issue(
+                "non_terminal_ip",
+                group,
+                {},
+                std::nullopt,
+                "scope_id",
+                "The current Advanced Filter document contains a non-terminal IP scope that the structured editor cannot represent."
+            );
+            result.error_text = structured_status_error_text(result);
+            return false;
+        }
+        out.push_back(non_terminal_ipv4_row_from_predicate(predicate, scope_descriptor));
+    }
+
+    for (const auto& predicate : ipv6_predicates) {
+        const auto* scope_descriptor = descriptor_for_value(kNonTerminalIpScopeDescriptors, predicate.scope);
+        if (scope_descriptor == nullptr) {
+            result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+            result.update_issue = make_update_issue(
+                "non_terminal_ip",
+                group,
+                {},
+                std::nullopt,
+                "scope_id",
+                "The current Advanced Filter document contains a non-terminal IP scope that the structured editor cannot represent."
+            );
+            result.error_text = structured_status_error_text(result);
+            return false;
+        }
+        out.push_back(non_terminal_ipv6_row_from_predicate(predicate, scope_descriptor));
+    }
+
+    return true;
+}
+
+void populate_non_terminal_ip_applicability(
+    const FrontendSessionAdapter& adapter,
+    FrontendAdvancedFlowFilterNonTerminalIpSectionDto& section
+) {
+    const auto applicability = adapter.advanced_flow_filter_non_terminal_ip_applicability();
+    section.applicability_known = applicability.has_value();
+    section.applicable = applicability.value_or(false);
+    section.status_text = !applicability.has_value()
+        ? "No current capture."
+        : (applicability.value()
+            ? std::string {}
+            : "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.");
 }
 
 template <std::size_t Size>
@@ -1205,11 +1304,13 @@ std::optional<FrontendAdvancedFlowFilterStructuredDocumentDto> build_structured_
     structured.directionality.enabled = document.section_states.directionality;
     structured.ports.enabled = document.section_states.ports;
     structured.ip_addresses.enabled = document.section_states.ip_addresses;
+    structured.non_terminal_ip.enabled = document.section_states.non_terminal_ip;
     structured.time.enabled = document.section_states.time;
     structured.traffic.enabled = document.section_states.traffic;
     structured.service.enabled = document.section_states.service;
     structured.protocol_path.enabled = document.section_states.protocol_path;
     structured.contains_layer.enabled = document.section_states.contains_layer;
+    populate_non_terminal_ip_applicability(adapter, structured.non_terminal_ip);
     structured.has_unsupported_configured_sections = has_unsupported_configured_sections(document);
 
     if (!encode_finite_values(
@@ -1351,6 +1452,22 @@ std::optional<FrontendAdvancedFlowFilterStructuredDocumentDto> build_structured_
             "ip_addresses",
             "exclude",
             structured.ip_addresses.exclude,
+            result)) {
+        return std::nullopt;
+    }
+    if (!encode_non_terminal_ip_rows(
+            document.configured_spec.non_terminal_ip.ipv4_include,
+            document.configured_spec.non_terminal_ip.ipv6_include,
+            "include",
+            structured.non_terminal_ip.include,
+            result)) {
+        return std::nullopt;
+    }
+    if (!encode_non_terminal_ip_rows(
+            document.configured_spec.non_terminal_ip.ipv4_exclude,
+            document.configured_spec.non_terminal_ip.ipv6_exclude,
+            "exclude",
+            structured.non_terminal_ip.exclude,
             result)) {
         return std::nullopt;
     }
@@ -2112,6 +2229,30 @@ bool decode_endpoint_scope_id(
     return true;
 }
 
+bool decode_non_terminal_ip_scope_id(
+    const std::string& scope_id,
+    const std::string_view group,
+    const std::size_t row_index,
+    session_detail::AdvancedFlowFilterNonTerminalIpScope& out_scope,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    const auto* descriptor = descriptor_for_id(kNonTerminalIpScopeDescriptors, scope_id);
+    if (descriptor == nullptr) {
+        set_invalid_update_issue(
+            result,
+            "non_terminal_ip",
+            group,
+            scope_id,
+            row_index,
+            "scope_id",
+            "Non-terminal IP rules must target Outer, Intermediate, or Any non-terminal IP."
+        );
+        return false;
+    }
+    out_scope = descriptor->value;
+    return true;
+}
+
 bool parse_port_text(
     const std::string& text,
     const std::string_view section_id,
@@ -2328,6 +2469,145 @@ bool decode_ip_rows(
         }
         if (!parsed.document.configured_spec.addresses.ipv6_exclude.empty()) {
             ipv6_out.push_back(parsed.document.configured_spec.addresses.ipv6_exclude.front());
+            continue;
+        }
+
+        set_invalid_update_issue(
+            result,
+            section_id,
+            group,
+            {},
+            row_index,
+            "address_text",
+            "Address rule is invalid."
+        );
+        return false;
+    }
+
+    return true;
+}
+
+std::string_view non_terminal_ip_scope_key_suffix(
+    const session_detail::AdvancedFlowFilterNonTerminalIpScope scope
+) {
+    const auto* descriptor = descriptor_for_value(kNonTerminalIpScopeDescriptors, scope);
+    return descriptor != nullptr ? std::string_view {descriptor->stable_id} : std::string_view {};
+}
+
+bool decode_non_terminal_ip_rows(
+    const std::vector<FrontendAdvancedFlowFilterIpAddressRowDto>& rows,
+    const std::string_view group,
+    std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv4Predicate>& ipv4_out,
+    std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv6Predicate>& ipv6_out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    ipv4_out.clear();
+    ipv6_out.clear();
+    ipv4_out.reserve(rows.size());
+    ipv6_out.reserve(rows.size());
+    constexpr std::string_view section_id {"non_terminal_ip"};
+
+    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+        const auto& row = rows[row_index];
+        session_detail::AdvancedFlowFilterNonTerminalIpScope scope {};
+        if (!decode_non_terminal_ip_scope_id(row.scope_id, group, row_index, scope, result)) {
+            return false;
+        }
+
+        std::string predicate_value {};
+        if (!row.subnet_enabled) {
+            if (row.address_text.empty()) {
+                continue;
+            }
+            if (row.address_text.find('/') != std::string::npos) {
+                set_invalid_update_issue(
+                    result,
+                    section_id,
+                    group,
+                    {},
+                    row_index,
+                    "address_text",
+                    "Address must be a valid IPv4 or IPv6 value."
+                );
+                return false;
+            }
+            predicate_value = row.address_text;
+        } else {
+            if (row.address_text.empty() && row.prefix_text.empty()) {
+                continue;
+            }
+            if (row.address_text.empty() || row.prefix_text.empty()) {
+                set_invalid_update_issue(
+                    result,
+                    section_id,
+                    group,
+                    {},
+                    row_index,
+                    row.address_text.empty() ? "address_text" : "prefix_text",
+                    "Subnet rules require both Address and Prefix."
+                );
+                return false;
+            }
+            predicate_value = row.address_text + "/" + row.prefix_text;
+        }
+
+        std::ostringstream text {};
+        text << "format_version = 3\n"
+             << "non_terminal_ip." << non_terminal_ip_scope_key_suffix(scope) << '.' << group
+             << " = " << predicate_value << '\n';
+        const auto parsed = session_detail::parse_advanced_flow_filter_text(text.str());
+        if (parsed.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+            const auto field_id = parsed.status == session_detail::AdvancedFlowFilterTextParseStatus::invalid_ip_address
+                ? "address_text"
+                : (row.subnet_enabled ? "prefix_text" : "address_text");
+            set_invalid_update_issue(
+                result,
+                section_id,
+                group,
+                {},
+                row_index,
+                field_id,
+                parsed.issue.has_value() && !parsed.issue->message.empty()
+                    ? parsed.issue->message
+                    : "Address rule is invalid."
+            );
+            return false;
+        }
+
+        const auto& criteria = parsed.document.configured_spec.non_terminal_ip;
+        const auto invalid_prefix = [](const auto& predicates, const std::uint8_t maximum) {
+            return std::any_of(predicates.begin(), predicates.end(), [maximum](const auto& predicate) {
+                return predicate.prefix_length > maximum;
+            });
+        };
+        if (invalid_prefix(criteria.ipv4_include, 32U) || invalid_prefix(criteria.ipv4_exclude, 32U) ||
+            invalid_prefix(criteria.ipv6_include, 128U) || invalid_prefix(criteria.ipv6_exclude, 128U)) {
+            set_invalid_update_issue(
+                result,
+                section_id,
+                group,
+                {},
+                row_index,
+                "prefix_text",
+                "Prefix must be between 0 and 32 for IPv4 or between 0 and 128 for IPv6."
+            );
+            return false;
+        }
+
+        if (!parsed.document.configured_spec.non_terminal_ip.ipv4_include.empty()) {
+            ipv4_out.push_back(parsed.document.configured_spec.non_terminal_ip.ipv4_include.front());
+            continue;
+        }
+        if (!parsed.document.configured_spec.non_terminal_ip.ipv4_exclude.empty()) {
+            ipv4_out.push_back(parsed.document.configured_spec.non_terminal_ip.ipv4_exclude.front());
+            continue;
+        }
+        if (!parsed.document.configured_spec.non_terminal_ip.ipv6_include.empty()) {
+            ipv6_out.push_back(parsed.document.configured_spec.non_terminal_ip.ipv6_include.front());
+            continue;
+        }
+        if (!parsed.document.configured_spec.non_terminal_ip.ipv6_exclude.empty()) {
+            ipv6_out.push_back(parsed.document.configured_spec.non_terminal_ip.ipv6_exclude.front());
             continue;
         }
 
@@ -2670,6 +2950,32 @@ FrontendSessionAdapter::apply_advanced_flow_filter_structured_document(
         spec.addresses.ipv6_include = std::move(ipv6_include);
         spec.addresses.ipv4_exclude = std::move(ipv4_exclude);
         spec.addresses.ipv6_exclude = std::move(ipv6_exclude);
+    }
+
+    document.section_states.non_terminal_ip = draft.non_terminal_ip.enabled;
+    if (draft.non_terminal_ip.enabled) {
+        std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv4Predicate> ipv4_include {};
+        std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv6Predicate> ipv6_include {};
+        std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv4Predicate> ipv4_exclude {};
+        std::vector<session_detail::AdvancedFlowFilterNonTerminalIpv6Predicate> ipv6_exclude {};
+        if (!decode_non_terminal_ip_rows(
+                draft.non_terminal_ip.include,
+                "include",
+                ipv4_include,
+                ipv6_include,
+                parsed) ||
+            !decode_non_terminal_ip_rows(
+                draft.non_terminal_ip.exclude,
+                "exclude",
+                ipv4_exclude,
+                ipv6_exclude,
+                parsed)) {
+            return parsed;
+        }
+        spec.non_terminal_ip.ipv4_include = std::move(ipv4_include);
+        spec.non_terminal_ip.ipv6_include = std::move(ipv6_include);
+        spec.non_terminal_ip.ipv4_exclude = std::move(ipv4_exclude);
+        spec.non_terminal_ip.ipv6_exclude = std::move(ipv6_exclude);
     }
 
     document.section_states.time = draft.time.enabled;

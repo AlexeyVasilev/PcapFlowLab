@@ -121,6 +121,7 @@ public:
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
         ProtocolPathStatisticsMode mode
     ) const;
+    [[nodiscard]] std::optional<bool> advanced_flow_filter_non_terminal_ip_applicability() const noexcept;
     [[nodiscard]] std::optional<bool> advanced_flow_filter_protocol_path_predicate_applicability(
         const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
     ) const;
