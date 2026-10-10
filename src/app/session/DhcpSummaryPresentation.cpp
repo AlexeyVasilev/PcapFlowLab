@@ -441,6 +441,25 @@ PacketSummaryLayer build_options_layer(std::string title, const std::vector<Dhcp
 
 }  // namespace
 
+std::string build_dhcp_stream_label(const DhcpMessage& message) {
+    for (const auto& option : message.main_options) {
+        if (option.semantic_kind != DhcpOptionSemanticKind::message_type ||
+            option.status != DhcpOptionStatus::complete ||
+            option.value.size() != 1U) {
+            continue;
+        }
+
+        const auto value = option.value.front();
+        if (const auto* name = known_message_type_name(value); name != nullptr) {
+            return "DHCP " + std::string {name};
+        }
+
+        return "DHCP Message Type " + std::to_string(static_cast<unsigned>(value));
+    }
+
+    return "DHCP Message";
+}
+
 std::optional<PacketSummaryLayer> build_dhcp_summary_layer(const DhcpMessage& message) {
     std::vector<PacketSummaryField> fields {
         make_summary_field("Operation", format_operation(message.op)),

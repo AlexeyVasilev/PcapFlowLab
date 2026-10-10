@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/domain/DhcpInspection.h"
 #include "core/domain/DnsInspection.h"
 #include "core/domain/Direction.h"
 #include "core/domain/FlowHints.h"
@@ -112,6 +113,7 @@ enum class StreamItemSemanticFamily : std::uint8_t {
     arp,
     synthetic,
     other,
+    dhcp,
 };
 
 enum class GenericStreamItemSemanticKind : std::uint8_t {
@@ -167,6 +169,10 @@ struct DnsStreamItemSummaryDetails {
     std::optional<std::uint16_t> compact_answer_count {};
 };
 
+struct DhcpStreamItemSummaryDetails {
+    DhcpMessage message {};
+};
+
 struct ArpStreamItemSummaryDetails {
     std::string title {};
     std::string detail {};
@@ -196,6 +202,7 @@ struct StreamItemRow {
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
     std::optional<HttpStreamItemByteOwner> http_byte_owner {};
     std::optional<DnsStreamItemSummaryDetails> dns_summary {};
+    std::optional<DhcpStreamItemSummaryDetails> dhcp_summary {};
     std::optional<ArpStreamItemSummaryDetails> arp_summary {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
     std::vector<TlsRecordModel> tls_summary_records {};

@@ -43,6 +43,7 @@ enum class StreamItemDataSemanticKind : std::uint8_t {
     quic_crypto_data,
     opaque_payload,
     other,
+    dhcp_message,
 };
 
 enum class StreamItemDataAssemblyKind : std::uint8_t {

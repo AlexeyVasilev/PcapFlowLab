@@ -5116,6 +5116,14 @@ std::optional<PacketSummaryLayer> build_dns_stream_summary_layer(const StreamIte
     return build_dns_summary_layer(row.dns_summary->message, presentation_kind);
 }
 
+std::optional<PacketSummaryLayer> build_dhcp_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.dhcp_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    return build_dhcp_summary_layer(row.dhcp_summary->message);
+}
+
 std::optional<PacketSummaryLayer> build_generic_stream_summary_layer(const StreamItemRow& row) {
     if (!row.generic_summary.has_value()) {
         return std::nullopt;
@@ -6096,6 +6104,8 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     if (tls_layers.empty()) {
         if (const auto http_layer = build_http_stream_summary_layer(row); http_layer.has_value()) {
             layers.push_back(*http_layer);
+        } else if (const auto dhcp_layer = build_dhcp_stream_summary_layer(row); dhcp_layer.has_value()) {
+            layers.push_back(*dhcp_layer);
         } else if (const auto dns_layer = build_dns_stream_summary_layer(row); dns_layer.has_value()) {
             layers.push_back(*dns_layer);
         } else if (const auto arp_layer = build_arp_stream_summary_layer(row); arp_layer.has_value()) {
