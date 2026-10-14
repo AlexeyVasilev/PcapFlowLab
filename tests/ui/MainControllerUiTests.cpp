@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -6688,6 +6689,241 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
         UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
+    });
+
+    run_ui_section("advanced_flow_filter_settings_editor_non_terminal_ip", [&]() {
+        using Section = MainController::AdvancedFlowFilterFiniteSection;
+        using Scope = pfl::AdvancedFlowFilterEditorModel::NonTerminalIpScope;
+        constexpr int section_id = static_cast<int>(Section::non_terminal_ip_addresses);
+        UI_EXPECT(section_id == 13);
+        UI_EXPECT(static_cast<int>(Section::ip_addresses) == 7);
+        const auto capture_path = write_temp_pcap(
+            "pfl_ui_non_terminal_ip_editor.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_udp_packet(ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 2), 53000, 53)},
+            })
+        );
+        MainController controller {};
+        UI_REQUIRE(open_capture_and_wait(app, controller, capture_path));
+        controller.useAdvancedFlowFilter();
+        auto* editor = advanced_filter_editor(controller);
+        UI_REQUIRE(editor != nullptr);
+        auto window = load_main_qml_component(controller);
+        auto* button = named_object(window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* dialog = named_object(window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(button != nullptr);
+        UI_REQUIRE(dialog != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(button, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return dialog->property("visible").toBool()
+                && popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesSection") != nullptr;
+        }));
+        UI_EXPECT(editor->sectionEnabled(section_id));
+        auto* enabled_checkbox = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesEnabledCheckBox");
+        UI_REQUIRE(enabled_checkbox != nullptr);
+        UI_EXPECT(enabled_checkbox->property("checked").toBool());
+        UI_EXPECT(editor->addressRows(false, true).isEmpty());
+        UI_EXPECT(editor->addressRows(true, true).isEmpty());
+        const auto options = editor->nonTerminalIpScopeOptions();
+        UI_REQUIRE(options.size() == 3);
+        UI_EXPECT(options[0].toMap().value("label").toString() == QStringLiteral("Outer"));
+        UI_EXPECT(options[1].toMap().value("label").toString() == QStringLiteral("Intermediate"));
+        UI_EXPECT(options[2].toMap().value("label").toString() == QStringLiteral("Any non-terminal IP"));
+        UI_EXPECT(options[0].toMap().value("stableId").toString() == QStringLiteral("outer"));
+        UI_EXPECT(options[1].toMap().value("stableId").toString() == QStringLiteral("intermediate"));
+        UI_EXPECT(options[2].toMap().value("stableId").toString() == QStringLiteral("any"));
+        auto* collapse = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton");
+        auto* content = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
+        UI_REQUIRE(collapse != nullptr);
+        UI_REQUIRE(content != nullptr);
+        if (!content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* ordinary_status = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText");
+        UI_REQUIRE(ordinary_status != nullptr);
+        UI_EXPECT(!ordinary_status->property("visible").toBool());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicabilityKnown").toBool());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        auto* add_include = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesAddIncludeButton");
+        UI_REQUIRE(add_include != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(add_include, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0AddressTextField") != nullptr;
+        }));
+        UI_EXPECT(editor->addressRows(false, true).size() == 1);
+        auto* address = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0AddressTextField");
+        auto* scope = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0ScopeComboBox");
+        auto* subnet = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0SubnetCheckBox");
+        UI_REQUIRE(address != nullptr);
+        UI_REQUIRE(scope != nullptr);
+        UI_REQUIRE(subnet != nullptr);
+        UI_EXPECT(scope->property("count").toInt() == 3);
+        address->setProperty("text", QStringLiteral("192.0.2.1"));
+        UI_REQUIRE(QMetaObject::invokeMethod(address, "textEdited"));
+        const auto revision = editor->revision();
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2."), true);
+        UI_EXPECT(editor->revision() == revision);
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0)
+            .value("addressText").toString() == QStringLiteral("192.0.2."));
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.1"), true);
+        UI_REQUIRE(QMetaObject::invokeMethod(subnet, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        auto* prefix = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0PrefixTextField");
+        UI_REQUIRE(prefix != nullptr);
+        prefix->setProperty("text", QStringLiteral("24"));
+        UI_REQUIRE(QMetaObject::invokeMethod(prefix, "textEdited"));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0)
+            .value("subnetEnabled").toBool());
+        editor->setAddressRowScope(false, 0, static_cast<int>(Scope::intermediate), true);
+        editor->addAddressRow(false, true);
+        editor->setAddressRowScope(false, 1, static_cast<int>(Scope::any), true);
+        editor->setAddressRowAddressText(false, 1, QStringLiteral("2001:db8::1"), true);
+        auto* exclusions = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesExclusionsToggleButton");
+        UI_REQUIRE(exclusions != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(exclusions, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        auto* add_exclude = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesAddExcludeButton");
+        UI_REQUIRE(add_exclude != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(add_exclude, "click"));
+        editor->setAddressRowAddressText(true, 0, QStringLiteral("198.51.100.1"), true);
+        UI_EXPECT(editor->sectionConfiguredRuleCount(section_id) == 3);
+        UI_EXPECT(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_REQUIRE(editor->addressRows(false, true).size() == 2);
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("prefixText").toString() == QStringLiteral("24"));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("scope").toInt() == static_cast<int>(Scope::intermediate));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 1).value("scope").toInt() == static_cast<int>(Scope::any));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(true, true), 0).value("scope").toInt() == static_cast<int>(Scope::outer));
+        const auto saved_path = std::filesystem::temp_directory_path() / "pfl_ui_non_terminal_ip.filter";
+        controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString(saved_path.wstring());
+        });
+        UI_REQUIRE(controller.saveAdvancedFlowFilterFileAs());
+        const auto saved_text = read_text_file_text(saved_path);
+        const auto adapter = std::make_unique<pfl::FrontendSessionAdapter>();
+        const auto saved = adapter->parse_advanced_flow_filter_structured_document(saved_text);
+        UI_REQUIRE(saved.document.has_value());
+        UI_REQUIRE(saved.document->non_terminal_ip.include.size() == 2U);
+        UI_REQUIRE(saved.document->non_terminal_ip.exclude.size() == 1U);
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].scope_id == "intermediate");
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].subnet_enabled);
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].prefix_text == "24");
+        UI_EXPECT(saved.document->non_terminal_ip.include[1].scope_id == "any");
+        UI_EXPECT(saved.document->non_terminal_ip.exclude[0].scope_id == "outer");
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("invalid"), true);
+        UI_EXPECT(!controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(!controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(read_text_file_text(saved_path) == saved_text);
+        controller.cancelAdvancedFlowFilterEdit();
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("addressText").toString() == QStringLiteral("192.0.2.1"));
+        editor->setSectionEnabled(section_id, false);
+        UI_EXPECT(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->sectionConfiguredRuleCount(section_id) == 3);
+        UI_EXPECT(controller.saveAdvancedFlowFilterFile());
+        const auto disabled = adapter->parse_advanced_flow_filter_structured_document(read_text_file_text(saved_path));
+        UI_REQUIRE(disabled.document.has_value());
+        UI_EXPECT(!disabled.document->non_terminal_ip.enabled);
+        UI_EXPECT(disabled.document->non_terminal_ip.include.size() == 2U);
+        controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(saved_path.wstring());
+        });
+        controller.openAdvancedFlowFilterFile();
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->addressRows(false, true).size() == 2);
+        editor->addAddressRow(false);
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("10.72.0.1"));
+        UI_EXPECT(editor->addressRows(false).size() == 1);
+        UI_EXPECT(editor->addressScopeOptions().size() == 3);
+        UI_EXPECT(editor->sectionConfiguredRuleCount(static_cast<int>(Section::ip_addresses)) == 1);
+        controller.clearAdvancedFlowFilterUnsavedChanges();
+        UI_EXPECT(editor->addressRows(false).isEmpty());
+        UI_EXPECT(editor->addressRows(false, true).size() == 2);
+        controller.setAdvancedFlowFilterClearDecisionForTests([](bool) {
+            return MainController::AdvancedFlowFilterClearDecision::discard_and_clear;
+        });
+        controller.clearAdvancedFlowFilter();
+        UI_EXPECT(editor->addressRows(false, true).isEmpty());
+        UI_EXPECT(editor->addressRows(true, true).isEmpty());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(dialog, "close"));
+
+        MainController ignored {};
+        ignored.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_REQUIRE(open_capture_and_wait(app, ignored, capture_path));
+        ignored.useAdvancedFlowFilter();
+        auto* ignored_editor = advanced_filter_editor(ignored);
+        UI_REQUIRE(ignored_editor != nullptr);
+        auto ignored_window = load_main_qml_component(ignored);
+        auto* ignored_button = named_object(ignored_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* ignored_dialog = named_object(ignored_window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(ignored_button != nullptr);
+        UI_REQUIRE(ignored_dialog != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_button, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText") != nullptr;
+        }));
+        auto* ignored_content = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
+        auto* ignored_collapse = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton");
+        UI_REQUIRE(ignored_content != nullptr);
+        UI_REQUIRE(ignored_collapse != nullptr);
+        if (!ignored_content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(ignored_collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* status = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText");
+        UI_REQUIRE(status != nullptr);
+        UI_EXPECT(status->property("visible").toBool());
+        UI_EXPECT(status->property("text").toString() == QStringLiteral(
+            "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+        UI_EXPECT(ignored_editor->nonTerminalIpApplicability().value("applicabilityKnown").toBool());
+        UI_EXPECT(!ignored_editor->nonTerminalIpApplicability().value("applicable").toBool());
+        auto* ignored_add = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesAddIncludeButton");
+        UI_REQUIRE(ignored_add != nullptr);
+        UI_EXPECT(ignored_add->property("enabled").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_add, "click"));
+        ignored_editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.1"), true);
+        ignored.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString((saved_path.parent_path() / "pfl_ui_non_terminal_ip_ignored.filter").wstring());
+        });
+        UI_EXPECT(ignored.saveAdvancedFlowFilterFileAs());
+        UI_EXPECT(ignored_editor->sectionEnabled(section_id));
+        ignored_editor->setSectionEnabled(section_id, false);
+        UI_EXPECT(ignored.applyAdvancedFlowFilterEdit());
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_dialog, "close"));
+    });
+
+    run_ui_section("advanced_flow_filter_non_terminal_ip_flow_list_wiring", [&]() {
+        MainController controller {};
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        const auto path = ui_test_root() / "data" / "parsing" / "ip_encapsulation"
+            / "12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap";
+        UI_REQUIRE(open_capture_and_wait(app, controller, path));
+        controller.useAdvancedFlowFilter();
+        auto* editor = advanced_filter_editor(controller);
+        auto* model = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(editor != nullptr);
+        UI_REQUIRE(model != nullptr);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->addAddressRow(false, true);
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.60"), true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 1);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("203.0.113.1"), true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 0);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->removeAddressRow(false, 0, true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 1);
     });
 
     run_ui_section("advanced_flow_filter_settings_editor_traffic", [&]() {

@@ -1003,6 +1003,7 @@ std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection> ad
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::directionality:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::ports:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::ip_addresses:
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::time:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::service:
@@ -1035,6 +1036,8 @@ bool advanced_flow_filter_section_enabled(
         return states.ports;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::ip_addresses:
         return states.ip_addresses;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
+        return states.non_terminal_ip;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::time:
         return states.time;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::traffic:
@@ -1071,6 +1074,8 @@ bool* advanced_flow_filter_section_enabled_mutable(
         return &states.ports;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::ip_addresses:
         return &states.ip_addresses;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
+        return &states.non_terminal_ip;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::time:
         return &states.time;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::traffic:
@@ -1395,6 +1400,10 @@ bool AdvancedFlowFilterEditorModel::sectionHasExclusions(const int section) cons
         return document_state_.is_editing()
             ? !address_exclude_rows_.empty()
             : (!spec.addresses.ipv4_exclude.empty() || !spec.addresses.ipv6_exclude.empty());
+    case AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
+        return document_state_.is_editing()
+            ? !non_terminal_ip_exclude_rows_.empty()
+            : (!spec.non_terminal_ip.ipv4_exclude.empty() || !spec.non_terminal_ip.ipv6_exclude.empty());
     case AdvancedFlowFilterFiniteSection::time:
     case AdvancedFlowFilterFiniteSection::traffic:
         return false;
@@ -1468,6 +1477,26 @@ int AdvancedFlowFilterEditorModel::sectionConfiguredRuleCount(const int section)
             ? count_configured_address_rows(address_include_rows_) + count_configured_address_rows(address_exclude_rows_)
             : spec.addresses.ipv4_include.size() + spec.addresses.ipv4_exclude.size() +
                 spec.addresses.ipv6_include.size() + spec.addresses.ipv6_exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
+        if (document_state_.is_editing()) {
+            const auto count_rows = [](const auto& rows) {
+                std::size_t result {0};
+                for (const auto& row : rows) {
+                    const std::array<AdvancedFlowFilterAddressEditorRow, 1> address_rows {{
+                        {.subnet_enabled = row.subnet_enabled,
+                         .address_text = QString::fromStdString(row.address_text),
+                         .prefix_text = QString::fromStdString(row.prefix_text)},
+                    }};
+                    result += count_configured_address_rows(address_rows);
+                }
+                return result;
+            };
+            count = count_rows(non_terminal_ip_include_rows_) + count_rows(non_terminal_ip_exclude_rows_);
+        } else {
+            count = spec.non_terminal_ip.ipv4_include.size() + spec.non_terminal_ip.ipv6_include.size() +
+                spec.non_terminal_ip.ipv4_exclude.size() + spec.non_terminal_ip.ipv6_exclude.size();
+        }
         break;
     case AdvancedFlowFilterFiniteSection::time:
         count = document_state_.is_editing()
@@ -1555,6 +1584,7 @@ QVariantList AdvancedFlowFilterEditorModel::includeOptions(const int section) co
         return build_advanced_filter_option_list(spec.directionality.include, kAdvancedFilterDirectionalityOptions);
     case AdvancedFlowFilterFiniteSection::ports:
     case AdvancedFlowFilterFiniteSection::ip_addresses:
+    case AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
     case AdvancedFlowFilterFiniteSection::time:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
@@ -1588,6 +1618,7 @@ QVariantList AdvancedFlowFilterEditorModel::excludeOptions(const int section) co
         return build_advanced_filter_option_list(spec.directionality.exclude, kAdvancedFilterDirectionalityOptions);
     case AdvancedFlowFilterFiniteSection::ports:
     case AdvancedFlowFilterFiniteSection::ip_addresses:
+    case AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
     case AdvancedFlowFilterFiniteSection::time:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
@@ -1611,8 +1642,66 @@ QVariantList AdvancedFlowFilterEditorModel::portRows(const bool exclude) const {
     return buildPortRowList(exclude);
 }
 
-QVariantList AdvancedFlowFilterEditorModel::addressRows(const bool exclude) const {
-    return buildAddressRowList(exclude);
+QVariantList AdvancedFlowFilterEditorModel::nonTerminalIpScopeOptions() const {
+    const auto parsed = structured_adapter_->parse_advanced_flow_filter_structured_document("format_version = 3\n");
+    QVariantList options {};
+    for (const auto& descriptor : parsed.option_catalog.non_terminal_ip_scope) {
+        QVariantMap option {};
+        option.insert(QStringLiteral("label"), QString::fromStdString(descriptor.label));
+        option.insert(QStringLiteral("stableId"), QString::fromStdString(descriptor.stable_id));
+        const auto scope = descriptor.stable_id == "outer" ? NonTerminalIpScope::outer
+            : (descriptor.stable_id == "intermediate" ? NonTerminalIpScope::intermediate : NonTerminalIpScope::any);
+        option.insert(QStringLiteral("value"), static_cast<int>(scope));
+        options.push_back(option);
+    }
+    return options;
+}
+
+QVariantMap AdvancedFlowFilterEditorModel::nonTerminalIpApplicability() const {
+    const auto section = make_advanced_flow_filter_non_terminal_ip_applicability(
+        non_terminal_ip_applicability_resolver_ ? non_terminal_ip_applicability_resolver_() : std::nullopt
+    );
+    return {
+        {QStringLiteral("applicabilityKnown"), section.applicability_known},
+        {QStringLiteral("applicable"), section.applicable},
+        {QStringLiteral("statusText"), QString::fromStdString(section.status_text)},
+    };
+}
+
+void AdvancedFlowFilterEditorModel::setNonTerminalIpApplicabilityResolver(
+    std::function<std::optional<bool>()> resolver
+) {
+    non_terminal_ip_applicability_resolver_ = std::move(resolver);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::addressRows(const bool exclude, const bool nonTerminal) const {
+    if (!nonTerminal) {
+        return buildAddressRowList(exclude);
+    }
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> fallback_rows {};
+    const auto* rows = exclude ? &non_terminal_ip_exclude_rows_ : &non_terminal_ip_include_rows_;
+    if (!document_state_.is_editing()) {
+        const auto text = session_detail::format_advanced_flow_filter_text(document_state_.current_user_visible_document());
+        const auto parsed = structured_adapter_->parse_advanced_flow_filter_structured_document(text.text);
+        if (parsed.document.has_value()) {
+            fallback_rows = exclude ? parsed.document->non_terminal_ip.exclude : parsed.document->non_terminal_ip.include;
+        }
+        rows = &fallback_rows;
+    }
+    QVariantList result {};
+    for (std::size_t index = 0; index < rows->size(); ++index) {
+        const auto& row = (*rows)[index];
+        const auto scope = row.scope_id == "outer" ? NonTerminalIpScope::outer
+            : (row.scope_id == "intermediate" ? NonTerminalIpScope::intermediate : NonTerminalIpScope::any);
+        result.push_back(QVariantMap {
+            {QStringLiteral("row"), static_cast<int>(index)},
+            {QStringLiteral("scope"), static_cast<int>(scope)},
+            {QStringLiteral("subnetEnabled"), row.subnet_enabled},
+            {QStringLiteral("addressText"), QString::fromStdString(row.address_text)},
+            {QStringLiteral("prefixText"), QString::fromStdString(row.prefix_text)},
+        });
+    }
+    return result;
 }
 
 QVariantList AdvancedFlowFilterEditorModel::timeRangeRows() const {
@@ -2142,6 +2231,7 @@ void AdvancedFlowFilterEditorModel::setOptionChecked(
         break;
     case AdvancedFlowFilterFiniteSection::ports:
     case AdvancedFlowFilterFiniteSection::ip_addresses:
+    case AdvancedFlowFilterFiniteSection::non_terminal_ip_addresses:
     case AdvancedFlowFilterFiniteSection::time:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
@@ -2222,7 +2312,18 @@ void AdvancedFlowFilterEditorModel::setPortRowSecondaryText(const bool exclude, 
     notifyTextFieldEdited();
 }
 
-void AdvancedFlowFilterEditorModel::addAddressRow(const bool exclude) {
+void AdvancedFlowFilterEditorModel::addAddressRow(const bool exclude, const bool nonTerminal) {
+    if (nonTerminal) {
+        ensureEditingInitialized();
+        if (!document_state_.is_editing()) {
+            return;
+        }
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        rows.push_back(FrontendAdvancedFlowFilterIpAddressRowDto {.scope_id = "outer"});
+        (void)synchronizeDraftSections();
+        notifyRowsChanged();
+        return;
+    }
     ensureEditingInitialized();
     if (!document_state_.is_editing()) {
         return;
@@ -2234,7 +2335,17 @@ void AdvancedFlowFilterEditorModel::addAddressRow(const bool exclude) {
     notifyRowsChanged();
 }
 
-void AdvancedFlowFilterEditorModel::removeAddressRow(const bool exclude, const int row) {
+void AdvancedFlowFilterEditorModel::removeAddressRow(const bool exclude, const int row, const bool nonTerminal) {
+    if (nonTerminal) {
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+            return;
+        }
+        rows.erase(rows.begin() + row);
+        (void)synchronizeDraftSections();
+        notifyRowsChanged();
+        return;
+    }
     auto& rows = exclude ? address_exclude_rows_ : address_include_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -2245,7 +2356,29 @@ void AdvancedFlowFilterEditorModel::removeAddressRow(const bool exclude, const i
     notifyRowsChanged();
 }
 
-void AdvancedFlowFilterEditorModel::setAddressRowScope(const bool exclude, const int row, const int scope) {
+void AdvancedFlowFilterEditorModel::setAddressRowScope(const bool exclude, const int row, const int scope, const bool nonTerminal) {
+    if (nonTerminal) {
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+            return;
+        }
+        switch (static_cast<NonTerminalIpScope>(scope)) {
+        case NonTerminalIpScope::outer:
+            rows[static_cast<std::size_t>(row)].scope_id = "outer";
+            break;
+        case NonTerminalIpScope::intermediate:
+            rows[static_cast<std::size_t>(row)].scope_id = "intermediate";
+            break;
+        case NonTerminalIpScope::any:
+            rows[static_cast<std::size_t>(row)].scope_id = "any";
+            break;
+        default:
+            return;
+        }
+        (void)synchronizeDraftSections();
+        notifyRowsChanged();
+        return;
+    }
     auto& rows = exclude ? address_exclude_rows_ : address_include_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -2256,7 +2389,17 @@ void AdvancedFlowFilterEditorModel::setAddressRowScope(const bool exclude, const
     notifyRowsChanged();
 }
 
-void AdvancedFlowFilterEditorModel::setAddressRowSubnetEnabled(const bool exclude, const int row, const bool enabled) {
+void AdvancedFlowFilterEditorModel::setAddressRowSubnetEnabled(const bool exclude, const int row, const bool enabled, const bool nonTerminal) {
+    if (nonTerminal) {
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+            return;
+        }
+        rows[static_cast<std::size_t>(row)].subnet_enabled = enabled;
+        (void)synchronizeDraftSections();
+        notifyRowsChanged();
+        return;
+    }
     auto& rows = exclude ? address_exclude_rows_ : address_include_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -2267,7 +2410,17 @@ void AdvancedFlowFilterEditorModel::setAddressRowSubnetEnabled(const bool exclud
     notifyRowsChanged();
 }
 
-void AdvancedFlowFilterEditorModel::setAddressRowAddressText(const bool exclude, const int row, const QString& text) {
+void AdvancedFlowFilterEditorModel::setAddressRowAddressText(const bool exclude, const int row, const QString& text, const bool nonTerminal) {
+    if (nonTerminal) {
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+            return;
+        }
+        rows[static_cast<std::size_t>(row)].address_text = text.toStdString();
+        (void)synchronizeDraftSections();
+        notifyTextFieldEdited();
+        return;
+    }
     auto& rows = exclude ? address_exclude_rows_ : address_include_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -2278,7 +2431,17 @@ void AdvancedFlowFilterEditorModel::setAddressRowAddressText(const bool exclude,
     notifyTextFieldEdited();
 }
 
-void AdvancedFlowFilterEditorModel::setAddressRowPrefixText(const bool exclude, const int row, const QString& text) {
+void AdvancedFlowFilterEditorModel::setAddressRowPrefixText(const bool exclude, const int row, const QString& text, const bool nonTerminal) {
+    if (nonTerminal) {
+        auto& rows = exclude ? non_terminal_ip_exclude_rows_ : non_terminal_ip_include_rows_;
+        if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+            return;
+        }
+        rows[static_cast<std::size_t>(row)].prefix_text = text.toStdString();
+        (void)synchronizeDraftSections();
+        notifyTextFieldEdited();
+        return;
+    }
     auto& rows = exclude ? address_exclude_rows_ : address_include_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -2519,6 +2682,14 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     append_ipv6_rows(document.configured_spec.addresses.ipv6_include, address_include_rows_);
     append_ipv4_rows(document.configured_spec.addresses.ipv4_exclude, address_exclude_rows_);
     append_ipv6_rows(document.configured_spec.addresses.ipv6_exclude, address_exclude_rows_);
+    const auto structured_text = session_detail::format_advanced_flow_filter_text(document);
+    const auto structured = structured_adapter_->parse_advanced_flow_filter_structured_document(structured_text.text);
+    non_terminal_ip_include_rows_.clear();
+    non_terminal_ip_exclude_rows_.clear();
+    if (structured.document.has_value()) {
+        non_terminal_ip_include_rows_ = structured.document->non_terminal_ip.include;
+        non_terminal_ip_exclude_rows_ = structured.document->non_terminal_ip.exclude;
+    }
 
     for (std::size_t index = 0; index < kTimeRangeDescriptors.size(); ++index) {
         const auto& descriptor = kTimeRangeDescriptors[index];
@@ -2663,6 +2834,8 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
 }
 
 void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
+    non_terminal_ip_include_rows_.clear();
+    non_terminal_ip_exclude_rows_.clear();
     port_include_rows_.clear();
     port_exclude_rows_.clear();
     address_include_rows_.clear();
@@ -3292,6 +3465,33 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSectionsImpl(QString* errorT
         }
     }
 
+    auto updated_non_terminal_ip = draft_document->configured_spec.non_terminal_ip;
+    if (draft_document->section_states.non_terminal_ip) {
+        session_detail::AdvancedFlowFilterDocument section_document {};
+        section_document.configured_spec.non_terminal_ip = updated_non_terminal_ip;
+        const auto text = session_detail::format_advanced_flow_filter_text(section_document);
+        const auto parsed = structured_adapter_->parse_advanced_flow_filter_structured_document(text.text);
+        if (!parsed.document.has_value()) {
+            if (errorText != nullptr) {
+                *errorText = QString::fromStdString(parsed.error_text);
+            }
+            return false;
+        }
+        auto draft = *parsed.document;
+        draft.non_terminal_ip.include = non_terminal_ip_include_rows_;
+        draft.non_terminal_ip.exclude = non_terminal_ip_exclude_rows_;
+        const auto updated = structured_adapter_->apply_advanced_flow_filter_structured_document(text.text, draft);
+        if (updated.status != FrontendAdvancedFlowFilterStructuredDocumentStatus::ok || !updated.document.has_value()) {
+            if (errorText != nullptr) {
+                *errorText = QString::fromStdString(updated.error_text);
+            }
+            return false;
+        }
+        const auto decoded = session_detail::parse_advanced_flow_filter_text(updated.document->canonical_text);
+        updated_non_terminal_ip = decoded.document.configured_spec.non_terminal_ip;
+    }
+
+    draft_document->configured_spec.non_terminal_ip = std::move(updated_non_terminal_ip);
     draft_document->configured_spec.ports = std::move(updated_ports);
     draft_document->configured_spec.addresses = std::move(updated_addresses);
     draft_document->configured_spec.time = std::move(updated_time);

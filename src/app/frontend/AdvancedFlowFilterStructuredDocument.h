@@ -115,6 +115,9 @@ struct FrontendAdvancedFlowFilterNonTerminalIpSectionDto {
     std::string status_text {};
 };
 
+[[nodiscard]] FrontendAdvancedFlowFilterNonTerminalIpSectionDto
+make_advanced_flow_filter_non_terminal_ip_applicability(std::optional<bool> applicability);
+
 struct FrontendAdvancedFlowFilterTrafficRowDto {
     std::string metric_id {};
     std::string unit_id {};

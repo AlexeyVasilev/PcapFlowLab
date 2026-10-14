@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -10,6 +11,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
@@ -42,6 +44,13 @@ public:
         service,
         protocol_path,
         contains_layer,
+        non_terminal_ip_addresses = 13,
+    };
+
+    enum class NonTerminalIpScope {
+        outer = 0,
+        intermediate,
+        any,
     };
 
     enum class AdvancedFlowFilterContainsLayerIdentifierMode {
@@ -108,8 +117,10 @@ public:
     Q_INVOKABLE QVariantList excludeOptions(int section) const;
     Q_INVOKABLE QVariantList portScopeOptions() const;
     Q_INVOKABLE QVariantList addressScopeOptions() const;
+    Q_INVOKABLE QVariantList nonTerminalIpScopeOptions() const;
+    Q_INVOKABLE QVariantMap nonTerminalIpApplicability() const;
     Q_INVOKABLE QVariantList portRows(bool exclude) const;
-    Q_INVOKABLE QVariantList addressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList addressRows(bool exclude, bool nonTerminal = false) const;
     Q_INVOKABLE QVariantList timeRangeRows() const;
     Q_INVOKABLE QVariantMap timeDurationRow() const;
     Q_INVOKABLE QVariantList commonTrafficRows() const;
@@ -152,12 +163,12 @@ public:
     Q_INVOKABLE void setPortRowRangeEnabled(bool exclude, int row, bool enabled);
     Q_INVOKABLE void setPortRowPrimaryText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void setPortRowSecondaryText(bool exclude, int row, const QString& text);
-    Q_INVOKABLE void addAddressRow(bool exclude);
-    Q_INVOKABLE void removeAddressRow(bool exclude, int row);
-    Q_INVOKABLE void setAddressRowScope(bool exclude, int row, int scope);
-    Q_INVOKABLE void setAddressRowSubnetEnabled(bool exclude, int row, bool enabled);
-    Q_INVOKABLE void setAddressRowAddressText(bool exclude, int row, const QString& text);
-    Q_INVOKABLE void setAddressRowPrefixText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void addAddressRow(bool exclude, bool nonTerminal = false);
+    Q_INVOKABLE void removeAddressRow(bool exclude, int row, bool nonTerminal = false);
+    Q_INVOKABLE void setAddressRowScope(bool exclude, int row, int scope, bool nonTerminal = false);
+    Q_INVOKABLE void setAddressRowSubnetEnabled(bool exclude, int row, bool enabled, bool nonTerminal = false);
+    Q_INVOKABLE void setAddressRowAddressText(bool exclude, int row, const QString& text, bool nonTerminal = false);
+    Q_INVOKABLE void setAddressRowPrefixText(bool exclude, int row, const QString& text, bool nonTerminal = false);
     Q_INVOKABLE void removeProtocolPathRow(bool exclude, int row);
     Q_INVOKABLE void addContainsLayerRow(bool exclude);
     Q_INVOKABLE void removeContainsLayerRow(bool exclude, int row);
@@ -179,6 +190,7 @@ public:
         ProtocolPathStatisticsMode selectorMode
     );
     void refreshProtocolPathApplicability();
+    void setNonTerminalIpApplicabilityResolver(std::function<std::optional<bool>()> resolver);
 
 signals:
     void revisionChanged();
@@ -256,6 +268,12 @@ private:
     [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildContainsLayerRowList(bool exclude) const;
 
+    // Keep the session-owning adapter out of the controller's inline storage.
+    // It is used only for document conversion; applicability comes from the controller.
+    std::unique_ptr<FrontendSessionAdapter> structured_adapter_ {std::make_unique<FrontendSessionAdapter>()};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> non_terminal_ip_include_rows_ {};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> non_terminal_ip_exclude_rows_ {};
+    std::function<std::optional<bool>()> non_terminal_ip_applicability_resolver_ {};
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
     int section_summary_revision_ {0};

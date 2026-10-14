@@ -2759,6 +2759,12 @@ MainController::MainController(QObject* parent)
     advanced_flow_filter_editor_model_.setProtocolPathApplicabilityResolver([this](const auto& predicate) {
         return protocol_path_predicate_applicability(session_, predicate);
     });
+    advanced_flow_filter_editor_model_.setNonTerminalIpApplicabilityResolver([this]() -> std::optional<bool> {
+        if (!session_.has_capture()) {
+            return std::nullopt;
+        }
+        return !session_.flow_grouping_ignores_non_terminal_ip_endpoints();
+    });
 
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
         emit selectedFlowCountChanged();

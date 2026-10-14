@@ -874,14 +874,12 @@ void populate_non_terminal_ip_applicability(
     const FrontendSessionAdapter& adapter,
     FrontendAdvancedFlowFilterNonTerminalIpSectionDto& section
 ) {
-    const auto applicability = adapter.advanced_flow_filter_non_terminal_ip_applicability();
-    section.applicability_known = applicability.has_value();
-    section.applicable = applicability.value_or(false);
-    section.status_text = !applicability.has_value()
-        ? "No current capture."
-        : (applicability.value()
-            ? std::string {}
-            : "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.");
+    const auto status = make_advanced_flow_filter_non_terminal_ip_applicability(
+        adapter.advanced_flow_filter_non_terminal_ip_applicability()
+    );
+    section.applicability_known = status.applicability_known;
+    section.applicable = status.applicable;
+    section.status_text = status.status_text;
 }
 
 template <std::size_t Size>
@@ -2738,6 +2736,20 @@ std::optional<session_detail::AdvancedFlowFilterDocument> parse_valid_document_t
 }
 
 }  // namespace
+
+FrontendAdvancedFlowFilterNonTerminalIpSectionDto make_advanced_flow_filter_non_terminal_ip_applicability(
+    const std::optional<bool> applicability
+) {
+    FrontendAdvancedFlowFilterNonTerminalIpSectionDto section {};
+    section.applicability_known = applicability.has_value();
+    section.applicable = applicability.value_or(false);
+    section.status_text = !applicability.has_value()
+        ? "No current capture."
+        : (*applicability
+            ? std::string {}
+            : "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.");
+    return section;
+}
 
 FrontendAdvancedFlowFilterStructuredDocumentResult
 FrontendSessionAdapter::parse_advanced_flow_filter_structured_document(const std::string_view filter_text) const {
