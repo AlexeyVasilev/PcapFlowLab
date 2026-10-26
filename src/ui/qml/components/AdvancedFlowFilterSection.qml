@@ -10,6 +10,7 @@ Rectangle {
     property bool expanded: false
     property bool sectionEnabled: true
     property bool contentEnabled: true
+    property bool enabledControlVisible: true
     property string sectionObjectName: ""
     property string collapseButtonObjectName: ""
     property string enabledCheckBoxObjectName: ""
@@ -84,6 +85,7 @@ Rectangle {
 
             CheckBox {
                 objectName: enabledCheckBoxObjectName
+                visible: root.enabledControlVisible
                 text: "Enabled"
                 checked: root.sectionEnabled
                 Layout.alignment: Qt.AlignVCenter

@@ -6732,11 +6732,98 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(options[0].toMap().value("stableId").toString() == QStringLiteral("outer"));
         UI_EXPECT(options[1].toMap().value("stableId").toString() == QStringLiteral("intermediate"));
         UI_EXPECT(options[2].toMap().value("stableId").toString() == QStringLiteral("any"));
-        auto* collapse = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton");
+        auto* group = popup_visual_item(dialog, "advancedFlowFilterIpAddressesGroup");
+        auto* terminal_section = popup_visual_item(dialog, "advancedFlowFilterIpAddressesSection");
+        auto* non_terminal_section = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesSection");
+        UI_REQUIRE(group != nullptr);
+        UI_REQUIRE(terminal_section != nullptr);
+        UI_REQUIRE(non_terminal_section != nullptr);
+        UI_EXPECT(group->property("title").toString() == QStringLiteral("IP addresses"));
+        UI_EXPECT(!group->property("enabledControlVisible").toBool());
+        UI_EXPECT(terminal_section->property("title").toString() == QStringLiteral("Flow endpoint IPs (terminal)"));
+        UI_EXPECT(non_terminal_section->property("title").toString() == QStringLiteral("Encapsulation IPs (non-terminal)"));
+        const auto count_ip_groups = [](auto&& self, QQuickItem* item) -> int {
+            if (item == nullptr) {
+                return 0;
+            }
+            int count = item->property("title").toString() == QStringLiteral("IP addresses") ? 1 : 0;
+            for (auto* child : item->childItems()) {
+                count += self(self, child);
+            }
+            return count;
+        };
+        UI_EXPECT(count_ip_groups(count_ip_groups, popup_content_item(dialog)) == 1);
+        const auto belongs_to = [](QQuickItem* item, QQuickItem* ancestor) {
+            for (auto* parent = item->parentItem(); parent != nullptr; parent = parent->parentItem()) {
+                if (parent == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        UI_EXPECT(belongs_to(terminal_section, group));
+        UI_EXPECT(belongs_to(non_terminal_section, group));
+        UI_EXPECT(popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton") == nullptr);
+        auto* collapse = popup_visual_item(dialog, "advancedFlowFilterIpAddressesCollapseButton");
         auto* content = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
         UI_REQUIRE(collapse != nullptr);
         UI_REQUIRE(content != nullptr);
         if (!content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* terminal_title = popup_visual_item(dialog, "advancedFlowFilterIpAddressesTitle");
+        auto* non_terminal_title = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesTitle");
+        UI_REQUIRE(terminal_title != nullptr);
+        UI_REQUIRE(non_terminal_title != nullptr);
+        UI_EXPECT(terminal_title->property("visible").toBool());
+        UI_EXPECT(non_terminal_title->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!terminal_title->property("visible").toBool());
+        UI_EXPECT(!non_terminal_title->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        const auto terminal_options = editor->addressScopeOptions();
+        UI_REQUIRE(terminal_options.size() == 3);
+        UI_EXPECT(terminal_options[0].toMap().value("label").toString() == QStringLiteral("Either endpoint"));
+        UI_EXPECT(terminal_options[1].toMap().value("label").toString() == QStringLiteral("Endpoint A"));
+        UI_EXPECT(terminal_options[2].toMap().value("label").toString() == QStringLiteral("Endpoint B"));
+        auto* terminal_add = popup_visual_item(dialog, "advancedFlowFilterIpAddressesAddIncludeButton");
+        auto* terminal_enabled = popup_visual_item(dialog, "advancedFlowFilterIpAddressesEnabledCheckBox");
+        UI_REQUIRE(terminal_add != nullptr);
+        UI_REQUIRE(terminal_enabled != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_add, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0AddressTextField") != nullptr;
+        }));
+        auto* terminal_address = popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0AddressTextField");
+        auto* terminal_scope = popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0ScopeComboBox");
+        UI_REQUIRE(terminal_address != nullptr);
+        UI_REQUIRE(terminal_scope != nullptr);
+        UI_EXPECT(terminal_scope->property("count").toInt() == 3);
+        terminal_address->setProperty("text", QStringLiteral("10.72.0.1"));
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_address, "textEdited"));
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_enabled, "click"));
+        UI_EXPECT(!editor->sectionEnabled(static_cast<int>(Section::ip_addresses)));
+        UI_EXPECT(editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->sectionConfiguredRuleCount(static_cast<int>(Section::ip_addresses)) == 1);
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_enabled, "click"));
+        UI_REQUIRE(QMetaObject::invokeMethod(enabled_checkbox, "click"));
+        UI_EXPECT(editor->sectionEnabled(static_cast<int>(Section::ip_addresses)));
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_REQUIRE(QMetaObject::invokeMethod(enabled_checkbox, "click"));
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false), 0)
+            .value("addressText").toString() == QStringLiteral("10.72.0.1"));
+        auto* flows = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(flows != nullptr);
+        UI_EXPECT(flows->visibleFlowCount() == 1);
+        editor->removeAddressRow(false, 0);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        if (!group->property("expanded").toBool()) {
             UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
             app.processEvents(QEventLoop::AllEvents, 25);
         }
@@ -6838,6 +6925,7 @@ int main(int argc, char* argv[]) {
         controller.beginAdvancedFlowFilterEdit();
         UI_EXPECT(!editor->sectionEnabled(section_id));
         UI_EXPECT(editor->addressRows(false, true).size() == 2);
+        UI_EXPECT(group->property("expanded").toBool());
         editor->addAddressRow(false);
         editor->setAddressRowAddressText(false, 0, QStringLiteral("10.72.0.1"));
         UI_EXPECT(editor->addressRows(false).size() == 1);
@@ -6871,7 +6959,7 @@ int main(int argc, char* argv[]) {
             return popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText") != nullptr;
         }));
         auto* ignored_content = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
-        auto* ignored_collapse = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton");
+        auto* ignored_collapse = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesCollapseButton");
         UI_REQUIRE(ignored_content != nullptr);
         UI_REQUIRE(ignored_collapse != nullptr);
         if (!ignored_content->property("visible").toBool()) {
@@ -6883,6 +6971,17 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(status->property("visible").toBool());
         UI_EXPECT(status->property("text").toString() == QStringLiteral(
             "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+        auto* ignored_non_terminal_section = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesSection");
+        auto* ignored_terminal_status = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesApplicabilityText");
+        UI_REQUIRE(ignored_non_terminal_section != nullptr);
+        UI_REQUIRE(ignored_terminal_status != nullptr);
+        UI_EXPECT(belongs_to(status, ignored_non_terminal_section));
+        UI_EXPECT(!ignored_terminal_status->property("visible").toBool());
+        auto* ignored_terminal_add = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesAddIncludeButton");
+        UI_REQUIRE(ignored_terminal_add != nullptr);
+        UI_EXPECT(ignored_terminal_add->property("enabled").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_terminal_add, "click"));
+        ignored_editor->setAddressRowAddressText(false, 0, QStringLiteral("10.72.0.1"));
         UI_EXPECT(ignored_editor->nonTerminalIpApplicability().value("applicabilityKnown").toBool());
         UI_EXPECT(!ignored_editor->nonTerminalIpApplicability().value("applicable").toBool());
         auto* ignored_add = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesAddIncludeButton");
@@ -6897,6 +6996,9 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(ignored_editor->sectionEnabled(section_id));
         ignored_editor->setSectionEnabled(section_id, false);
         UI_EXPECT(ignored.applyAdvancedFlowFilterEdit());
+        auto* ignored_flows = qobject_cast<FlowListModel*>(ignored.flowModel());
+        UI_REQUIRE(ignored_flows != nullptr);
+        UI_EXPECT(ignored_flows->visibleFlowCount() == 1);
         UI_REQUIRE(QMetaObject::invokeMethod(ignored_dialog, "close"));
     });
 
