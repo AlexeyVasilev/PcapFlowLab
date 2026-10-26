@@ -1535,6 +1535,138 @@ void expect_preview_and_csv_behavior() {
     }
 }
 
+void expect_non_terminal_ip_advanced_filter_behavior() {
+    const ScopedTestContext context {"non-terminal IP CLI"};
+    const auto capture_path = fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap");
+    const std::vector<std::size_t> expected_flow_numbers {1U};
+    const auto expect_one_flow = [&](const cli::CliInvocationResult& result) {
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text) == expected_flow_numbers);
+        PFL_EXPECT(count_rendered_flow_rows(result.stdout_text) == 1U);
+        PFL_EXPECT(contains_text(result.stdout_text, "10.60.0.10:53600"));
+        PFL_EXPECT(contains_text(result.stdout_text, "10.60.0.20:443"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "No matching flows."));
+    };
+    const auto invoke_filter = [](const std::filesystem::path& input, const std::filesystem::path& filter) {
+        return invoke_cli({"flows", input.string(), "--adv-filter", filter.string(), "--progress", "off"});
+    };
+
+    struct FilterCase {
+        const char* name;
+        const char* predicate;
+        bool matches;
+    };
+    // Fixture 12 has outer 192.0.2.60 / 198.51.100.60; both middle and terminal
+    // layers use 10.60.0.10 / 10.60.0.20 (see IpEncapsulationPcapFixtureTests).
+    const FilterCase cases[] {
+        {"outer_source", "non_terminal_ip.outer.include = 192.0.2.60\n", true},
+        {"outer_destination", "non_terminal_ip.outer.include = 198.51.100.60\n", true},
+        {"outer_miss", "non_terminal_ip.outer.include = 203.0.113.60\n", false},
+        {"intermediate", "non_terminal_ip.intermediate.include = 10.60.0.10\n", true},
+        {"middle_not_outer", "non_terminal_ip.outer.include = 10.60.0.10\n", false},
+        {"outer_not_terminal", "ip.either.include = 192.0.2.60\n", false},
+        {"any", "non_terminal_ip.any.include = 10.60.0.20\n", true},
+    };
+    for (const auto& test_case : cases) {
+        const ScopedTestContext case_context {test_case.name};
+        const auto filter_path = write_temp_advanced_filter_file(
+            std::string {"pfl_cli_non_terminal_"} + test_case.name + ".filter",
+            std::string {"format_version = 3\n"} + test_case.predicate
+        );
+        const auto result = invoke_filter(capture_path, filter_path);
+        if (test_case.matches) {
+            expect_one_flow(result);
+        } else {
+            PFL_EXPECT(result.handled);
+            PFL_EXPECT(result.exit_code == 0);
+            PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text).empty());
+            PFL_EXPECT(contains_text(result.stdout_text, "No matching flows."));
+        }
+        PFL_EXPECT(result.stderr_text.empty());
+    }
+
+    {
+        const ScopedTestContext case_context {"simple filter remains terminal-only"};
+        const auto result = invoke_cli({"flows", capture_path.string(), "--filter", "192.0.2.60", "--progress", "off"});
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text).empty());
+        PFL_EXPECT(contains_text(result.stdout_text, "No matching flows."));
+    }
+
+    const auto outer_filter_path = write_temp_advanced_filter_file(
+        "pfl_cli_non_terminal_parity.filter",
+        "format_version = 3\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n"
+    );
+    const auto source_path = std::filesystem::temp_directory_path() / "pfl_cli_non_terminal_index_source.pcap";
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_non_terminal_retained.idx";
+    const auto ignored_index_path = std::filesystem::temp_directory_path() / "pfl_cli_non_terminal_ignored.idx";
+    PFL_REQUIRE(std::filesystem::copy_file(capture_path, source_path, std::filesystem::copy_options::overwrite_existing));
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(ignored_index_path);
+    {
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        PFL_REQUIRE(adapter.save_index(index_path).saved);
+    }
+    {
+        FrontendSessionAdapter adapter {};
+        auto settings = adapter.get_settings();
+        settings.ignore_non_terminal_ip_endpoints_when_grouping_flows = true;
+        (void)adapter.update_settings(settings);
+        PFL_REQUIRE(adapter.get_settings().ignore_non_terminal_ip_endpoints_when_grouping_flows);
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        PFL_REQUIRE(adapter.save_index(ignored_index_path).saved);
+    }
+    {
+        const ScopedTestContext case_context {"raw/index parity without source bytes"};
+        const auto raw_result = invoke_filter(source_path, outer_filter_path);
+        expect_one_flow(raw_result);
+        PFL_REQUIRE(std::filesystem::remove(source_path));
+        const auto index_result = invoke_filter(index_path, outer_filter_path);
+        expect_one_flow(index_result);
+        PFL_EXPECT(extract_rendered_flow_numbers(raw_result.stdout_text)
+            == extract_rendered_flow_numbers(index_result.stdout_text));
+        PFL_EXPECT(count_rendered_flow_rows(raw_result.stdout_text) == count_rendered_flow_rows(index_result.stdout_text));
+    }
+
+    const auto ignored_settings_path = write_temp_text_file(
+        "pfl_cli_non_terminal_ignored_settings.json",
+        "{\"ignore_non_terminal_ip_endpoints_when_grouping_flows\":true}\n"
+    );
+    const auto disabled_filter_path = write_temp_advanced_filter_file(
+        "pfl_cli_non_terminal_disabled.filter",
+        "format_version = 3\n"
+        "section.non_terminal_ip.enabled = false\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n"
+        "ip.either.include = 10.60.0.10\n"
+    );
+    for (const auto& input : {capture_path, ignored_index_path}) {
+        const bool raw_input = input == capture_path;
+        const ScopedTestContext case_context {raw_input ? "ignored raw" : "ignored index without source bytes"};
+        std::vector<std::string> args {"flows", input.string(), "--adv-filter", outer_filter_path.string(), "--progress", "off"};
+        if (raw_input) {
+            args.push_back("--settings");
+            args.push_back(ignored_settings_path.string());
+        }
+        const auto unavailable = invoke_cli(args);
+        PFL_EXPECT(unavailable.handled);
+        PFL_EXPECT(unavailable.exit_code == 1);
+        PFL_EXPECT(unavailable.stdout_text.empty());
+        PFL_EXPECT(unavailable.stderr_text ==
+            "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.\n");
+        PFL_EXPECT(!contains_text(unavailable.stderr_text, "No matching flows."));
+        PFL_EXPECT(!contains_text(unavailable.stderr_text, "Invalid advanced filter"));
+
+        args[3] = disabled_filter_path.string();
+        const auto disabled = invoke_cli(args);
+        expect_one_flow(disabled);
+        PFL_EXPECT(disabled.stderr_text.empty());
+    }
+}
+
 void expect_settings_behavior() {
     const auto capture_path = build_cli_flows_capture_path();
     const auto checksum_settings_path = write_temp_text_file(
@@ -1622,6 +1754,7 @@ void run_cli_flows_tests() {
     expect_flows_help_and_parser_behavior();
     expect_flows_runtime_behavior();
     expect_preview_and_csv_behavior();
+    expect_non_terminal_ip_advanced_filter_behavior();
     expect_settings_behavior();
 }
 
