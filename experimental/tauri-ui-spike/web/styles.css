@@ -523,6 +523,29 @@ body.is-resizing-vertical {
   display: none !important;
 }
 
+.advanced-filter-ip-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.advanced-filter-ip-subsection + .advanced-filter-ip-subsection {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.advanced-filter-ip-subsection-title {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.advanced-filter-ip-subsection .advanced-filter-helper-copy {
+  margin: 0;
+}
+
 .advanced-filter-section-enabled {
   display: inline-flex;
   align-items: center;
