@@ -1,6 +1,6 @@
 {
   "capture_id": "pcap-flow-lab-showcase",
-  "capture_version": "1.0.0",
+  "capture_version": "1.1.0",
   "description": "Deterministic long-lived showcase capture for PcapFlowLab v1 materialization pass. Uses a single classic Ethernet PCAP timeline with overlapping hero flows, application demos, protocol-family coverage, grouping identity cases, and edge scenarios.",
   "scenarios": [
     {
@@ -1308,6 +1308,111 @@
       ]
     },
     {
+      "scenario_id": "ID-IPCTX-OUTER-01",
+      "name": "Outer IP context identity pair",
+      "purpose": "Show that different retained outer IPv4 endpoint pairs split otherwise-identical terminal UDP communication into two Flows.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "203.0.113.230:56210",
+        "198.51.100.230:56211"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> IPv4 -> UDP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "outer non-terminal IPv4 identity",
+        "Advanced Filter outer IP matching"
+      ],
+      "special_packets": [
+        "Variant A outer: 192.0.2.210 <-> 198.51.100.210",
+        "Variant B outer: 192.0.2.211 <-> 198.51.100.211"
+      ],
+      "notes": [
+        "Both Flows share the same terminal tuple and structural Protocol Path; only their outer non-terminal IPv4 endpoints differ.",
+        "Strict/default grouping keeps two Flows; ignoring non-terminal IP endpoints removes this identity distinction.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.300 s"
+      ]
+    },
+    {
+      "scenario_id": "ID-IPCTX-INTERMEDIATE-01",
+      "name": "Intermediate IP context identity pair",
+      "purpose": "Distinguish Outer, Intermediate, and terminal IP levels while showing that an intermediate retained endpoint pair participates in Flow identity.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "203.0.113.240:56220",
+        "198.51.100.240:56221"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "Advanced Filter Outer, Intermediate, Any non-terminal IP, and terminal Flow endpoint IP matching"
+      ],
+      "special_packets": [
+        "Shared outer: 192.0.2.212 <-> 198.51.100.212",
+        "Variant A intermediate: 203.0.113.220 <-> 192.0.2.220",
+        "Variant B intermediate: 203.0.113.221 <-> 192.0.2.221"
+      ],
+      "notes": [
+        "Both Flows share the outer context, terminal tuple, and structural Protocol Path; only their intermediate non-terminal IPv4 endpoints differ.",
+        "Strict/default grouping keeps two Flows; ignoring non-terminal IP endpoints removes this identity distinction.",
+        "Primary showcase for Outer, Intermediate, Any non-terminal IP, and terminal Flow endpoint IP matching.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.300 s"
+      ]
+    },
+    {
+      "scenario_id": "ID-IPCTX-IPV6-01",
+      "name": "IPv6 outer IP context",
+      "purpose": "Demonstrate IPv6 non-terminal IP context with a terminal IPv4 UDP Flow.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "203.0.113.250:56230",
+        "198.51.100.250:56231"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv6 -> IPv4 -> UDP",
+      "expected_flow_count": 1,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "non-terminal IPv6 exact matching",
+        "non-terminal IPv6 CIDR matching",
+        "Any non-terminal IP matching"
+      ],
+      "special_packets": [
+        "Outer IPv6: 2001:db8:210::1 <-> 2001:db8:210::2"
+      ],
+      "notes": [
+        "The IPv6 pair is outer non-terminal context; the terminal UDP Flow endpoints are IPv4.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.100 s"
+      ]
+    },
+    {
       "scenario_id": "APP-SCTP-01",
       "name": "SCTP data packet",
       "purpose": "Short SCTP scenario proving current user-visible SCTP flow recognition.",
@@ -2093,10 +2198,13 @@
       "family": "ip_encapsulation",
       "status": "represented",
       "scenario_ids": [
-        "TUN-IPIP-01"
+        "TUN-IPIP-01",
+        "ID-IPCTX-OUTER-01",
+        "ID-IPCTX-INTERMEDIATE-01",
+        "ID-IPCTX-IPV6-01"
       ],
       "source_fixture": "tests/data/parsing/ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap",
-      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+      "note": "TUN-IPIP-01 is materialized from the checked-in fixture; the three IP context identity scenarios are deterministic synthetic additions."
     },
     {
       "family": "ip_options",
@@ -2554,9 +2662,9 @@
     "Inspect EDGE-UNREC-01, L2-MACSEC-PACKET-01, L2-PPPOE-DISCOVERY-01, L2-LLCSNAP-UNREC-01, and TUN-MPLS-UNREC-01 for distinct unrecognized-packet reasons, packet-inspection depth, and Bytes behavior."
   ],
   "materialization_summary": {
-    "total_packet_count": 1567,
-    "total_duration_seconds": 115.54,
-    "approximate_pcap_size_bytes": 747225,
+    "total_packet_count": 1577,
+    "total_duration_seconds": 118.1,
+    "approximate_pcap_size_bytes": 748388,
     "classic_pcap_linktype": 1,
     "contains_snaplen_distinction": true,
     "contains_unrecognized_packets": true
