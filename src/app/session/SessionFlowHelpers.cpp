@@ -1324,7 +1324,7 @@ std::string format_context_level_address(
     if (level.family == NonTerminalIpAddressFamily::ipv4) {
         return format_ipv4_address(std::array<std::uint8_t, 4> {bytes[0], bytes[1], bytes[2], bytes[3]});
     }
-    return format_ipv6_address(bytes);
+    return format_ipv6_address_compact(bytes);
 }
 
 template <typename VisitFlows>

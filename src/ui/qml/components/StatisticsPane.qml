@@ -1638,6 +1638,15 @@ Item {
                             }
                         }
 
+                        Label {
+                            objectName: "protocolPathIpContextHelp"
+                            Layout.fillWidth: true
+                            visible: root.statisticsMode === 3 && root.protocolPathSectionState === root.requestStateReady
+                            text: "IP pairs represent bidirectional Flow identity, not packet direction. Terminal Flow IPs remain undecorated."
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
                         FourColumnHeader {
                             visible: root.protocolPathSectionState === root.requestStateReady
                             firstTitle: root.protocolPathPrimaryColumnTitle

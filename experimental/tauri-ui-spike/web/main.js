@@ -3718,6 +3718,7 @@
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
     protocolPathStatsModeIdentityTreeIpContext: document.getElementById("protocolPathStatsModeIdentityTreeIpContext"),
+    protocolPathIpContextHelp: document.getElementById("protocolPathIpContextHelp"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
     protocolPathExportButton: document.getElementById("protocolPathExportButton"),
@@ -6622,6 +6623,11 @@
     const protocolPathRows = currentProtocolPathStatsRows();
     const protocolPathRowsLoading = state.protocolPathStatsPendingByMode.has(protocolPathMode);
     const protocolPathErrorText = state.protocolPathStatsErrorsByMode.get(protocolPathMode) || "";
+    if (elements.protocolPathIpContextHelp) {
+      elements.protocolPathIpContextHelp.hidden = protocolPathMode !== 3 ||
+        state.openState !== "opened" || !state.overview || protocolPathRowsLoading ||
+        protocolPathErrorText.length > 0 || !state.protocolPathStatsByMode.has(3);
+    }
 
     pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
     const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);

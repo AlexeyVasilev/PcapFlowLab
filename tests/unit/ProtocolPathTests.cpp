@@ -14,6 +14,7 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SessionFormatting.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -748,6 +749,21 @@ void expect_registry_view_interning() {
     PFL_EXPECT(format_protocol_path(*stored_gre_key) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
     PFL_EXPECT(format_protocol_path(*stored_esp) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
     PFL_EXPECT(format_protocol_path(*stored_other_esp) == "EthernetII -> IPv4 -> ESP(spi=0x11121314)");
+}
+
+void expect_compact_ipv6_address_formatting() {
+    using session_detail::format_ipv6_address_compact;
+    PFL_EXPECT(format_ipv6_address_compact({0x20, 0x01, 0x0d, 0xb8, 0x02, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}) ==
+        "2001:db8:210::1");
+    PFL_EXPECT(format_ipv6_address_compact({}) == "::");
+    PFL_EXPECT(format_ipv6_address_compact({0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6}) ==
+        "2001:db8:1:2:3:4:5:6");
+    PFL_EXPECT(format_ipv6_address_compact({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1}) ==
+        "2001:db8::1:0:1");
+    PFL_EXPECT(format_ipv6_address_compact({0x20, 0x01, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 3}) ==
+        "2001::1:0:0:2:3");
+    PFL_EXPECT(format_ipv6_address_compact({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5}) ==
+        "2001:db8:0:1:2:3:4:5");
 }
 
 void expect_formatting() {
@@ -1946,12 +1962,7 @@ void expect_ip_context_tree_maps_outer_ipv6_without_decorating_terminal_ipv4() {
         PFL_EXPECT(outer->non_terminal_ip_context_level == NonTerminalIpLevel::ipv6(
             std::array<std::uint8_t, 16> {0x20, 0x01, 0x0d, 0xb8, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
             std::array<std::uint8_t, 16> {0x20, 0x01, 0x0d, 0xb8, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}));
-        const auto has_address = [&](const std::string_view compressed, const std::string_view expanded) {
-            return outer->layer_text.find(compressed) != std::string::npos ||
-                outer->layer_text.find(expanded) != std::string::npos;
-        };
-        PFL_EXPECT(has_address("2001:db8:60::1", "2001:0db8:0060:0000:0000:0000:0000:0001"));
-        PFL_EXPECT(has_address("2001:db8:60::2", "2001:0db8:0060:0000:0000:0000:0000:0002"));
+        PFL_EXPECT(outer->layer_text == "IPv6 [2001:db8:60::1 <-> 2001:db8:60::2]");
     }
     const auto* terminal = find_context_stats_row(summary, "EthernetII -> IPv6 -> IPv4", "IPv4");
     PFL_EXPECT(terminal != nullptr);
@@ -3529,6 +3540,7 @@ void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_pa
 }  // namespace
 
 void run_protocol_path_tests() {
+    expect_compact_ipv6_address_formatting();
     expect_layer_key_equality();
     expect_protocol_path_ordered_equality();
     expect_identifier_differences();

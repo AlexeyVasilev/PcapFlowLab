@@ -115,6 +115,7 @@ std::string format_tcp_flags_text(std::uint8_t flags);
 std::string format_ipv4_address(std::uint32_t address);
 std::string format_ipv4_address(const std::array<std::uint8_t, 4>& address);
 std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address);
+std::string format_ipv6_address_compact(const std::array<std::uint8_t, 16>& address);
 std::string format_endpoint(const EndpointKeyV4& endpoint);
 std::string format_endpoint(const EndpointKeyV6& endpoint);
 std::string format_arp_hardware_address(std::span<const std::uint8_t> address);

@@ -4076,10 +4076,27 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(ip_context_mode_button != nullptr);
         UI_EXPECT(ip_context_mode_button->property("text").toString() ==
             QStringLiteral("Identity Tree + IP Context"));
+        auto* ip_context_help = named_object(statistics_pane.object.get(), "protocolPathIpContextHelp");
+        UI_REQUIRE(ip_context_help != nullptr);
+        statistics_pane.object->setProperty("protocolPathExpanded", true);
+        statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
         statistics_pane.object->setProperty("statisticsMode", 3);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(ip_context_mode_button->property("checked").toBool());
+        UI_EXPECT(ip_context_help->property("visible").toBool());
+        UI_EXPECT(ip_context_help->property("text").toString() ==
+            QStringLiteral("IP pairs represent bidirectional Flow identity, not packet direction. Terminal Flow IPs remain undecorated."));
         statistics_pane.object->setProperty("statisticsMode", 0);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!ip_context_help->property("visible").toBool());
+        statistics_pane.object->setProperty("statisticsMode", 3);
+        statistics_pane.object->setProperty("protocolPathSectionState",
+            static_cast<int>(MainController::StatisticsSectionRequestState::unavailable));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!ip_context_help->property("visible").toBool());
+        statistics_pane.object->setProperty("statisticsMode", 0);
+        statistics_pane.object->setProperty("protocolPathSectionState", section_not_requested);
+        statistics_pane.object->setProperty("protocolPathExpanded", false);
         auto* protocol_path_export_button = named_object(statistics_pane.object.get(), "protocolPathExportButton");
         UI_REQUIRE(protocol_path_export_button != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
