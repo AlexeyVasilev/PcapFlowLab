@@ -811,6 +811,8 @@ QString protocol_path_selector_mode_label(const ProtocolPathStatisticsMode mode)
         return QStringLiteral("Identity");
     case ProtocolPathStatisticsMode::terminal_paths:
         return QStringLiteral("Terminal");
+    case ProtocolPathStatisticsMode::identity_tree_ip_context:
+        break;
     }
 
     return QStringLiteral("Path");

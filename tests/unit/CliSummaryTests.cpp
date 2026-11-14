@@ -22,6 +22,8 @@ namespace pfl::tests {
 
 namespace {
 
+constexpr auto kIdentityTreeIpContextMode = ProtocolPathStatisticsMode::identity_tree_ip_context;
+
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
@@ -513,7 +515,8 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "--settings <settings.json>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--extended"));
         PFL_EXPECT(contains_text(result.stdout_text, "--protocol-path-tree"));
-        PFL_EXPECT(contains_text(result.stdout_text, "kind-overview|identity-tree|terminal-paths"));
+        PFL_EXPECT(contains_text(result.stdout_text,
+            "kind-overview|identity-tree|identity-tree-ip-context|terminal-paths"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-index <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-flows-list <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-protocol-path-tree <path>"));
@@ -694,6 +697,20 @@ void expect_summary_dispatch_and_parse_rules() {
         PFL_EXPECT(parse_result.options->protocol_path_mode == ProtocolPathStatisticsMode::terminal_paths);
     }
 
+    for (const std::vector<std::string_view>& args : {
+             std::vector<std::string_view> {"capture.pcap", "--protocol-path-tree",
+                 "--protocol-path-mode", "identity-tree-ip-context"},
+             std::vector<std::string_view> {"capture.pcap", "--out-protocol-path-tree", "tree.txt",
+                 "--protocol-path-mode", "identity-tree-ip-context"},
+         }) {
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(parse_result.ok);
+        PFL_EXPECT(parse_result.options.has_value());
+        if (parse_result.options.has_value()) {
+            PFL_EXPECT(parse_result.options->protocol_path_mode == kIdentityTreeIpContextMode);
+        }
+    }
+
     {
         const std::vector<std::string_view> args {"capture.pcap", "--progress", "on", "--force"};
         const auto parse_result = cli::parse_summary_command_arguments(args);
@@ -807,7 +824,8 @@ void expect_summary_syntax_error_help_behavior() {
         PFL_EXPECT(result.exit_code == 1);
         PFL_EXPECT(result.stdout_text.empty());
         PFL_EXPECT(contains_text(result.stderr_text, "Unknown summary option"));
-        PFL_EXPECT(contains_text(result.stderr_text, "--protocol-path-mode <kind-overview|identity-tree|terminal-paths>"));
+        PFL_EXPECT(contains_text(result.stderr_text,
+            "--protocol-path-mode <kind-overview|identity-tree|identity-tree-ip-context|terminal-paths>"));
     }
 
     {
@@ -1441,6 +1459,88 @@ void expect_protocol_path_summary_execution() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Protocol Path Tree"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Mode: Kind overview"));
     PFL_EXPECT(!contains_text(execution_result.stdout_text, "additional rows not shown"));
+}
+
+void expect_ip_context_tree_cli_stdout_and_export() {
+    const auto capture_path = fixture_path(
+        "parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap");
+    const auto capture_text = capture_path.string();
+    const std::vector<std::string_view> preview_args {
+        "summary", capture_text, "--protocol-path-tree", "--protocol-path-mode", "identity-tree-ip-context"
+    };
+    const auto preview = cli::process_cli_invocation(preview_args);
+    PFL_EXPECT(preview.handled);
+    PFL_EXPECT(preview.exit_code == 0);
+    PFL_EXPECT(contains_text(preview.stdout_text, "Mode: Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(preview.stdout_text, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    PFL_EXPECT(contains_text(preview.stdout_text, "IPv4 [10.60.0.10 <-> 10.60.0.20]"));
+    PFL_EXPECT(contains_text(preview.stdout_text, "\n      IPv4"));
+    PFL_EXPECT(!contains_text(preview.stdout_text, "\n      IPv4 ["));
+
+    const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_ip_context_tree.txt";
+    std::filesystem::remove(output_path);
+    const auto output_text = output_path.string();
+    const std::vector<std::string_view> export_args {
+        "summary", capture_text, "--out-protocol-path-tree", output_text,
+        "--protocol-path-mode", "identity-tree-ip-context"
+    };
+    const auto exported = cli::process_cli_invocation(export_args);
+    PFL_EXPECT(exported.handled);
+    PFL_EXPECT(exported.exit_code == 0);
+    if (exported.exit_code == 0) {
+        std::ifstream stream {output_path, std::ios::binary};
+        PFL_EXPECT(stream.is_open());
+        if (stream.is_open()) {
+            const std::string tree_text {std::istreambuf_iterator<char> {stream},
+                std::istreambuf_iterator<char> {}};
+            PFL_EXPECT(contains_text(tree_text, "Mode: Identity Tree + IP Context"));
+            PFL_EXPECT(contains_text(tree_text, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+            PFL_EXPECT(contains_text(tree_text, "IPv4 [10.60.0.10 <-> 10.60.0.20]"));
+            PFL_EXPECT(contains_text(tree_text, "\n      IPv4"));
+            PFL_EXPECT(!contains_text(tree_text, "\n      IPv4 ["));
+        }
+    }
+}
+
+void expect_ip_context_tree_cli_rejects_discarded_import_metadata() {
+    const auto capture_path = fixture_path(
+        "parsing/ip_encapsulation/13_same_inner_tuple_different_outer_ipv4_tunnels.pcap");
+    const auto settings_path = write_temp_text_file("pfl_cli_ip_context_ignored.json",
+        "{\"ignore_non_terminal_ip_endpoints_when_grouping_flows\":true}");
+    const auto capture_text = capture_path.string();
+    const auto settings_text = settings_path.string();
+    const std::vector<std::string_view> args {
+        "summary", capture_text, "--settings", settings_text,
+        "--protocol-path-tree", "--protocol-path-mode", "identity-tree-ip-context"
+    };
+    const auto result = cli::process_cli_invocation(args);
+    PFL_EXPECT(result.handled);
+    PFL_EXPECT(result.exit_code == 1);
+    PFL_EXPECT(contains_text(result.stderr_text,
+        "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+    PFL_EXPECT(!contains_text(result.stdout_text, "Mode: Identity tree"));
+    PFL_EXPECT(!contains_text(result.stderr_text, "unknown protocol path mode"));
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_ip_context_ignored.idx";
+    std::filesystem::remove(index_path);
+    CaptureSession ignored_session {};
+    const CaptureImportOptions ignored_options {
+        .settings = AnalysisSettings {
+            .ignore_non_terminal_ip_endpoints_when_grouping_flows = true,
+        },
+    };
+    PFL_REQUIRE(ignored_session.open_capture(capture_path, ignored_options));
+    PFL_REQUIRE(ignored_session.save_index(index_path));
+    const auto index_text = index_path.string();
+    const std::vector<std::string_view> index_args {
+        "summary", index_text, "--protocol-path-tree", "--protocol-path-mode", "identity-tree-ip-context"
+    };
+    const auto index_result = cli::process_cli_invocation(index_args);
+    PFL_EXPECT(index_result.handled);
+    PFL_EXPECT(index_result.exit_code == 1);
+    PFL_EXPECT(contains_text(index_result.stderr_text,
+        "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+    PFL_EXPECT(!contains_text(index_result.stdout_text, "Mode: Identity tree"));
 }
 
 void expect_statistics_report_rendering_escaping_contracts() {
@@ -2659,6 +2759,8 @@ void run_cli_summary_tests() {
     expect_top_flow_service_cli_rendering();
     expect_protocol_path_preview_rendering();
     expect_protocol_path_summary_execution();
+    expect_ip_context_tree_cli_stdout_and_export();
+    expect_ip_context_tree_cli_rejects_discarded_import_metadata();
     expect_statistics_report_rendering_escaping_contracts();
     expect_statistics_report_revision19_sections_render_in_markdown_and_html();
     expect_statistics_report_side_output_contracts();

@@ -177,6 +177,8 @@ bool terminal_path_belongs_to_summary_row(
         return protocol_path_has_exact_prefix(terminal_path, row.path);
     case ProtocolPathStatisticsMode::terminal_paths:
         return terminal_path == row.path;
+    case ProtocolPathStatisticsMode::identity_tree_ip_context:
+        return false;
     }
     return false;
 }
@@ -3386,14 +3388,19 @@ CaptureProtocolPathSummary CaptureSession::protocol_path_summary(const ProtocolP
     }
 
     auto summary = uses_v16_storage()
-        ? session_detail::build_protocol_path_summary_from_display_statistics(
-            v16_storage_->fast_statistics_tier.protocol_path_registry,
-            v16_storage_->fast_statistics_tier.protocol_path_display_statistics,
-            v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_flow_count,
-            v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_packet_count,
-            v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_original_bytes,
-            mode
-        )
+        ? (mode == ProtocolPathStatisticsMode::identity_tree_ip_context
+            ? session_detail::build_protocol_path_summary_with_ip_context(
+                v16_storage_->fast_statistics_tier.protocol_path_registry,
+                v16_storage_->fast_statistics_tier.non_terminal_ip_context_registry,
+                v16_storage_->fast_statistics_tier.capture_import_settings,
+                v16_storage_->flows)
+            : session_detail::build_protocol_path_summary_from_display_statistics(
+                v16_storage_->fast_statistics_tier.protocol_path_registry,
+                v16_storage_->fast_statistics_tier.protocol_path_display_statistics,
+                v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_flow_count,
+                v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_packet_count,
+                v16_storage_->fast_statistics_tier.capture_statistics_snapshot.total_original_bytes,
+                mode))
         : session_detail::build_protocol_path_summary(state_, listed_connections(), mode);
     if (cache_index < protocol_path_summary_cache_.size()) {
         protocol_path_summary_cache_[cache_index] = summary;
@@ -3410,7 +3417,7 @@ std::vector<FlowIndex> CaptureSession::protocol_path_summary_flow_indices(
     }
 
     const auto cache_index = static_cast<std::size_t>(mode);
-    if (uses_v16_storage()) {
+    if (uses_v16_storage() && mode != ProtocolPathStatisticsMode::identity_tree_ip_context) {
         const auto summary = protocol_path_summary(mode);
         const auto row_it = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const ProtocolPathStatisticsRow& row) {
             return row.node_id == node_id;
@@ -3439,11 +3446,7 @@ std::vector<FlowIndex> CaptureSession::protocol_path_summary_flow_indices(
     }
 
     if (cache_index < protocol_path_summary_cache_.size() && !protocol_path_summary_cache_[cache_index].has_value()) {
-        protocol_path_summary_cache_[cache_index] = session_detail::build_protocol_path_summary(
-            state_,
-            listed_connections(),
-            mode
-        );
+        (void)protocol_path_summary(mode);
     }
     if (cache_index >= protocol_path_summary_cache_.size() || !protocol_path_summary_cache_[cache_index].has_value()) {
         return {};
@@ -7272,8 +7275,18 @@ bool CaptureSession::export_protocol_path_tree_text(
         return false;
     }
 
+    const auto summary = protocol_path_summary(mode);
+    if (summary.status != ProtocolPathStatisticsStatus::ok) {
+        if (out_error_text != nullptr) {
+            *out_error_text = summary.status == ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable
+                ? "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."
+                : "Non-terminal IP context metadata is missing or inconsistent.";
+        }
+        return false;
+    }
+
     return session_detail::export_protocol_path_tree_text(
-        protocol_path_summary(mode),
+        summary,
         output_path,
         overwrite_policy,
         out_error_text

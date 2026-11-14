@@ -40,6 +40,8 @@ std::string protocol_path_statistics_mode_text(const ProtocolPathStatisticsMode 
     switch (mode) {
     case ProtocolPathStatisticsMode::identity_tree:
         return "Identity tree";
+    case ProtocolPathStatisticsMode::identity_tree_ip_context:
+        return "Identity Tree + IP Context";
     case ProtocolPathStatisticsMode::terminal_paths:
         return "Terminal paths";
     case ProtocolPathStatisticsMode::kind_overview:

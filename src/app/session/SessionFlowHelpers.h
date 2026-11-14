@@ -12,6 +12,10 @@
 #include "core/index/CaptureIndexV16.h"
 #include "core/services/AnalysisSettings.h"
 
+namespace pfl::detail {
+struct CaptureIndexV16FastStatisticsTier;
+}
+
 namespace pfl::session_detail {
 
 struct ListedConnectionRef {
@@ -209,6 +213,16 @@ CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,
     const std::vector<ListedConnectionRef>& connections,
     ProtocolPathStatisticsMode mode
+);
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    const CaptureImportSettingsSnapshot& import_settings,
+    std::span<const CanonicalFlowMetadata> flows
+);
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16MetadataTier& metadata
 );
 
 }  // namespace pfl::session_detail

@@ -2796,7 +2796,9 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
         return make_c_string("[]");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -2804,6 +2806,23 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     return make_c_string(protocol_path_statistics_json(
         handle->adapter.get_protocol_path_statistics(statistics_mode)
     ));
+}
+
+std::uint8_t pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode
+) {
+    if (handle == nullptr) {
+        return static_cast<std::uint8_t>(pfl::ProtocolPathStatisticsStatus::missing_non_terminal_ip_context);
+    }
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
+            ? pfl::ProtocolPathStatisticsMode::identity_tree
+            : mode == 2U
+                ? pfl::ProtocolPathStatisticsMode::terminal_paths
+                : pfl::ProtocolPathStatisticsMode::kind_overview;
+    return static_cast<std::uint8_t>(handle->adapter.get_protocol_path_statistics_status(statistics_mode));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
@@ -2815,7 +2834,9 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
         return make_c_string("[]");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -2834,7 +2855,9 @@ char* pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_js
         return make_c_string(structured_protocol_path_row_json({}));
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -3592,7 +3615,9 @@ char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Invalid export request.\"}");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths

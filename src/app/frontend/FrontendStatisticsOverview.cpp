@@ -1055,6 +1055,7 @@ std::vector<FrontendProtocolPathStatsDto> build_frontend_protocol_path_statistic
             .node_id = row.node_id,
             .parent_node_id = row.parent_node_id,
             .depth = row.depth,
+            .non_terminal_ip_context_level = row.non_terminal_ip_context_level,
             .layer_text = row.layer_text,
             .path_text = row.path_text,
             .compact_text = row.compact_text,

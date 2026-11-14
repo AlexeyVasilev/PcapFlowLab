@@ -405,6 +405,7 @@ struct FrontendProtocolPathStatsDto {
     std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
     std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
     std::size_t depth {0};
+    std::optional<NonTerminalIpLevel> non_terminal_ip_context_level {};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};

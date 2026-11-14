@@ -314,6 +314,13 @@ enum class ProtocolPathStatisticsMode : std::uint8_t {
     kind_overview = 0,
     identity_tree = 1,
     terminal_paths = 2,
+    identity_tree_ip_context = 3,
+};
+
+enum class ProtocolPathStatisticsStatus : std::uint8_t {
+    ok = 0,
+    non_terminal_ip_metadata_unavailable,
+    missing_non_terminal_ip_context,
 };
 
 inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
@@ -450,6 +457,7 @@ struct ProtocolPathStatisticsRow {
     std::size_t depth {0};
     LayerKey layer {};
     ProtocolPath path {};
+    std::optional<NonTerminalIpLevel> non_terminal_ip_context_level {};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
@@ -474,6 +482,7 @@ struct ProtocolPathStatisticsNodeMembershipRange {
 
 struct CaptureProtocolPathSummary {
     ProtocolPathStatisticsMode mode {ProtocolPathStatisticsMode::kind_overview};
+    ProtocolPathStatisticsStatus status {ProtocolPathStatisticsStatus::ok};
     std::uint64_t total_flow_count {0};
     std::uint64_t total_packet_count {0};
     std::uint64_t total_original_byte_count {0};

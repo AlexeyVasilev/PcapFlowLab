@@ -46,6 +46,10 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode
 );
+std::uint8_t pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode
+);
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,
