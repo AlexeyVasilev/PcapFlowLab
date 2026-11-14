@@ -4071,6 +4071,15 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "ipFragmentationStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolPathStatisticsToggleButton") != nullptr);
+        auto* ip_context_mode_button = named_object(
+            statistics_pane.object.get(), "protocolPathStatsModeIdentityTreeIpContextButton");
+        UI_REQUIRE(ip_context_mode_button != nullptr);
+        UI_EXPECT(ip_context_mode_button->property("text").toString() ==
+            QStringLiteral("Identity Tree + IP Context"));
+        statistics_pane.object->setProperty("statisticsMode", 3);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(ip_context_mode_button->property("checked").toBool());
+        statistics_pane.object->setProperty("statisticsMode", 0);
         auto* protocol_path_export_button = named_object(statistics_pane.object.get(), "protocolPathExportButton");
         UI_REQUIRE(protocol_path_export_button != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
@@ -4960,6 +4969,104 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
+
+    run_ui_section("protocol_path_ip_context_statistics", [&]() {
+        const auto capture_path = ui_test_root() / "data" / "parsing" / "ip_encapsulation" /
+            "13_same_inner_tuple_different_outer_ipv4_tunnels.pcap";
+        MainController controller {};
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_REQUIRE(open_capture_and_wait(app, controller, capture_path));
+        auto* stats_model = qobject_cast<ProtocolPathStatsModel*>(controller.protocolPathStatsModel());
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(stats_model != nullptr);
+        UI_REQUIRE(flow_model != nullptr);
+        controller.setCurrentTabIndex(2);
+        controller.setStatisticsSectionExpanded(protocol_path_section, true);
+        controller.setStatisticsMode(3);
+        UI_EXPECT(controller.statisticsMode() == 3);
+        UI_EXPECT(controller.protocolPathSectionState() == section_ready);
+        UI_EXPECT(stats_model->canExpand());
+        UI_EXPECT(stats_model->rowCount() == 1);
+        stats_model->expandAll();
+        const auto expanded_count = stats_model->rowCount();
+        UI_EXPECT(expanded_count > 1);
+
+        const auto find_layer = [&](const QString& label) {
+            for (int row = 0; row < stats_model->rowCount(); ++row) {
+                if (stats_model->data(stats_model->index(row, 0), ProtocolPathStatsModel::LayerTextRole)
+                        .toString() == label) {
+                    return row;
+                }
+            }
+            return -1;
+        };
+        const auto outer_a = find_layer(QStringLiteral("IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+        const auto outer_b = find_layer(QStringLiteral("IPv4 [192.0.2.61 <-> 198.51.100.61]"));
+        UI_REQUIRE(outer_a >= 0);
+        UI_REQUIRE(outer_b >= 0);
+        UI_EXPECT(outer_a != outer_b);
+        const auto a_node_id = stats_model->data(stats_model->index(outer_a, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        const auto b_node_id = stats_model->data(stats_model->index(outer_b, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        stats_model->selectNode(a_node_id);
+        UI_EXPECT(stats_model->selectedNodeFilterLabel() ==
+            QStringLiteral("Ethernet II -> IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+        controller.showSelectedProtocolPathFlows();
+        const auto a_flows = flow_model->visibleFlowIndices();
+        UI_EXPECT(a_flows.size() == 1U);
+        UI_EXPECT(controller.protocolPathFlowFilterText().contains(
+            QStringLiteral("192.0.2.60 <-> 198.51.100.60")));
+
+        controller.setCurrentTabIndex(2);
+        stats_model->selectNode(b_node_id);
+        UI_EXPECT(stats_model->selectedNodeFilterLabel() ==
+            QStringLiteral("Ethernet II -> IPv4 [192.0.2.61 <-> 198.51.100.61]"));
+        controller.showSelectedProtocolPathFlows();
+        const auto b_flows = flow_model->visibleFlowIndices();
+        UI_EXPECT(b_flows.size() == 1U);
+        UI_EXPECT(a_flows != b_flows);
+
+        controller.setCurrentTabIndex(2);
+        stats_model->collapseAll();
+        UI_EXPECT(stats_model->rowCount() == 1);
+        stats_model->expandAll();
+        UI_EXPECT(stats_model->rowCount() == expanded_count);
+        controller.setStatisticsMode(1);
+        UI_EXPECT(controller.protocolPathSectionState() == section_ready);
+        stats_model->expandAll();
+        const auto structural_outer = find_protocol_path_stats_row_by_path_text(
+            stats_model, QStringLiteral("EthernetII -> IPv4"));
+        UI_REQUIRE(structural_outer >= 0);
+        UI_EXPECT(stats_model->data(stats_model->index(structural_outer, 0),
+            ProtocolPathStatsModel::LayerTextRole).toString() == QStringLiteral("IPv4"));
+
+        MainController ignored {};
+        ignored.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_REQUIRE(open_capture_and_wait(app, ignored, capture_path));
+        ignored.setCurrentTabIndex(2);
+        ignored.setStatisticsSectionExpanded(protocol_path_section, true);
+        ignored.setStatisticsMode(3);
+        UI_EXPECT(ignored.statisticsMode() == 3);
+        UI_EXPECT(ignored.protocolPathSectionState() ==
+            static_cast<int>(MainController::StatisticsSectionRequestState::error));
+        UI_EXPECT(ignored.protocolPathSectionStatusText() == QStringLiteral(
+            "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+        ignored.setStatisticsMode(1);
+        UI_EXPECT(ignored.protocolPathSectionState() == section_ready);
+        UI_EXPECT(!ignored.protocolPathStatistics().isEmpty());
+
+        MainController no_context {};
+        no_context.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_REQUIRE(open_capture_and_wait(app, no_context,
+            ui_test_root() / "data" / "parsing" / "packet_byte_views" / "01_ethernet_ipv4_udp.pcap"));
+        no_context.setCurrentTabIndex(2);
+        no_context.setStatisticsSectionExpanded(protocol_path_section, true);
+        no_context.setStatisticsMode(3);
+        UI_EXPECT(no_context.protocolPathSectionState() == section_ready);
+        UI_EXPECT(no_context.protocolPathSectionStatusText().isEmpty());
+        UI_EXPECT(!no_context.protocolPathStatistics().isEmpty());
+    });
 
     run_ui_section("protocol_path_export_button_wiring", [&]() {
         MainController protocol_path_export_controller {};
@@ -7767,6 +7874,7 @@ int main(int argc, char* argv[]) {
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathKindOverviewModeButton") != nullptr
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathIdentityTreeModeButton") != nullptr
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathTerminalPathsModeButton") != nullptr
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathIdentityTreeIpContextModeButton") == nullptr
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorCancelButton") != nullptr
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorSelectButton") != nullptr;
         }));

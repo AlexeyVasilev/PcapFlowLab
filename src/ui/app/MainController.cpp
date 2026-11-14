@@ -77,6 +77,7 @@ constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
 constexpr int kProtocolPathStatisticsModeKindOverview = 0;
 constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
 constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
+constexpr int kProtocolPathStatisticsModeIdentityTreeIpContext = 3;
 constexpr std::size_t kTopSummaryLimit = 5U;
 constexpr std::size_t kStatisticsReportTopEndpointPortLimit = kCaptureStatisticsSnapshotTopEndpointCapacity;
 constexpr std::size_t kInitialPacketRows = 30U;
@@ -1268,6 +1269,8 @@ ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode
     switch (mode) {
     case kProtocolPathStatisticsModeIdentityTree:
         return ProtocolPathStatisticsMode::identity_tree;
+    case kProtocolPathStatisticsModeIdentityTreeIpContext:
+        return ProtocolPathStatisticsMode::identity_tree_ip_context;
     case kProtocolPathStatisticsModeTerminalPaths:
         return ProtocolPathStatisticsMode::terminal_paths;
     case kProtocolPathStatisticsModeKindOverview:
@@ -1280,6 +1283,8 @@ QString protocol_path_statistics_mode_label(const ProtocolPathStatisticsMode mod
     switch (mode) {
     case ProtocolPathStatisticsMode::identity_tree:
         return QStringLiteral("Identity tree");
+    case ProtocolPathStatisticsMode::identity_tree_ip_context:
+        return QStringLiteral("Identity Tree + IP Context");
     case ProtocolPathStatisticsMode::terminal_paths:
         return QStringLiteral("Terminal paths");
     case ProtocolPathStatisticsMode::kind_overview:
@@ -6279,7 +6284,8 @@ void MainController::ensureProtocolPathSectionLoaded() {
     }
 
     const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
-    if (protocol_path_section_state_ == StatisticsSectionRequestState::ready &&
+    if ((protocol_path_section_state_ == StatisticsSectionRequestState::ready ||
+         protocol_path_section_state_ == StatisticsSectionRequestState::error) &&
         loaded_protocol_path_statistics_mode_ == statistics_mode_) {
         return;
     }
@@ -6289,6 +6295,14 @@ void MainController::ensureProtocolPathSectionLoaded() {
     protocol_path_summary_ = session_.protocol_path_summary(current_mode);
     protocol_path_stats_model_.refresh(protocol_path_summary_);
     loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    if (protocol_path_summary_.status != ProtocolPathStatisticsStatus::ok) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::error,
+            protocol_path_summary_.status == ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable
+                ? QStringLiteral("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.")
+                : QStringLiteral("Non-terminal IP context metadata is missing or inconsistent."));
+        emit stateChanged();
+        return;
+    }
     setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }
@@ -6473,11 +6487,7 @@ void MainController::setFlowDetailsTabIndex(const int index) {
 }
 
 void MainController::setStatisticsMode(const int mode) {
-    const int normalizedMode = (mode == kProtocolPathStatisticsModeIdentityTree)
-        ? kProtocolPathStatisticsModeIdentityTree
-        : (mode == kProtocolPathStatisticsModeTerminalPaths
-            ? kProtocolPathStatisticsModeTerminalPaths
-            : kProtocolPathStatisticsModeKindOverview);
+    const int normalizedMode = static_cast<int>(protocol_path_statistics_mode_from_int(mode));
 
     if (statistics_mode_ == normalizedMode) {
         return;

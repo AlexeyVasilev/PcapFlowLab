@@ -3717,6 +3717,7 @@
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
+    protocolPathStatsModeIdentityTreeIpContext: document.getElementById("protocolPathStatsModeIdentityTreeIpContext"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
     protocolPathExportButton: document.getElementById("protocolPathExportButton"),
@@ -4242,6 +4243,11 @@
     return Number(state.protocolPathStatsMode ?? state.overview?.protocol_path_statistics_default_mode ?? 0);
   }
 
+  function normalizeProtocolPathStatsMode(mode) {
+    const value = Number(mode);
+    return value === 1 || value === 2 || value === 3 ? value : 0;
+  }
+
   function currentProtocolPathStatsRows() {
     const protocolPathMode = currentProtocolPathMode();
     const rows = state.protocolPathStatsByMode.get(protocolPathMode);
@@ -4253,6 +4259,9 @@
     if (normalizedMode === 1) {
       return "Identity tree";
     }
+    if (normalizedMode === 3) {
+      return "Identity Tree + IP Context";
+    }
     if (normalizedMode === 2) {
       return "Terminal paths";
     }
@@ -4262,7 +4271,22 @@
   function protocolPathRowFilterLabel(row, mode) {
     const pathText = String(row?.path_text || "").trim();
     const layerText = String(row?.layer_text || "").trim();
-    const suffix = pathText.length > 0 ? pathText : layerText;
+    let suffix = pathText.length > 0 ? pathText : layerText;
+    if (Number(mode) === 3 && row) {
+      const rows = currentProtocolPathStatsRows();
+      const labels = [layerText];
+      let parentId = Number(row.parent_node_id);
+      for (let index = rows.indexOf(row) - 1; index >= 0 && parentId > 0; index -= 1) {
+        const candidate = rows[index];
+        if (Number(candidate?.node_id) === parentId) {
+          labels.push(String(candidate.layer_text || "").trim());
+          parentId = Number(candidate.parent_node_id);
+        }
+      }
+      if (labels.length > 0) {
+        suffix = labels.reverse().join(" -> ");
+      }
+    }
     return suffix.length > 0
       ? `${protocolPathModeLabel(mode)} / ${suffix}`
       : protocolPathModeLabel(mode);
@@ -5930,7 +5954,7 @@
   }
 
   function syncProtocolPathSectionRequestState(mode = currentProtocolPathMode()) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (state.protocolPathStatsPendingByMode.has(normalizedMode)) {
       setStatisticsSectionRequestState(statisticsSectionKeys.protocolPath, statisticsSectionRequestStates.loading);
       return;
@@ -5948,7 +5972,7 @@
   }
 
   async function ensureProtocolPathStatsLoaded(mode = currentProtocolPathMode()) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (state.openState !== "opened" || !state.overview) {
       return [];
     }
@@ -5997,7 +6021,11 @@
           return [];
         }
 
-        const errorText = `Failed to load protocol-path statistics: ${String(error)}`;
+        const rawError = String(error);
+        const errorText = normalizedMode === 3 && (
+          rawError === "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."
+          || rawError === "Non-terminal IP context metadata is missing or inconsistent."
+        ) ? rawError : `Failed to load protocol-path statistics: ${rawError}`;
         state.protocolPathStatsErrorsByMode.set(normalizedMode, errorText);
         if (currentProtocolPathMode() === normalizedMode) {
           setStatisticsSectionRequestState(statisticsSectionKeys.protocolPath, statisticsSectionRequestStates.error, errorText);
@@ -6069,7 +6097,7 @@
   }
 
   async function setProtocolPathStatsMode(mode) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (currentProtocolPathMode() === normalizedMode) {
       if (statisticsSectionEligible(statisticsSectionKeys.protocolPath)) {
         await ensureProtocolPathStatsLoaded(normalizedMode);
@@ -6605,16 +6633,18 @@
 
     elements.protocolPathStatsModeKindOverview?.classList.toggle("is-active", protocolPathMode === 0);
     elements.protocolPathStatsModeIdentityTree?.classList.toggle("is-active", protocolPathMode === 1);
+    elements.protocolPathStatsModeIdentityTreeIpContext?.classList.toggle("is-active", protocolPathMode === 3);
     elements.protocolPathStatsModeTerminalPaths?.classList.toggle("is-active", protocolPathMode === 2);
     elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
     elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
+    elements.protocolPathStatsModeIdentityTreeIpContext?.setAttribute("aria-pressed", protocolPathMode === 3 ? "true" : "false");
     elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
 
     if (elements.protocolPathShowFlowsButton) {
       elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
     }
     if (elements.protocolPathExportButton) {
-      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree();
+      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree() || protocolPathErrorText.length > 0;
     }
     if (elements.protocolPathExpandAllButton) {
       elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
@@ -13416,6 +13446,9 @@
   });
   elements.protocolPathStatsModeIdentityTree?.addEventListener("click", () => {
     void setProtocolPathStatsMode(1);
+  });
+  elements.protocolPathStatsModeIdentityTreeIpContext?.addEventListener("click", () => {
+    void setProtocolPathStatsMode(3);
   });
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
     void setProtocolPathStatsMode(2);

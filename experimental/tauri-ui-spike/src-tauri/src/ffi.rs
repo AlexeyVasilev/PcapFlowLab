@@ -77,6 +77,10 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+    ) -> c_uchar;
     fn pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
@@ -554,6 +558,14 @@ impl CppFrontendSessionAdapter {
     }
 
     pub fn get_protocol_path_statistics(&self, mode: u8) -> Result<Vec<ProtocolPathStatsDto>, String> {
+        if mode == 3 {
+            match unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_status(self.handle, mode) } {
+                1 => return Err("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.".to_string()),
+                2 => return Err("Non-terminal IP context metadata is missing or inconsistent.".to_string()),
+                0 => {}
+                _ => return Err("Protocol Path Statistics are unavailable.".to_string()),
+            }
+        }
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_json(self.handle, mode) };
         parse_json_owned::<Vec<ProtocolPathStatsDto>>(json)
     }

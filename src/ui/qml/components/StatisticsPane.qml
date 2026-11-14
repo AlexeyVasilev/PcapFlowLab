@@ -1527,7 +1527,8 @@ Item {
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        visible: root.protocolPathSectionState === root.requestStateReady
+                        visible: root.protocolPathSectionState === root.requestStateReady ||
+                            (root.statisticsMode === 3 && root.protocolPathSectionState === root.requestStateError)
                         spacing: 8
 
                         RowLayout {
@@ -1590,6 +1591,17 @@ Item {
                                     }
 
                                     ProtocolPathModeButton {
+                                        objectName: "protocolPathStatsModeIdentityTreeIpContextButton"
+                                        text: "Identity Tree + IP Context"
+                                        checked: root.statisticsMode === 3
+                                        ButtonGroup.group: protocolPathStatsModeGroup
+                                        onClicked: {
+                                            if (root.statisticsMode !== 3)
+                                                root.statisticsModeChangedByUser(3)
+                                        }
+                                    }
+
+                                    ProtocolPathModeButton {
                                         objectName: "protocolPathStatsModeTerminalPathsButton"
                                         text: "Terminal paths"
                                         checked: root.statisticsMode === 2
@@ -1627,6 +1639,7 @@ Item {
                         }
 
                         FourColumnHeader {
+                            visible: root.protocolPathSectionState === root.requestStateReady
                             firstTitle: root.protocolPathPrimaryColumnTitle
                             secondTitle: "Flows"
                             thirdTitle: "Packets"
