@@ -13,7 +13,9 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/FlowRows.h"
+#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/SummaryCommand.h"
 #include "core/domain/CaptureImportSettings.h"
@@ -1618,6 +1620,102 @@ void expect_statistics_report_rendering_escaping_contracts() {
     PFL_EXPECT(!contains_text(html, "<script>"));
 }
 
+void expect_statistics_report_protocol_path_selection_and_rendering() {
+    FrontendStatisticsReportInput input {};
+    input.protocol_path_tree = FrontendStatisticsReportProtocolPathTree {
+        .mode = ProtocolPathStatisticsMode::identity_tree_ip_context,
+        .rows = {
+            FrontendProtocolPathStatsDto {
+                .depth = 1U,
+                .layer_text = "IPv4 [192.0.2.60 <-> 198.51.100.60]",
+                .flow_count_text = "1",
+                .packet_count_text = "2",
+                .original_byte_count_text = "200 B",
+            },
+            FrontendProtocolPathStatsDto {
+                .depth = 1U,
+                .layer_text = "IPv6 [2001:db8:210::1 <-> 2001:db8:210::2]",
+            },
+            FrontendProtocolPathStatsDto {
+                .depth = 1U,
+                .layer_text = "IPv4 <script>alert(1)</script>",
+            },
+        },
+        .notes = {"IP pairs represent bidirectional Flow identity, not packet direction. Terminal Flow IPs remain undecorated."},
+    };
+    const auto enriched_report = build_frontend_statistics_report_data(input);
+    PFL_EXPECT(std::count_if(enriched_report.sections.begin(), enriched_report.sections.end(),
+        [](const auto& section) { return section.title.starts_with("Protocol Path Statistics - "); }) == 1);
+    const auto enriched_markdown = render_frontend_statistics_report_markdown(enriched_report);
+    const auto enriched_html = render_frontend_statistics_report_html(enriched_report);
+    PFL_EXPECT(contains_text(enriched_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(enriched_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    PFL_EXPECT(contains_text(enriched_markdown, "IPv6 [2001:db8:210::1 <-> 2001:db8:210::2]"));
+    PFL_EXPECT(contains_text(enriched_markdown, "IP pairs represent bidirectional Flow identity, not packet direction."));
+    PFL_EXPECT(!contains_text(enriched_markdown, "## Protocol Path Statistics - Identity Tree\n"));
+    PFL_EXPECT(contains_text(enriched_html, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
+    PFL_EXPECT(contains_text(enriched_html, "IPv4 [192.0.2.60 &lt;-&gt; 198.51.100.60]"));
+    PFL_EXPECT(contains_text(enriched_html, "IPv6 [2001:db8:210::1 &lt;-&gt; 2001:db8:210::2]"));
+    PFL_EXPECT(contains_text(enriched_html, "IPv4 &lt;script&gt;alert(1)&lt;/script&gt;"));
+    PFL_EXPECT(!contains_text(enriched_html, "<script>alert(1)</script>"));
+    PFL_EXPECT(contains_text(enriched_html, "IP pairs represent bidirectional Flow identity, not packet direction."));
+    PFL_EXPECT(!contains_text(enriched_html, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
+
+    input.protocol_path_tree = FrontendStatisticsReportProtocolPathTree {
+        .mode = ProtocolPathStatisticsMode::identity_tree,
+        .rows = {FrontendProtocolPathStatsDto {.layer_text = "IPv4"}},
+        .notes = {"Non-terminal IP metadata was not retained because it was ignored when this capture was imported. The report shows the structural Identity Tree without IP context."},
+    };
+    const auto fallback_report = build_frontend_statistics_report_data(input);
+    PFL_EXPECT(std::count_if(fallback_report.sections.begin(), fallback_report.sections.end(),
+        [](const auto& section) { return section.title.starts_with("Protocol Path Statistics - "); }) == 1);
+    const auto fallback_markdown = render_frontend_statistics_report_markdown(fallback_report);
+    const auto fallback_html = render_frontend_statistics_report_html(fallback_report);
+    PFL_EXPECT(contains_text(fallback_markdown, "## Protocol Path Statistics - Identity Tree\n"));
+    PFL_EXPECT(contains_text(fallback_markdown, "The report shows the structural Identity Tree without IP context."));
+    PFL_EXPECT(contains_text(fallback_markdown, "| IPv4 |"));
+    PFL_EXPECT(!contains_text(fallback_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(fallback_html, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
+    PFL_EXPECT(contains_text(fallback_html, "The report shows the structural Identity Tree without IP context."));
+    PFL_EXPECT(contains_text(fallback_html, "<td>IPv4</td>"));
+    PFL_EXPECT(!contains_text(fallback_html, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
+
+    bool requested_structural = false;
+    const auto corrupt = select_statistics_report_protocol_path_tree([&](const ProtocolPathStatisticsMode mode) {
+        requested_structural = mode == ProtocolPathStatisticsMode::identity_tree;
+        return CaptureProtocolPathSummary {
+            .mode = mode,
+            .status = ProtocolPathStatisticsStatus::missing_non_terminal_ip_context,
+        };
+    });
+    PFL_EXPECT(!corrupt.tree.has_value());
+    PFL_EXPECT(corrupt.error_text == "Non-terminal IP context metadata is missing or inconsistent.");
+    PFL_EXPECT(!requested_structural);
+
+    const auto empty_context = select_statistics_report_protocol_path_tree([&](const ProtocolPathStatisticsMode mode) {
+        requested_structural = mode == ProtocolPathStatisticsMode::identity_tree;
+        return CaptureProtocolPathSummary {.mode = mode};
+    });
+    PFL_REQUIRE(empty_context.tree.has_value());
+    PFL_EXPECT(empty_context.tree->mode == ProtocolPathStatisticsMode::identity_tree_ip_context);
+    PFL_EXPECT(empty_context.tree->rows.empty());
+    PFL_EXPECT(!requested_structural);
+
+    requested_structural = false;
+    const auto ignored = select_statistics_report_protocol_path_tree([&](const ProtocolPathStatisticsMode mode) {
+        requested_structural = requested_structural || mode == ProtocolPathStatisticsMode::identity_tree;
+        return CaptureProtocolPathSummary {
+            .mode = mode,
+            .status = mode == ProtocolPathStatisticsMode::identity_tree_ip_context
+                ? ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable
+                : ProtocolPathStatisticsStatus::ok,
+        };
+    });
+    PFL_REQUIRE(ignored.tree.has_value());
+    PFL_EXPECT(ignored.tree->mode == ProtocolPathStatisticsMode::identity_tree);
+    PFL_EXPECT(requested_structural);
+}
+
 void expect_statistics_report_revision19_sections_render_in_markdown_and_html() {
     FrontendStatisticsReportInput input {};
     input.metadata = FrontendStatisticsReportMetadata {
@@ -1770,6 +1868,95 @@ void expect_statistics_report_revision19_sections_render_in_markdown_and_html() 
     PFL_EXPECT(!contains_text(html, "aggressive <fast>"));
 }
 
+void expect_statistics_report_ip_context_cli_raw_and_index() {
+    const auto fixture = fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap");
+    const auto capture_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_source.pcap";
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report.idx";
+    const auto raw_markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_raw.md";
+    const auto raw_html_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_raw.html";
+    const auto index_markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_index.md";
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(raw_markdown_path);
+    std::filesystem::remove(raw_html_path);
+    std::filesystem::remove(index_markdown_path);
+    PFL_REQUIRE(std::filesystem::copy_file(fixture, capture_path, std::filesystem::copy_options::overwrite_existing));
+
+    cli::SummaryCommandOptions raw_options {};
+    raw_options.input_path = capture_path;
+    raw_options.protocol_path_mode = ProtocolPathStatisticsMode::terminal_paths;
+    raw_options.out_statistics_markdown_path = raw_markdown_path;
+    raw_options.out_statistics_html_path = raw_html_path;
+    const auto raw_result = cli::execute_summary_command(raw_options);
+    PFL_REQUIRE(raw_result.exit_code == 0);
+    const auto raw_markdown = read_text_file(raw_markdown_path);
+    const auto raw_html = read_text_file(raw_html_path);
+    PFL_EXPECT(contains_text(raw_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(raw_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    PFL_EXPECT(contains_text(raw_markdown, "IP pairs represent bidirectional Flow identity, not packet direction."));
+    PFL_EXPECT(contains_text(raw_html, "IPv4 [192.0.2.60 &lt;-&gt; 198.51.100.60]"));
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path));
+        PFL_REQUIRE(session.save_index(index_path));
+    }
+    std::filesystem::remove(capture_path);
+
+    cli::SummaryCommandOptions index_options {};
+    index_options.input_path = index_path;
+    index_options.protocol_path_mode = ProtocolPathStatisticsMode::terminal_paths;
+    index_options.out_statistics_markdown_path = index_markdown_path;
+    const auto index_result = cli::execute_summary_command(index_options);
+    PFL_REQUIRE(index_result.exit_code == 0);
+    const auto index_markdown = read_text_file(index_markdown_path);
+    PFL_EXPECT(contains_text(index_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(index_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    const auto ignored_capture_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.pcap";
+    const auto ignored_index_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.idx";
+    const auto ignored_raw_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored_raw.md";
+    const auto ignored_index_report_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored_index.md";
+    const auto settings_path = write_temp_text_file("pfl_cli_context_report_ignored_settings.json",
+        "{\"ignore_non_terminal_ip_endpoints_when_grouping_flows\":true}");
+    std::filesystem::remove(ignored_index_path);
+    std::filesystem::remove(ignored_raw_path);
+    std::filesystem::remove(ignored_index_report_path);
+    PFL_REQUIRE(std::filesystem::copy_file(fixture, ignored_capture_path,
+        std::filesystem::copy_options::overwrite_existing));
+
+    cli::SummaryCommandOptions ignored_raw_options {};
+    ignored_raw_options.input_path = ignored_capture_path;
+    ignored_raw_options.settings_path = settings_path;
+    ignored_raw_options.out_statistics_markdown_path = ignored_raw_path;
+    const auto ignored_raw_result = cli::execute_summary_command(ignored_raw_options);
+    PFL_REQUIRE(ignored_raw_result.exit_code == 0);
+    const auto ignored_raw_report = read_text_file(ignored_raw_path);
+    PFL_EXPECT(contains_text(ignored_raw_report, "## Protocol Path Statistics - Identity Tree\n"));
+    PFL_EXPECT(contains_text(ignored_raw_report, "The report shows the structural Identity Tree without IP context."));
+    PFL_EXPECT(!contains_text(ignored_raw_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(!contains_text(ignored_raw_report, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    const CaptureImportOptions ignored_options {
+        .settings = AnalysisSettings {.ignore_non_terminal_ip_endpoints_when_grouping_flows = true},
+    };
+    {
+        CaptureSession ignored_session {};
+        PFL_REQUIRE(ignored_session.open_capture(ignored_capture_path, ignored_options));
+        PFL_REQUIRE(ignored_session.save_index(ignored_index_path));
+    }
+    std::filesystem::remove(ignored_capture_path);
+
+    cli::SummaryCommandOptions ignored_index_options {};
+    ignored_index_options.input_path = ignored_index_path;
+    ignored_index_options.out_statistics_markdown_path = ignored_index_report_path;
+    const auto ignored_index_result = cli::execute_summary_command(ignored_index_options);
+    PFL_REQUIRE(ignored_index_result.exit_code == 0);
+    const auto ignored_index_report = read_text_file(ignored_index_report_path);
+    PFL_EXPECT(contains_text(ignored_index_report, "## Protocol Path Statistics - Identity Tree\n"));
+    PFL_EXPECT(contains_text(ignored_index_report, "The report shows the structural Identity Tree without IP context."));
+    PFL_EXPECT(!contains_text(ignored_index_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
+}
+
 void expect_statistics_report_side_output_contracts() {
     const auto capture_path = build_extended_summary_capture_path();
     const auto markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_statistics_report.md";
@@ -1816,7 +2003,7 @@ void expect_statistics_report_side_output_contracts() {
         "## QUIC and TLS",
         "## Top Flows by Original Bytes",
         "## Top Endpoints and Ports",
-        "## Protocol Path Statistics - Identity Tree",
+        "## Protocol Path Statistics - Identity Tree + IP Context",
     };
     const std::vector<std::string_view> html_section_order {
         "<h2>Report Information</h2>",
@@ -1839,7 +2026,7 @@ void expect_statistics_report_side_output_contracts() {
         "<h2>QUIC and TLS</h2>",
         "<h2>Top Flows by Original Bytes</h2>",
         "<h2>Top Endpoints and Ports</h2>",
-        "<h2>Protocol Path Statistics - Identity Tree</h2>",
+        "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>",
     };
 
     PFL_EXPECT(contains_text(markdown, "# PcapFlowLab Statistics Report"));
@@ -1883,7 +2070,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(!contains_text(markdown, "Kind overview"));
     PFL_EXPECT(!contains_text(markdown, "Terminal paths"));
     const auto markdown_protocol_path_position =
-        markdown.rfind("## Protocol Path Statistics - Identity Tree");
+        markdown.rfind("## Protocol Path Statistics - Identity Tree + IP Context");
     PFL_REQUIRE(markdown_protocol_path_position != std::string::npos);
     PFL_EXPECT(markdown.find("\n## ", markdown_protocol_path_position + 1U) == std::string::npos);
 
@@ -1922,7 +2109,7 @@ void expect_statistics_report_side_output_contracts() {
     PFL_EXPECT(!contains_text(html, "Kind overview"));
     PFL_EXPECT(!contains_text(html, "Terminal paths"));
     const auto html_protocol_path_position =
-        html.rfind("<h2>Protocol Path Statistics - Identity Tree</h2>");
+        html.rfind("<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>");
     PFL_REQUIRE(html_protocol_path_position != std::string::npos);
     PFL_EXPECT(html.find("<h2>", html_protocol_path_position + 1U) == std::string::npos);
 
@@ -1998,7 +2185,7 @@ void expect_statistics_report_side_output_contracts() {
         index_markdown,
         std::string {"| Index revision | "} + std::to_string(*loaded_index_revision) + " |"
     ));
-    PFL_EXPECT(contains_text(index_markdown, "Protocol Path Statistics - Identity Tree"));
+    PFL_EXPECT(contains_text(index_markdown, "Protocol Path Statistics - Identity Tree + IP Context"));
     PFL_EXPECT(!contains_text(index_markdown, "Kind overview"));
     PFL_EXPECT(!contains_text(index_markdown, "Terminal paths"));
 
@@ -2762,6 +2949,8 @@ void run_cli_summary_tests() {
     expect_ip_context_tree_cli_stdout_and_export();
     expect_ip_context_tree_cli_rejects_discarded_import_metadata();
     expect_statistics_report_rendering_escaping_contracts();
+    expect_statistics_report_protocol_path_selection_and_rendering();
+    expect_statistics_report_ip_context_cli_raw_and_index();
     expect_statistics_report_revision19_sections_render_in_markdown_and_html();
     expect_statistics_report_side_output_contracts();
     expect_settings_file_contracts();

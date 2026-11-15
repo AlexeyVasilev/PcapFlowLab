@@ -5189,7 +5189,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(markdown_report, "| Generated at |"));
         UI_EXPECT(contains_text(markdown_report, "| Statistics scope | Complete |"));
         UI_EXPECT(!contains_text(markdown_report, "| Index revision |"));
-        UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree"));
+        UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
         UI_EXPECT(!contains_text(markdown_report, "Kind overview"));
         UI_EXPECT(!contains_text(markdown_report, "Terminal paths"));
         UI_EXPECT(contains_text(html_report, "<!doctype html>"));
@@ -5197,7 +5197,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(html_report, "<th>Version</th><td>9.9.9-ui-test</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Client</th><td>Qt</td>"));
         UI_EXPECT(!contains_text(html_report, "<th>Index revision</th>"));
-        UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
+        UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
         UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
         UI_EXPECT(report_controller.protocolHintsSectionState() == section_not_requested);
@@ -5205,6 +5205,18 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(report_controller.quicTlsSectionState() == section_not_requested);
         UI_EXPECT(report_controller.topFlowSectionState() == section_not_requested);
         UI_EXPECT(report_controller.topEndpointPortSectionState() == section_not_requested);
+
+        MainController context_report_controller {};
+        const auto context_capture_path = ui_test_root() / "data" / "parsing" / "ip_encapsulation"
+            / "12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap";
+        UI_REQUIRE(open_capture_and_wait(app, context_report_controller, context_capture_path));
+        const auto context_report_path = std::filesystem::temp_directory_path() / "pfl_ui_context_statistics_report.md";
+        std::filesystem::remove(context_report_path, remove_error);
+        UI_REQUIRE(context_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(context_report_path.wstring())));
+        const auto context_report = read_text_file_text(context_report_path);
+        UI_EXPECT(contains_text(context_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
+        UI_EXPECT(contains_text(context_report, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
 
         const auto missing_directory_report_path =
             std::filesystem::temp_directory_path() / "pfl_ui_missing_statistics_report_dir" / "report.md";
@@ -5263,7 +5275,7 @@ int main(int argc, char* argv[]) {
             index_markdown_report,
             std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
         ));
-        UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));
+        UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
 
         UI_EXPECT(index_report_controller.attachSourceCapture(
             QString::fromStdWString(moved_report_index_source_path.wstring())));

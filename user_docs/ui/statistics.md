@@ -904,7 +904,9 @@ Current full Statistics reports include the main shared Statistics areas:
 - QUIC and TLS;
 - Top Flows by Original Bytes;
 - Top Endpoints and Ports;
-- Protocol Path statistics in Identity tree form.
+- Protocol Path statistics in Identity Tree + IP Context form when retained, or
+  structural Identity Tree form when non-terminal IP metadata was discarded at
+  import.
 
 Use HTML when you want a formatted standalone report that is convenient to open
 in a browser. Use Markdown when you want text-oriented output for technical

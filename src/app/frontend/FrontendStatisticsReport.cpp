@@ -536,16 +536,19 @@ FrontendStatisticsReportSection make_top_flows_section(
     return section;
 }
 
-FrontendStatisticsReportSection make_protocol_path_identity_tree_section(
-    const std::vector<FrontendProtocolPathStatsDto>& rows
+FrontendStatisticsReportSection make_protocol_path_tree_section(
+    const FrontendStatisticsReportProtocolPathTree& tree
 ) {
     FrontendStatisticsReportSection section {
-        .title = "Protocol Path Statistics - Identity Tree",
+        .title = tree.mode == ProtocolPathStatisticsMode::identity_tree_ip_context
+            ? "Protocol Path Statistics - Identity Tree + IP Context"
+            : "Protocol Path Statistics - Identity Tree",
+        .notes = tree.notes,
     };
 
     std::vector<std::vector<std::string>> table_rows {};
-    table_rows.reserve(rows.size());
-    for (const auto& row : rows) {
+    table_rows.reserve(tree.rows.size());
+    for (const auto& row : tree.rows) {
         const std::string_view base_text = !row.layer_text.empty()
             ? std::string_view {row.layer_text}
             : std::string_view {row.path_text};
@@ -804,7 +807,7 @@ FrontendStatisticsReportData build_frontend_statistics_report_data(
     report.sections.push_back(make_quic_tls_section(input.quic_tls_statistics));
     report.sections.push_back(make_top_flows_section(input.top_endpoint_port_statistics));
     report.sections.push_back(make_top_endpoint_port_section(input.top_endpoint_port_statistics));
-    report.sections.push_back(make_protocol_path_identity_tree_section(input.protocol_path_identity_tree));
+    report.sections.push_back(make_protocol_path_tree_section(input.protocol_path_tree));
 
     return report;
 }

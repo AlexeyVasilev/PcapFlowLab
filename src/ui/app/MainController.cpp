@@ -2,6 +2,7 @@
 
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -277,7 +278,8 @@ FrontendOverviewDto build_statistics_report_overview(const CaptureSession& sessi
 FrontendStatisticsReportInput build_statistics_report_input(
     const CaptureSession& session,
     const AnalysisSettings& settings,
-    FrontendStatisticsReportMetadata metadata
+    FrontendStatisticsReportMetadata metadata,
+    FrontendStatisticsReportProtocolPathTree protocol_path_tree
 ) {
     const auto top_summary = session.top_summary(kStatisticsReportTopEndpointPortLimit);
     const auto flow_characteristics = session.flow_characteristics_statistics();
@@ -317,9 +319,7 @@ FrontendStatisticsReportInput build_statistics_report_input(
                 settings
             ),
         },
-        .protocol_path_identity_tree = build_frontend_protocol_path_statistics(
-            session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree)
-        ),
+        .protocol_path_tree = std::move(protocol_path_tree),
     };
 }
 
@@ -5010,6 +5010,13 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    auto path_selection = select_statistics_report_protocol_path_tree(
+        [this](const ProtocolPathStatisticsMode mode) { return session_.protocol_path_summary(mode); });
+    if (!path_selection.tree) {
+        setStatusText(QString::fromStdString(path_selection.error_text), true);
+        return false;
+    }
+
     QSaveFile file(trimmedPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         setStatusText(
@@ -5028,7 +5035,8 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
         .index_revision = session_.loaded_index_revision(),
     };
     const auto report = build_frontend_statistics_report_data(
-        build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata))
+        build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata),
+            std::move(*path_selection.tree))
     );
     const std::string rendered = format == StatisticsReportFormat::html
         ? render_frontend_statistics_report_html(report)

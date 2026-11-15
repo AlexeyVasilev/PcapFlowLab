@@ -2,6 +2,7 @@
 
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -2615,6 +2616,12 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
         return result;
     }
 
+    auto path_selection = get_statistics_report_protocol_path_tree();
+    if (!path_selection.tree) {
+        result.error_text = path_selection.error_text;
+        return result;
+    }
+
     const auto overview = build_frontend_overview(session_, false);
     FrontendStatisticsReportMetadata metadata {
         .application_name = "Pcap Flow Lab",
@@ -2640,8 +2647,7 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
         .quic_tls_statistics = get_quic_tls_statistics(),
         .top_endpoint_port_statistics =
             get_top_endpoint_port_statistics(kStatisticsReportTopEndpointPortLimit),
-        .protocol_path_identity_tree =
-            get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree),
+        .protocol_path_tree = std::move(*path_selection.tree),
     };
     const auto report = build_frontend_statistics_report_data(input);
 
@@ -2672,6 +2678,14 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
     result.exported = true;
     result.output_path = path_to_string(output_path);
     return result;
+}
+
+FrontendStatisticsReportProtocolPathSelectionResult FrontendSessionAdapter::get_statistics_report_protocol_path_tree() const {
+    if (!session_.has_capture()) {
+        return {.error_text = "No capture is open."};
+    }
+    return select_statistics_report_protocol_path_tree(
+        [this](const ProtocolPathStatisticsMode mode) { return session_.protocol_path_summary(mode); });
 }
 
 std::optional<std::uint32_t> FrontendSessionAdapter::loaded_index_revision() const noexcept {

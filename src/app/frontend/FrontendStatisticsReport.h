@@ -41,6 +41,12 @@ struct FrontendStatisticsReportMetadata {
     std::optional<std::uint32_t> index_revision {};
 };
 
+struct FrontendStatisticsReportProtocolPathTree {
+    ProtocolPathStatisticsMode mode {ProtocolPathStatisticsMode::identity_tree_ip_context};
+    std::vector<FrontendProtocolPathStatsDto> rows {};
+    std::vector<std::string> notes {};
+};
+
 struct FrontendStatisticsReportInput {
     FrontendStatisticsReportMetadata metadata {};
     FrontendOverviewDto overview {};
@@ -53,7 +59,7 @@ struct FrontendStatisticsReportInput {
     FrontendProtocolHintStatisticsDto protocol_hint_statistics {};
     FrontendQuicTlsStatisticsDto quic_tls_statistics {};
     FrontendTopEndpointPortStatisticsDto top_endpoint_port_statistics {};
-    std::vector<FrontendProtocolPathStatsDto> protocol_path_identity_tree {};
+    FrontendStatisticsReportProtocolPathTree protocol_path_tree {};
 };
 
 [[nodiscard]] FrontendStatisticsReportData build_frontend_statistics_report_data(
