@@ -21,6 +21,7 @@ struct FrontendSourceAvailabilityDto {
     bool flow_grouping_ignores_vlan_and_mpls_layers {false};
     bool flow_grouping_ignores_gtpu_teids {false};
     bool flow_grouping_ignores_non_terminal_ip_endpoints {false};
+    std::string flow_grouping_summary_text {};
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
 };

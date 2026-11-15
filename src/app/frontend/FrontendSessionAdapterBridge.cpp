@@ -899,6 +899,7 @@ std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& s
         << "\"flow_grouping_ignores_gtpu_teids\":" << bool_json(source.flow_grouping_ignores_gtpu_teids) << ','
         << "\"flow_grouping_ignores_non_terminal_ip_endpoints\":"
         << bool_json(source.flow_grouping_ignores_non_terminal_ip_endpoints) << ','
+        << "\"flow_grouping_summary_text\":" << json_string(source.flow_grouping_summary_text) << ','
         << "\"active_source_capture_path\":" << json_string(source.active_source_capture_path) << ','
         << "\"expected_source_capture_path\":" << json_string(source.expected_source_capture_path)
         << '}';

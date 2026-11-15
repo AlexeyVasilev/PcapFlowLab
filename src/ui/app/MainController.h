@@ -351,8 +351,7 @@ private:
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
     Q_PROPERTY(bool showFragmentedPacketCountColumn READ showFragmentedPacketCountColumn WRITE setShowFragmentedPacketCountColumn NOTIFY showFragmentedPacketCountColumnChanged)
-    Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
-    Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
+    Q_PROPERTY(QString flowGroupingSummaryText READ flowGroupingSummaryText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(QVariantList supportedProtocolCatalog READ supportedProtocolCatalog CONSTANT)
@@ -660,8 +659,7 @@ public:
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
     [[nodiscard]] bool showFragmentedPacketCountColumn() const noexcept;
-    [[nodiscard]] QString flowGroupingWarningText() const;
-    [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
+    [[nodiscard]] QString flowGroupingSummaryText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] QVariantList supportedProtocolCatalog() const;

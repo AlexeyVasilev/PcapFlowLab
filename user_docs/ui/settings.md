@@ -119,7 +119,7 @@ Lifecycle:
 
 ### VLAN and MPLS flow grouping
 
-`Ignore VLAN and MPLS layers when grouping flows` changes canonical flow
+`Ignore VLAN and MPLS layers` under `Flow grouping` changes canonical flow
 identity during raw-capture import.
 
 Normally, VLAN and MPLS layers participate in the canonical grouping identity.
@@ -137,18 +137,18 @@ It does **not** remove the actual packet-level protocol layers from individual
 packets. Packet bytes and packet summaries can still show the real VLAN or MPLS
 structure carried by that packet.
 
-When a raw capture is reopened with this normalization active, the UI can show
-the current-session banner:
+When a raw capture is reopened with this normalization active, the compact
+current-session provenance line can include:
 
-`VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.`
+`Flow grouping: VLAN/MPLS ignored`
 
-Treat that banner as a description of the grouping state that was actually used
+Treat that line as a description of the grouping state that was actually used
 to build the current raw-capture session, not as a simple mirror of the current
 checkbox.
 
 ### GTP-U TEID grouping
 
-`Ignore GTP-U TEIDs when grouping inner flows` works at the same conceptual
+`Ignore GTP-U TEIDs` under `Flow grouping` works at the same conceptual
 level for inner-flow identity.
 
 When enabled:
@@ -167,7 +167,7 @@ Lifecycle:
 
 ### Non-terminal IP endpoint grouping
 
-`Ignore non-terminal IP endpoints when grouping flows` controls how nested IP
+`Ignore non-terminal IP endpoints` under `Flow grouping` controls how nested IP
 captures are grouped.
 
 By default, non-terminal IPv4 and IPv6 endpoint pairs are part of recognized

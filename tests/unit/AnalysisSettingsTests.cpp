@@ -2,6 +2,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 
 namespace pfl::tests {
@@ -343,6 +344,37 @@ void run_analysis_settings_tests() {
         PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
         PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
         PFL_EXPECT(loaded_session.flow_grouping_ignores_non_terminal_ip_endpoints());
+    }
+
+    {
+        const auto capture_path = fixture_path(
+            "parsing/eoip/26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap"
+        );
+        const auto index_path =
+            std::filesystem::temp_directory_path() / "pfl_flow_grouping_provenance_roundtrip.idx";
+        std::filesystem::remove(index_path);
+        FrontendSessionAdapter adapter {};
+        PFL_EXPECT(adapter.source_availability().flow_grouping_summary_text.empty());
+        auto settings = adapter.get_settings();
+        settings.ignore_vlan_and_mpls_layers_when_grouping_flows = true;
+        settings.ignore_gtpu_teids_when_grouping_inner_flows = true;
+        settings.ignore_non_terminal_ip_endpoints_when_grouping_flows = true;
+        [[maybe_unused]] const auto enabled_settings = adapter.update_settings(settings);
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const std::string expected_summary =
+            "Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored";
+        PFL_EXPECT(adapter.source_availability().flow_grouping_summary_text == expected_summary);
+
+        settings.ignore_vlan_and_mpls_layers_when_grouping_flows = false;
+        settings.ignore_gtpu_teids_when_grouping_inner_flows = false;
+        settings.ignore_non_terminal_ip_endpoints_when_grouping_flows = false;
+        [[maybe_unused]] const auto default_settings = adapter.update_settings(settings);
+        PFL_EXPECT(adapter.source_availability().flow_grouping_summary_text == expected_summary);
+        PFL_REQUIRE(adapter.save_index(index_path).saved);
+
+        FrontendSessionAdapter indexed {};
+        PFL_REQUIRE(indexed.open_capture(index_path).opened);
+        PFL_EXPECT(indexed.source_availability().flow_grouping_summary_text == expected_summary);
     }
 }
 

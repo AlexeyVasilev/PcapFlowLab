@@ -2143,6 +2143,10 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
         .flow_grouping_ignores_vlan_and_mpls_layers = session_.flow_grouping_ignores_vlan_and_mpls_layers(),
         .flow_grouping_ignores_gtpu_teids = session_.flow_grouping_ignores_gtpu_teids(),
         .flow_grouping_ignores_non_terminal_ip_endpoints = session_.flow_grouping_ignores_non_terminal_ip_endpoints(),
+        .flow_grouping_summary_text = session_.has_capture() ? format_frontend_flow_grouping_summary(
+            session_.flow_grouping_ignores_vlan_and_mpls_layers(),
+            session_.flow_grouping_ignores_gtpu_teids(),
+            session_.flow_grouping_ignores_non_terminal_ip_endpoints()) : std::string {},
         .active_source_capture_path = path_to_string(session_.attached_source_capture_path()),
         .expected_source_capture_path = path_to_string(session_.expected_source_capture_path()),
     };
@@ -2264,6 +2268,10 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::fi
                 .flow_grouping_ignores_gtpu_teids = worker_session.flow_grouping_ignores_gtpu_teids(),
                 .flow_grouping_ignores_non_terminal_ip_endpoints =
                     worker_session.flow_grouping_ignores_non_terminal_ip_endpoints(),
+                .flow_grouping_summary_text = format_frontend_flow_grouping_summary(
+                    worker_session.flow_grouping_ignores_vlan_and_mpls_layers(),
+                    worker_session.flow_grouping_ignores_gtpu_teids(),
+                    worker_session.flow_grouping_ignores_non_terminal_ip_endpoints()),
                 .active_source_capture_path = path_to_string(worker_session.attached_source_capture_path()),
                 .expected_source_capture_path = path_to_string(worker_session.expected_source_capture_path()),
             };

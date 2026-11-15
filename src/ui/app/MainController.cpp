@@ -4277,24 +4277,15 @@ QString MainController::debugInformationText() const {
     return QString::fromStdString(format_session_diagnostics_text(snapshot));
 }
 
-QString MainController::flowGroupingWarningText() const {
+QString MainController::flowGroupingSummaryText() const {
     if (!session_.has_capture()) {
         return {};
     }
 
-    return session_.flow_grouping_ignores_vlan_and_mpls_layers()
-        ? QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.")
-        : QString {};
-}
-
-QString MainController::gtpuTeidGroupingInfoText() const {
-    if (!session_.has_capture()) {
-        return {};
-    }
-
-    return session_.flow_grouping_ignores_gtpu_teids()
-        ? QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.")
-        : QString {};
+    return QString::fromStdString(format_frontend_flow_grouping_summary(
+        session_.flow_grouping_ignores_vlan_and_mpls_layers(),
+        session_.flow_grouping_ignores_gtpu_teids(),
+        session_.flow_grouping_ignores_non_terminal_ip_endpoints()));
 }
 
 QString MainController::selectedFlowWiresharkFilter() const {

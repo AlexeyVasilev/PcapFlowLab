@@ -3509,21 +3509,22 @@ int main(int argc, char* argv[]) {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
         auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
         auto* http_help_text = named_object(settings_pane.object.get(), "httpUsePathAsServiceHintHelpText");
-        auto* vlan_help_text = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText");
-        auto* gtpu_help_text = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText");
-        auto* non_terminal_ip_help_text =
-            named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText");
+        auto* grouping_heading = named_object(settings_pane.object.get(), "flowGroupingHeading");
+        auto* grouping_help_text = named_object(settings_pane.object.get(), "flowGroupingHelpText");
         UI_REQUIRE(settings_tabs != nullptr);
         UI_REQUIRE(http_help_text != nullptr);
-        UI_REQUIRE(vlan_help_text != nullptr);
-        UI_REQUIRE(gtpu_help_text != nullptr);
-        UI_REQUIRE(non_terminal_ip_help_text != nullptr);
+        UI_REQUIRE(grouping_heading != nullptr);
+        UI_REQUIRE(grouping_help_text != nullptr);
         settings_tabs->setProperty("currentIndex", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(http_help_text->property("text").toString() == QStringLiteral("Applied when the next raw capture is opened."));
-        UI_EXPECT(vlan_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
-        UI_EXPECT(gtpu_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
-        UI_EXPECT(non_terminal_ip_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(grouping_heading->property("visible").toBool());
+        UI_EXPECT(grouping_heading->property("text").toString() == QStringLiteral("Flow grouping"));
+        UI_EXPECT(grouping_help_text->property("text").toString() ==
+            QStringLiteral("Applied when importing the next raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText") == nullptr);
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText") == nullptr);
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText") == nullptr);
     });
 
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
@@ -3590,12 +3591,12 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(gtpu_grouping_checkbox->property("checked").toBool());
     });
 
-    run_ui_section("flow_grouping_warning_text", [&]() {
+    run_ui_section("flow_grouping_summary_text", [&]() {
         MainController vlan_grouping_controller {};
         UI_EXPECT(!vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
 
         auto* vlan_grouping_flow_model = qobject_cast<FlowListModel*>(vlan_grouping_controller.flowModel());
         UI_REQUIRE(vlan_grouping_flow_model != nullptr);
@@ -3605,34 +3606,34 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_controller.statusText() ==
             QStringLiteral("Reopen the current raw capture to apply the VLAN and MPLS flow-grouping setting."));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
 
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText() ==
-            QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged."));
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText() ==
+            QStringLiteral("Flow grouping: VLAN/MPLS ignored"));
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 1);
     });
 
-    run_ui_section("flow_grouping_index_warning_text", [&]() {
+    run_ui_section("flow_grouping_index_summary_text", [&]() {
         MainController vlan_grouping_index_controller {};
         UI_EXPECT(!vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingSummaryText().isEmpty());
         vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
         UI_EXPECT(vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingSummaryText().isEmpty());
     });
 
-    run_ui_section("gtpu_teid_grouping_info_text", [&]() {
+    run_ui_section("gtpu_teid_grouping_summary_text", [&]() {
         MainController gtpu_grouping_controller {};
         UI_EXPECT(!gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
 
         auto* gtpu_grouping_flow_model = qobject_cast<FlowListModel*>(gtpu_grouping_controller.flowModel());
         UI_REQUIRE(gtpu_grouping_flow_model != nullptr);
@@ -3642,29 +3643,55 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_controller.statusText() ==
             QStringLiteral("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting."));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 2);
 
         UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText() ==
-            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged."));
-        UI_EXPECT(gtpu_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText() ==
+            QStringLiteral("Flow grouping: GTP-U TEID ignored"));
         UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 1);
     });
 
-    run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
+    run_ui_section("gtpu_teid_grouping_index_summary_text", [&]() {
         const auto gtpu_teid_grouping_info_text =
-            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.");
+            QStringLiteral("Flow grouping: GTP-U TEID ignored");
         MainController gtpu_grouping_index_controller {};
         UI_EXPECT(!gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
+        UI_EXPECT(gtpu_grouping_index_controller.flowGroupingSummaryText() == gtpu_teid_grouping_info_text);
         gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
+        UI_EXPECT(gtpu_grouping_index_controller.flowGroupingSummaryText() == gtpu_teid_grouping_info_text);
+    });
+
+    run_ui_section("flow_grouping_combined_capture_provenance", [&]() {
+        MainController combined_controller {};
+        auto main_window = load_main_qml_component(combined_controller);
+        auto* summary_label = named_object(main_window.object.get(), "flowGroupingSummaryText");
+        UI_REQUIRE(summary_label != nullptr);
+        UI_EXPECT(combined_controller.flowGroupingSummaryText().isEmpty());
+        UI_EXPECT(!summary_label->property("visible").toBool());
+
+        combined_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
+        combined_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        combined_controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_EXPECT(open_capture_and_wait(app, combined_controller, vlan_grouping_capture_path));
+        const auto expected_summary = QStringLiteral(
+            "Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored");
+        UI_EXPECT(combined_controller.flowGroupingSummaryText() == expected_summary);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(summary_label->property("visible").toBool());
+        UI_EXPECT(summary_label->property("text").toString() == expected_summary);
+        UI_EXPECT(find_object_with_text(main_window.object.get(),
+            QStringLiteral("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.")) == nullptr);
+
+        combined_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(false);
+        combined_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(false);
+        combined_controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_EXPECT(combined_controller.flowGroupingSummaryText() == expected_summary);
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {

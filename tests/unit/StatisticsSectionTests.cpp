@@ -3963,6 +3963,15 @@ void expect_session_diagnostics_text_covers_runtime_states() {
 }  // namespace
 
 void run_statistics_section_tests() {
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, false, false).empty());
+    PFL_EXPECT(format_frontend_flow_grouping_summary(true, false, false) ==
+               "Flow grouping: VLAN/MPLS ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, true, false) ==
+               "Flow grouping: GTP-U TEID ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, false, true) ==
+               "Flow grouping: Non-terminal IP ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(true, true, true) ==
+               "Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored");
     expect_shared_statistics_formatting_helpers();
     expect_protocol_hint_statistics_rows_handle_zero_denominators();
     expect_flow_packet_count_histogram_boundaries();

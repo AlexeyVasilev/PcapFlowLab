@@ -10,6 +10,8 @@ pub struct SourceAvailabilityDto {
     pub flow_grouping_ignores_vlan_and_mpls_layers: bool,
     pub flow_grouping_ignores_gtpu_teids: bool,
     pub flow_grouping_ignores_non_terminal_ip_endpoints: bool,
+    #[serde(default)]
+    pub flow_grouping_summary_text: String,
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
 }

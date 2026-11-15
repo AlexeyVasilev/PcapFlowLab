@@ -906,40 +906,14 @@ ApplicationWindow {
             }
         }
 
-        Rectangle {
+        Label {
+            objectName: "flowGroupingSummaryText"
             Layout.fillWidth: true
-            visible: mainController.flowGroupingWarningText.length > 0
-            color: "#dbeafe"
-            border.color: "#93c5fd"
-            radius: 6
-            implicitHeight: flowGroupingWarningLabel.implicitHeight + 16
-
-            Label {
-                id: flowGroupingWarningLabel
-                anchors.fill: parent
-                anchors.margins: 8
-                text: mainController.flowGroupingWarningText
-                color: "#1e3a8a"
-                wrapMode: Text.WordWrap
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            visible: mainController.gtpuTeidGroupingInfoText.length > 0
-            color: "#dbeafe"
-            border.color: "#93c5fd"
-            radius: 6
-            implicitHeight: gtpuGroupingInfoLabel.implicitHeight + 16
-
-            Label {
-                id: gtpuGroupingInfoLabel
-                anchors.fill: parent
-                anchors.margins: 8
-                text: mainController.gtpuTeidGroupingInfoText
-                color: "#1e3a8a"
-                wrapMode: Text.WordWrap
-            }
+            visible: text.length > 0
+            text: mainController.flowGroupingSummaryText
+            color: "#64748b"
+            font.pixelSize: 12
+            wrapMode: Text.WordWrap
         }
 
         TextEdit {

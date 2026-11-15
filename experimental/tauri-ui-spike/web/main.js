@@ -3474,10 +3474,7 @@
     sourceWarningBanner: document.getElementById("sourceWarningBanner"),
     sourceWarningText: document.getElementById("sourceWarningText"),
     sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
-    flowGroupingWarningBanner: document.getElementById("flowGroupingWarningBanner"),
-    flowGroupingWarningText: document.getElementById("flowGroupingWarningText"),
-    gtpuGroupingInfoBanner: document.getElementById("gtpuGroupingInfoBanner"),
-    gtpuGroupingInfoText: document.getElementById("gtpuGroupingInfoText"),
+    flowGroupingSummaryText: document.getElementById("flowGroupingSummaryText"),
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
@@ -4775,6 +4772,7 @@
       flow_grouping_ignores_gtpu_teids: Boolean(sourceAvailability?.flow_grouping_ignores_gtpu_teids),
       flow_grouping_ignores_non_terminal_ip_endpoints:
         Boolean(sourceAvailability?.flow_grouping_ignores_non_terminal_ip_endpoints),
+      flow_grouping_summary_text: String(sourceAvailability?.flow_grouping_summary_text || ""),
       active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
       expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
     };
@@ -8149,40 +8147,12 @@
     elements.partialOpenWarningText.textContent = showBanner ? warningText : "";
   }
 
-  function flowGroupingWarningBannerText() {
-    const availability = currentSourceAvailability();
-    if (state.openState !== "opened") {
-      return "";
-    }
-    if (availability.flow_grouping_ignores_vlan_and_mpls_layers) {
-      return "VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.";
-    }
-    return "";
-  }
-
-  function renderFlowGroupingWarningBanner() {
-    const warningText = flowGroupingWarningBannerText();
-    const showBanner = warningText.length > 0;
-    elements.flowGroupingWarningBanner.classList.toggle("is-visible", showBanner);
-    elements.flowGroupingWarningText.textContent = showBanner ? warningText : "";
-  }
-
-  function gtpuGroupingInfoBannerText() {
-    const availability = currentSourceAvailability();
-    if (state.openState !== "opened") {
-      return "";
-    }
-    if (availability.flow_grouping_ignores_gtpu_teids) {
-      return "GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.";
-    }
-    return "";
-  }
-
-  function renderGtpuGroupingInfoBanner() {
-    const infoText = gtpuGroupingInfoBannerText();
-    const showBanner = infoText.length > 0;
-    elements.gtpuGroupingInfoBanner.classList.toggle("is-visible", showBanner);
-    elements.gtpuGroupingInfoText.textContent = showBanner ? infoText : "";
+  function renderFlowGroupingSummary() {
+    const summary = state.openState === "opened"
+      ? currentSourceAvailability().flow_grouping_summary_text
+      : "";
+    elements.flowGroupingSummaryText.textContent = summary;
+    elements.flowGroupingSummaryText.hidden = summary.length === 0;
   }
 
   function renderStatisticsOverview() {
@@ -10596,8 +10566,7 @@
       ["open state", renderOpenState],
       ["partial-open warning banner", renderPartialOpenWarningBanner],
       ["source warning banner", renderSourceWarningBanner],
-      ["flow-grouping warning banner", renderFlowGroupingWarningBanner],
-      ["gtpu-grouping info banner", renderGtpuGroupingInfoBanner],
+      ["flow-grouping summary", renderFlowGroupingSummary],
       ["status", renderStatus],
     ];
 
