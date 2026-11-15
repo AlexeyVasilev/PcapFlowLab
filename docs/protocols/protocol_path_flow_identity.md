@@ -13,17 +13,20 @@ context is kept only as clearly marked background near the end.
 Canonical recognized-flow identity is conceptually:
 
 ```cpp
-NormalizedEffectiveEndpointTuple + ProtocolPathId
+NormalizedEffectiveEndpointTuple + ProtocolPathId + NonTerminalIpContextId
 ```
 
 Current implementation facts:
 
 - recognized flow grouping uses the normalized effective endpoint tuple plus
-  `protocol_path_id`;
+  `protocol_path_id` and `non_terminal_ip_context_id`;
 - `ProtocolPathRegistry` interns ordered protocol paths at capture scope and
   assigns compact `ProtocolPathId` values;
+- `NonTerminalIpContextRegistry` separately interns canonical ordered
+  non-terminal IPv4/IPv6 endpoint pairs; concrete IP addresses never enter
+  `ProtocolPath`, `LayerKey`, or `ProtocolPathRegistry`;
 - current production key types `FlowKeyV4` / `FlowKeyV6` and normalized
-  `ConnectionKeyV4` / `ConnectionKeyV6` carry `protocol_path_id`;
+  `ConnectionKeyV4` / `ConnectionKeyV6` carry both IDs;
 - namespace-bearing protocol-path identifiers split otherwise identical
   effective tuples where the current parser can extract those identifiers;
 - unrecognized packets do not participate in this protocol-path identity model;
@@ -198,6 +201,8 @@ Current persistence facts verified from code:
 - the stable index stores one capture-level `ProtocolPathRegistry` table;
 - the stable index stores one capture-level non-terminal IP context registry
   table and stores per-flow references to that registry;
+- the stable index preserves the import-settings snapshot that says whether
+  concrete non-terminal context was retained or ignored;
 - packet records do not store full protocol paths or per-packet
   `protocol_path_id`;
 - runtime protocol-path statistics trees are not persisted as precomputed
@@ -218,7 +223,15 @@ Current compatibility policy:
 - reopening an index preserves the grouping semantics already stored in that
   index;
 - current settings do not regroup or reinterpret an existing index according to
-  today's VLAN/MPLS or GTP-U normalization toggles.
+  today's VLAN/MPLS, GTP-U, or non-terminal-IP normalization toggles.
+
+Retained context serves Flow identity, `non_terminal_ip.*` Advanced Filter
+predicates, and the Statistics-only `Identity Tree + IP Context` view. The
+latter decorates structural path layers on demand; it does not change
+`ProtocolPath` identity. When import intentionally ignored context, those
+two post-import consumers report that the metadata is unavailable instead of
+rescanning source packets. See the
+[UI integration contract](../features/non-terminal-ip-ui-integration-rfc.md).
 
 That last point is important: grouping normalization applies to raw capture
 import, not to later index reopen.

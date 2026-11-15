@@ -122,11 +122,15 @@ visibly affects the current workspace.
 
 ### Grouping-setting semantics
 
-The capture-processing grouping settings are:
+Under one `Flow grouping` heading, the capture-processing settings are three
+independent controls:
 
-- `Ignore VLAN and MPLS layers when grouping flows`
-- `Ignore GTP-U TEIDs when grouping inner flows`
-- `Ignore non-terminal IP endpoints when grouping flows`
+- `Ignore VLAN and MPLS layers`
+- `Ignore GTP-U TEIDs`
+- `Ignore non-terminal IP endpoints`
+
+One shared helper note says: `Applied when importing the next raw capture.
+Existing indexes keep their stored flow grouping.`
 
 Shared semantic meaning:
 
@@ -139,20 +143,20 @@ Shared semantic meaning:
 - current runtime settings must not reinterpret or regroup an already opened
   index.
 
-### Grouping banners and limitation messaging
+### Loaded-capture grouping provenance and limitation messaging
 
-Raw-imported sessions may show informational grouping banners when the session
-knows that the currently opened session was actually built with grouping
-normalization enabled.
+Raw captures and indexes use the loaded capture's stored import provenance,
+not the current mutable Settings, for one compact informational line near the
+active session. Only enabled relaxations appear, in stable order:
 
-Index sessions are different:
+```text
+Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored
+```
 
-- the product may explain that loaded indexes preserve stored grouping and are
-  not regrouped by the current runtime setting;
-- the canonical contract does not require index-session grouping-warning banners
-  to be inferred from current checkbox state alone;
-- current index metadata is not the authoritative source of “how this index was
-  originally grouped” in the same way a currently imported raw session can be.
+When none are enabled, no persistent grouping line appears. This line does not
+replace feature-specific messages: Advanced Filter and `Identity Tree + IP
+Context` Statistics still explain when ignored non-terminal context makes a
+requested operation unavailable.
 
 ### Packet-versus-flow identity boundary
 
@@ -396,9 +400,15 @@ The product currently exposes Protocol Path through:
 - Protocol Path Statistics modes:
   - `Kind overview`
   - `Identity tree`
+  - `Identity Tree + IP Context`
   - `Terminal paths`
 - structured `Show flows` / drill-down behavior where supported by the current
   frontend.
+
+The context-decorated mode is Statistics-only. The Advanced Filter Protocol
+Path picker retains its three structural modes. Context pairs represent
+bidirectional Flow identity, not packet direction; terminal Flow IP layers
+remain undecorated.
 
 Qt and Tauri consume shared C++ protocol-path presentation mapping. They are not
 expected to invent independent path semantics.

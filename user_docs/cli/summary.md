@@ -11,9 +11,10 @@ index. Use it when you want a quick answer to questions like:
 It is also the default CLI command. If you pass an input file without naming a
 command, Pcap Flow Lab runs `summary`.
 
-The examples below were captured from the 0.4.0 CLI using the repository
-showcase raw capture. Shell-specific executable prefixes such as `.\` are
-omitted.
+The examples below were captured from the 0.4.0 CLI using an earlier version
+of the repository showcase raw capture. They illustrate the commands and output
+format; totals may differ for the current capture. Shell-specific executable
+prefixes such as `.\` are omitted.
 
 ## Quick start with the showcase capture
 
@@ -77,10 +78,10 @@ This single run demonstrates four things:
 
 The shown values are already enough to answer several practical questions:
 
-- the showcase currently opens as `61` recognized flows across `1 567` packets;
+- that capture opened as `61` recognized flows across `1 567` packets;
 - TCP is the dominant transport family in this capture;
 - most bytes are carried by IPv4 rather than IPv6;
-- only `5` packets remain unrecognized under current product semantics.
+- `5` packets were unrecognized in that run.
 
 ### What the standard summary output means
 
@@ -181,11 +182,11 @@ This workflow shows that:
 - the full Protocol Path Tree can be exported as a side output;
 - this summary workflow does not require packet-byte-backed inspection.
 
-For a current compatible index, standard summary output, `--extended`,
-Protocol Path Tree preview, and Protocol Path Tree export are read from the
-index's fast Statistics tier. This means the command can report summary data
-without opening the original capture file and without scanning later
-flow-detail sections.
+For a current compatible index, standard summary output, `--extended`, and
+Protocol Path Tree preview/export in the three structural modes use the index's
+fast Statistics tier. The IP Context mode instead uses retained Flow/context
+metadata. Neither path needs to open the original capture file or read packet
+bytes for the tree.
 
 When fast summary output shows `Source capture`, that line is the source
 identity recorded in the index. It is not a live check that the original
@@ -391,6 +392,7 @@ The available modes are:
 
 - `kind-overview`
 - `identity-tree`
+- `identity-tree-ip-context`
 - `terminal-paths`
 
 Current default mode:
@@ -399,7 +401,7 @@ Current default mode:
 kind-overview
 ```
 
-These mode descriptions match the verified CLI behavior:
+These modes have the following semantics:
 
 - `kind-overview`
   groups path layers by protocol kind only. Identifier details are normalized
@@ -407,6 +409,12 @@ These mode descriptions match the verified CLI behavior:
 - `identity-tree`
   keeps the full stored path identity, including distinguishing metadata such
   as tunnel identifiers where they are part of the path identity.
+- `identity-tree-ip-context`
+  adds retained non-terminal IP endpoint context beneath the identity tree.
+  It works with a raw capture or a compatible index that retained that metadata;
+  an index does not need source packet bytes for this view. If import settings
+  discarded non-terminal IP context, the CLI reports that it is unavailable
+  rather than silently displaying a different mode.
 - `terminal-paths`
   aggregates by complete terminal path strings rather than rendering a nested
   prefix tree.
@@ -473,8 +481,12 @@ Current verified Markdown report metadata includes:
 The report includes sections such as Report Information, Input, Capture Import
 Settings, Overview, Capture Time, Protocol Summary, Unrecognized Packets,
 packet-size and flow-distribution sections, Detected Protocol Hints, QUIC and
-TLS, top-flow/endpoint/port summaries, and Protocol Path Statistics in Identity
-tree form. The verified HTML report was manually opened and visually checked.
+TLS, top-flow/endpoint/port summaries, and Protocol Path Statistics. The
+complete report selects the enriched Identity Tree + IP Context view when
+retained context is available, independently of `--protocol-path-mode`. When
+context was deliberately ignored during import, it falls back to the ordinary
+Identity Tree; missing required context metadata instead produces an error.
+The earlier verified HTML report was manually opened and visually checked.
 
 Important rules:
 
@@ -579,7 +591,7 @@ The CLI recognizes both `.idx` and `.pflidx` as index file extensions.
 | `--settings` | `<settings.json>` | Apply supported raw-import settings. Valid only for raw capture input. |
 | `--extended` | none | Append additional whole-input statistics sections. |
 | `--protocol-path-tree` | none | Show a Protocol Path Tree preview in stdout. |
-| `--protocol-path-mode` | `kind-overview`, `identity-tree`, `terminal-paths` | Choose the Protocol Path Tree mode. Default is `kind-overview`. |
+| `--protocol-path-mode` | `kind-overview`, `identity-tree`, `identity-tree-ip-context`, `terminal-paths` | Choose the Protocol Path Tree mode. Default is `kind-overview`. |
 | `--out-index` | `<path>` | Save a Pcap Flow Lab index from a raw capture. Invalid for index input. |
 | `--out-flows-list` | `<path>` | Export the complete Flow list as CSV. |
 | `--out-protocol-path-tree` | `<path>` | Export the complete Protocol Path Tree to a text file. |
@@ -607,8 +619,10 @@ For `summary`, an index is meant to be self-sufficient for summary data.
 Unlike byte-backed inspection commands, `summary` does not need
 `--source-capture`.
 
-For a current compatible index, summary-style outputs use the index fast
-Statistics tier when possible. This is a quick metadata read, not a full
+For a current compatible index, basic summary-style outputs use the index fast
+Statistics tier when possible. Mode `identity-tree-ip-context` and complete
+Statistics report export use retained flow/context metadata; they do not read
+source packet bytes. Fast-tier access is a quick metadata read, not a full
 validation of every later flow-detail section in the index.
 
 ## Invalid combinations and errors

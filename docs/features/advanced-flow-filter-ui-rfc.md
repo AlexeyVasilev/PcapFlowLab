@@ -1,6 +1,9 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Time / Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring, and current-filter Smart Export parity for applied Advanced Filter results. The Tauri frontend now implements the same current Advanced Filter workflow slice, including Time and directional Traffic controls plus current-filter Smart Export parity, while broader future work and later polish remain deferred.
+Status: current implemented UI contract. Qt and Tauri implement the shared
+Advanced Filter document workflow, including terminal and non-terminal IP
+criteria, transactional Apply/Cancel/Open/Save/Clear, and current-filter Smart
+Export. Broader future polish remains deferred.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior, current Qt
@@ -258,6 +261,10 @@ Current agreed behavior:
   - Service
   - Protocol Path
   - Contains Layer
+- The single visual `IP addresses` group contains independent `Flow endpoint
+  IPs (terminal)` and `Encapsulation IPs (non-terminal)` subsections. There is
+  no master Enabled toggle; each underlying document section has its own
+  Enabled, Include, and Exclude state.
 - Qt now applies section Enabled state, Include selections, collapsible
   Exclusions, repeated structured Port/IP rule rows, transactional Apply
   validation, and draft Apply/Cancel behavior through
@@ -1014,6 +1021,18 @@ Filter Settings dialog, including Include/Exclude collections, Add/Remove,
 Subnet toggle draft preservation, section Enabled retention, and transactional
 Apply validation.
 
+The terminal subsection uses `Either endpoint`, `Endpoint A`, and `Endpoint B`.
+The non-terminal subsection uses `Outer`, `Intermediate`, and `Any non-terminal
+IP`; each predicate matches either address at a retained context level, not
+Flow A/B orientation. Both subsections use exact IPv4/IPv6 and CIDR rows.
+The non-terminal subsection is a distinct authoritative structured-document
+section despite the shared visual group. It participates in the same
+Open/Save/Apply/Cancel/Clear workflow. Invalid edits are transactional;
+disabling the subsection preserves configured rules. If import discarded
+non-terminal context, current-capture applicability feedback explains why
+active rules cannot run without erasing them or declaring the document invalid.
+See the [integration contract](non-terminal-ip-ui-integration-rfc.md).
+
 ## Service Editor
 
 Service filtering uses one Include section containing:
@@ -1149,6 +1168,9 @@ It exposes exactly these three modes:
 - Kind overview
 - Identity tree
 - Terminal paths
+
+`Identity Tree + IP Context` is a Statistics-only mode and is not offered in
+this Advanced Filter Protocol Path selector.
 
 The UI does not expose a separate user-facing Prefix mode.
 
@@ -1795,6 +1817,7 @@ Representative sections that may have Enabled state include:
 - Time
 - Ports
 - IP addresses
+- Encapsulation IPs (non-terminal), as the second subsection of `IP addresses`
 - Traffic
 - Service
 - Protocol Path

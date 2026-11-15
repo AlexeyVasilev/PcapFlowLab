@@ -96,7 +96,7 @@ different responsibilities.
   Implemented Flow grouping contract for canonical ordered non-terminal IP
   endpoint context.
 - [Non-Terminal IP UI Integration RFC](features/non-terminal-ip-ui-integration-rfc.md)
-  Proposed Advanced Flow Filter, Protocol Path Statistics, and compact
+  Implemented Advanced Flow Filter, Protocol Path Statistics, and compact
   grouping-provenance exposure for retained non-terminal IP Flow identity
   metadata.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)

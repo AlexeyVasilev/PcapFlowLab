@@ -1,8 +1,8 @@
 # Non-Terminal IP UI Integration RFC
 
-Status: proposed feature contract.
+Status: implemented current contract.
 
-This RFC defines how Pcap Flow Lab should expose already-retained
+This RFC defines how Pcap Flow Lab exposes already-retained
 `NonTerminalIpContext` Flow identity metadata through Advanced Flow Filter,
 Protocol Path Statistics, and compact capture-grouping provenance UI.
 
@@ -28,7 +28,7 @@ This feature makes that retained metadata visible and usable after import/open:
 - Protocol Path Statistics can show a context-sensitive identity tree.
 - Qt and Tauri can present compact loaded-capture grouping provenance.
 
-No parser/import/Flow-identity redesign is planned. The feature consumes
+No parser/import/Flow-identity redesign was needed. The feature consumes
 existing metadata after import/open.
 
 ## Non-Goals
@@ -129,17 +129,17 @@ non_terminal_ip.any.include = 10.0.0.1
 non_terminal_ip.any.exclude = 10.0.0.0/8
 ```
 
-Implementation should follow the existing parser punctuation, spacing, ordering,
+The implementation follows the existing parser punctuation, spacing, ordering,
 and canonical formatting conventions used by `.filter` v3.
 
-The new section enabled key should follow current section conventions:
+The section enabled key follows current section conventions:
 
 ```text
 section.non_terminal_ip.enabled = true | false
 ```
 
-All sections default to enabled. Canonical formatting should omit default
-`true` assignments and emit only non-default `false` assignments.
+All sections default to enabled. Canonical formatting omits default
+`true` assignments and emits only non-default `false` assignments.
 
 ## Non-Terminal IP Scopes
 
@@ -201,7 +201,7 @@ The implementation may reuse existing low-level IP/CIDR parsing and matching
 helpers. The non-terminal criteria should remain structurally separate from the
 existing terminal address criteria.
 
-Recommended model direction:
+Implemented model:
 
 ```text
 AdvancedFlowFilterNonTerminalIpScope
@@ -248,10 +248,10 @@ Current filter evaluation supports both:
 - `ListedConnectionRef`;
 - `CanonicalFlowMetadata`.
 
-Both already expose `NonTerminalIpContextId`, but the evaluator currently does
-not receive a context registry.
+Both expose `NonTerminalIpContextId`; the evaluator receives the context
+registry through the evaluation context.
 
-Recommended integration is a lightweight evaluation context/resolver:
+The evaluator uses a lightweight evaluation context/resolver:
 
 ```text
 AdvancedFlowFilterEvaluationContext
@@ -259,7 +259,7 @@ AdvancedFlowFilterEvaluationContext
     non-terminal-IP metadata availability/status
 ```
 
-`CaptureSession` should construct the context from:
+`CaptureSession` constructs the context from:
 
 - raw capture: `CaptureState::non_terminal_ip_context_registry`;
 - index-backed capture: persisted index v20 `NonTerminalIpContextRegistry`.
@@ -300,14 +300,15 @@ Ignore non-terminal IP endpoints when grouping flows = No
 with a capture that simply contains no non-terminal IP levels. In that case the
 filter is valid and naturally matches zero Flows.
 
-Structured Qt/Tauri editors should surface the same backend-owned condition and
-disable or mark the non-terminal-IP section unavailable for that capture.
+Structured Qt/Tauri editors surface the backend-owned condition without
+deleting configured rules. Document validity and current-capture applicability
+are separate.
 
 Do not rescan packets to recover discarded context.
 
 ## Raw/Index Parity
 
-Non-terminal IP filtering must behave identically for:
+Non-terminal IP filtering behaves identically for:
 
 - freshly imported raw capture;
 - reopened compatible index v20.
@@ -315,7 +316,7 @@ Non-terminal IP filtering must behave identically for:
 No original source capture bytes are needed. No packet re-dissection is
 allowed.
 
-Future tests should cover exact raw/index parity for:
+Regression tests cover raw/index parity for:
 
 - IPv4 exact;
 - IPv4 CIDR;
@@ -328,27 +329,32 @@ Future tests should cover exact raw/index parity for:
 
 ## Advanced Filter UI
 
-Qt and Tauri structured editors should expose a new section:
+Qt and Tauri structured editors present one visual group:
 
 ```text
-Non-terminal IP addresses
+IP addresses
+  Flow endpoint IPs (terminal)
+  Encapsulation IPs (non-terminal)
 ```
 
-Rows should follow the existing IP/CIDR editor pattern where practical, but the
-scope choices are:
+Terminal rows offer `Either endpoint`, `Endpoint A`, and `Endpoint B`.
+Non-terminal rows follow the IP/CIDR pattern with these scopes:
 
 - `Outer`;
 - `Intermediate`;
 - `Any non-terminal IP`.
 
-There is no A/B selector.
+There is no A/B selector for non-terminal IPs. Each subsection has its own
+Enabled state and Include/Exclude lists; the visual parent has no master
+Enabled toggle. Backend/document sections remain separate.
 
-The section should participate in the existing document-state, enabled-state,
-include/exclude, Apply/Cancel, Open/Save, and validation workflow.
+The non-terminal section participates in the existing document-state,
+Apply/Cancel, Open/Save, Clear, and transactional validation workflow. Disabled
+sections retain configured rules even when capture metadata is unavailable.
 
 ## Protocol Path Statistics Mode
 
-Add a fourth shared statistics mode:
+The fourth shared statistics mode is:
 
 ```cpp
 ProtocolPathStatisticsMode::identity_tree_ip_context = 3
@@ -362,7 +368,7 @@ identity_tree = 1
 terminal_paths = 2
 ```
 
-Existing modes must not change behavior.
+Existing modes retain their behavior and numeric values.
 
 User-facing label:
 
@@ -370,13 +376,14 @@ User-facing label:
 Identity Tree + IP Context
 ```
 
-The mode is a statistics/presentation composition of:
+The mode is a Statistics-only presentation composition of:
 
 ```text
 ProtocolPath + NonTerminalIpContext
 ```
 
-It does not change `ProtocolPath` itself.
+It does not change `ProtocolPath` itself or add a fourth Advanced Filter
+Protocol Path selector mode; that selector still offers three structural views.
 
 ## Statistics-Only Composite Layer Identity
 
@@ -434,9 +441,8 @@ the path receive concrete endpoint decoration.
 The effective/terminal IP layer is not part of `NonTerminalIpContext` and
 therefore remains undecorated.
 
-If implementation detects metadata/path inconsistency, it must not silently
-attach addresses to an arbitrary IP layer. It should surface an unavailable or
-diagnostic status at the nearest practical boundary.
+Metadata/path inconsistency does not silently attach addresses to an arbitrary
+IP layer; it produces an unavailable/diagnostic status.
 
 Do not modify packet parsing to create a new mapping marker unless later
 implementation proves the current metadata contract insufficient. Current audit
@@ -459,13 +465,13 @@ Focused tests should cover existing supported paths:
 Display canonical non-terminal endpoint pairs as bidirectional identity, not
 traffic direction.
 
-Conceptual Qt/Tauri display:
+Current Qt/Tauri display uses compact address text, including compact IPv6:
 
 ```text
-IPv4 [192.0.2.1 ↔ 192.0.2.2]
+IPv4 [192.0.2.1 <-> 192.0.2.2]
 ```
 
-ASCII text export should use a safe representation:
+Text export uses the same bidirectional identity separator:
 
 ```text
 IPv4 [192.0.2.1 <-> 192.0.2.2]
@@ -519,9 +525,8 @@ ProtocolPathStatisticsRow::path
 
 structural.
 
-Add only the minimum statistics-specific metadata needed for the new mode. A
-recommended direction is for an IP-context-decorated row/node to retain an
-optional `NonTerminalIpLevel` associated with that node.
+The mode keeps only the statistics-specific metadata needed for a decorated
+row/node, including its associated optional `NonTerminalIpLevel`.
 
 Rows already have:
 
@@ -530,23 +535,22 @@ node_id
 parent_node_id
 ```
 
-The implementation should reconstruct the composite ancestor path by walking
-the summary tree. Do not store a complete duplicated `NonTerminalIpContext`
-prefix in every descendant row if parent-node relationships can represent the
-same identity.
+The implementation reconstructs the composite ancestor path by walking the
+summary tree rather than storing a duplicated `NonTerminalIpContext` prefix in
+every descendant row.
 
 Presentation strings may contain enriched display text while structural
 `ProtocolPath` data remains unchanged.
 
 ## Row Selection And Flow List Filtering
 
-Selecting a row in `Identity Tree + IP Context` must filter the Flow List using
+Selecting a row in `Identity Tree + IP Context` filters the Flow List using
 both:
 
 - structural path prefix;
 - relevant IP-context prefix represented by the selected branch.
 
-It must not fall back to structural `ProtocolPath` matching only.
+It does not fall back to structural `ProtocolPath` matching only.
 
 Do not synthesize Advanced Filter text solely to implement statistics
 selection.
@@ -575,7 +579,8 @@ If capture import used:
 Ignore non-terminal IP endpoints when grouping flows = Yes
 ```
 
-then `Identity Tree + IP Context` must be explicitly unavailable.
+then `Identity Tree + IP Context` is explicitly unavailable. The GUI keeps the
+mode visible and explains why; the structural modes remain usable.
 
 Do not silently show ordinary `Identity tree` under the enriched mode name.
 
@@ -586,8 +591,9 @@ Identity Tree + IP Context
 Unavailable: non-terminal IP metadata was not retained for this capture.
 ```
 
-Backend/session API should expose explicit availability/status so Qt, Tauri,
-exports, and other callers do not independently infer this.
+The backend/session API exposes explicit availability/status so Qt, Tauri,
+exports, and other callers do not independently infer this. Interactive
+Statistics does not silently fall back to a structural tree.
 
 If the import setting was `No` but the capture simply contains no non-terminal
 IP levels, the mode is available and may naturally look like an ordinary
@@ -595,7 +601,7 @@ structural tree because there is nothing to decorate.
 
 ## Statistics Performance
 
-The fourth mode must remain lazy/on-demand.
+The fourth mode remains lazy/on-demand.
 
 Use only already-retained:
 
@@ -617,14 +623,14 @@ Do not add an arbitrary cardinality cap without evidence.
 
 ## Qt/Tauri Integration
 
-The new statistics mode and new filter semantics are shared C++ behavior. Qt
+The statistics mode and filter semantics are shared C++ behavior. Qt
 and Tauri remain thin presentation layers.
 
-Both frontends must support mode value `3` explicitly. Do not rely on
+Both frontends support mode value `3` explicitly. Do not rely on
 unknown-mode fallback to `kind_overview`.
 
-Structured Advanced Filter editors in both UIs should expose
-`Non-terminal IP addresses` with:
+Structured Advanced Filter editors in both UIs expose the
+`Encapsulation IPs (non-terminal)` subsection with:
 
 - `Outer`;
 - `Intermediate`;
@@ -633,25 +639,23 @@ Structured Advanced Filter editors in both UIs should expose
 
 ## CLI And Export Scope
 
-The core/session statistics mode should be shared. Qt/Tauri statistics and
-normal Protocol Path text export must understand the new mode.
+The core/session statistics mode is shared. Qt/Tauri Statistics and normal
+Protocol Path text export support it.
 
 Current CLI architecture parses public mode tokens for:
 
 - `kind-overview`;
 - `identity-tree`;
+- `identity-tree-ip-context`;
 - `terminal-paths`.
 
-It also uses shared protocol-path text rendering and has fast-index statistics
-paths that currently request existing modes explicitly.
-
-Product scope for this feature is UI-first. Adding a new public CLI token is
-therefore deferred unless implementation finds it cheap and naturally aligned
-with the shared code changes.
-
-Even if public CLI selection is deferred, all switches/mappings that can
-receive enum value `3` must handle it safely and must not accidentally fall
-back to `kind_overview`.
+`--protocol-path-mode identity-tree-ip-context` applies to explicit Protocol
+Path preview/export. Index-backed mode 3 uses persisted Flow metadata,
+`ProtocolPathRegistry`, `NonTerminalIpContextRegistry`, and import-settings
+provenance without source-packet reads. Modes 0-2 retain the earlier fast path.
+Full Statistics reports independently choose one enriched tree, with a noted
+structural fallback only when context was intentionally ignored at import;
+missing/inconsistent retained context is an error, not a fallback.
 
 ## Capture Grouping Settings UI
 
@@ -659,11 +663,12 @@ The UI must distinguish two concepts.
 
 ### Settings For The Next Raw Capture Import
 
-Group the three identity-normalization settings together:
+The `Flow grouping` block groups three independent identity-normalization
+settings:
 
-- `Ignore VLAN and MPLS layers when grouping flows`;
-- `Ignore GTP-U TEIDs when grouping inner flows`;
-- `Ignore non-terminal IP endpoints when grouping flows`.
+- `Ignore VLAN and MPLS layers`;
+- `Ignore GTP-U TEIDs`;
+- `Ignore non-terminal IP endpoints`.
 
 Use one shared explanatory note for the group:
 
@@ -678,7 +683,9 @@ This is configuration for future raw imports.
 
 ### Provenance Of The Current Opened Capture/Index
 
-Show non-default Flow grouping provenance compactly.
+The session area shows non-default Flow grouping provenance compactly for both
+raw captures and indexes, using their loaded import snapshot rather than
+current editable Settings.
 
 Conceptual example:
 
@@ -688,7 +695,7 @@ Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignore
 
 Only active/non-default grouping relaxations need to occupy persistent space.
 
-If none are active, no persistent grouping warning/status is needed.
+If none are active, no persistent grouping line is shown.
 
 Detailed values can remain available in capture/statistics details. Do not mix
 loaded-capture provenance with the current mutable application Settings values.
@@ -749,9 +756,9 @@ Known relevant fixture families include:
 Do not require new PCAPs unless implementation later finds a genuinely missing
 semantic case.
 
-## Implementation Stages
+## Implementation Record
 
-Keep work in one feature branch with coherent, reviewable commits.
+Stages 1-6 below are complete; stage 7 is documentation synchronization.
 
 ### Stage 1 - RFC Approval
 
@@ -802,16 +809,14 @@ Do not modify historical docs.
 
 ## Documentation Impact
 
-Later implementation stages should update current docs, including:
+Current contracts to keep synchronized include:
 
 - `docs/features/non-terminal-ip-flow-identity-rfc.md`;
 - `docs/features/advanced-flow-filter-rfc.md`;
 - `docs/features/advanced-flow-filter-ui-rfc.md`;
 - `docs/protocols/protocol_path_flow_identity.md`;
 - `docs/ui/presentation_contract.md`;
-- relevant `user_docs/**` pages after UI behavior exists.
-
-Do not update end-user docs during this RFC-only pass.
+- relevant `user_docs/**` pages.
 
 ## Decision Summary
 
@@ -823,11 +828,11 @@ Do not update end-user docs during this RFC-only pass.
 - Non-terminal predicates match either address in a selected context level.
 - Ignored-context captures return explicit unavailable/applicability status.
 - Raw and index v20 semantics must be identical.
-- Add `ProtocolPathStatisticsMode::identity_tree_ip_context = 3`.
+- `ProtocolPathStatisticsMode::identity_tree_ip_context = 3` is implemented.
 - `Identity Tree + IP Context` is a statistics-only composition.
 - Concrete IP addresses remain out of `ProtocolPathRegistry`.
 - Row selection in the new statistics mode is context-aware.
 - The feature is compatible with current index revision 20.
-- CLI public token support is deferred unless it naturally falls out of shared
-  implementation work.
+- CLI accepts `identity-tree-ip-context` for explicit Protocol Path
+  preview/export.
 - Compact grouping provenance is informational, not an error state.

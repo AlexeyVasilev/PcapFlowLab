@@ -229,9 +229,13 @@ Rules:
 
 ## IP Addresses and Networks
 
-Use `IP addresses` to match endpoints by address or subnet.
+`IP addresses` is one visual group with two independent subsections:
+`Flow endpoint IPs (terminal)` and `Encapsulation IPs (non-terminal)`.
+There is no master Enabled toggle. Each subsection has its own Enabled state,
+Include rows, and Exclusions.
 
-Each row has an endpoint scope:
+The terminal subsection matches user-facing Flow endpoints by address or
+subnet. Each row has an endpoint scope:
 
 - `Either endpoint`
 - `Endpoint A`
@@ -252,6 +256,26 @@ Prefix ranges are:
 
 For exact addresses, use the normal exact-address mode. You do not need to type
 `/32` or `/128` just to match one address.
+
+The non-terminal subsection matches retained outer or intermediate IP headers
+without changing the terminal Flow endpoint criteria. Its row scopes are:
+
+- `Outer`: the outermost non-terminal IP level;
+- `Intermediate`: levels between Outer and the terminal Flow IP;
+- `Any non-terminal IP`: any retained non-terminal level.
+
+These rows accept exact IPv4/IPv6 addresses or subnets. A row matches either
+address at the selected level, regardless of packet direction; it has no
+Endpoint A/B scope. The two subsections remain separate filter-document
+sections even though they share one visual group. Disabling one retains its
+configured rules without disabling the other.
+
+If a capture or index was imported with non-terminal IP endpoints ignored,
+active encapsulation-IP rules cannot be evaluated: that concrete context was
+not retained. The editor explains the capture-specific limitation without
+invalidating or deleting the saved rules. This is not a zero-match result or a
+syntax error. A capture that retained metadata but contains no non-terminal
+levels simply has no matches for such a rule.
 
 ![Port and IP address rules in Advanced Filter Settings](images/advanced-filter/advanced-filter-ports-addresses.png)
 
@@ -396,6 +420,9 @@ The editor provides a Protocol Path selector. The current Qt selector supports
 choosing through views such as Kind overview, Identity tree, and Terminal paths.
 It can accept a valid selection through `Select`; row double-click can use the
 same accept path.
+
+`Identity Tree + IP Context` belongs to Statistics, not this Advanced Filter
+Protocol Path selector. The selector keeps its three structural views.
 
 ![Select Protocol Path dialog](images/advanced-filter/advanced-filter-protocol-path-selector.png)
 
@@ -571,6 +598,8 @@ Important CLI behavior:
 - raw captures and compatible indexes can both use the metadata-backed
   evaluator;
 - ordinary Advanced Filter evaluation does not require source packet bytes;
+- active `non_terminal_ip.outer.*`, `.intermediate.*`, and `.any.*` rules use
+  retained metadata; ignored-at-import context reports an applicability error;
 - CLI sorting, limiting, and CSV export remain separate command options.
 
 For command examples and option details, see [`flows`](../cli/flows.md).

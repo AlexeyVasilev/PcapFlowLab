@@ -26,6 +26,7 @@ pcap-flow-lab flows --input <input> [options]
 - `--flow-number <N>`
 - `--flow-numbers <ranges>`
 - `--filter <text>`
+- `--adv-filter <path>`
 - `--sort number|protocol|service|endpoint-a|endpoint-b|packets|bytes[:asc|desc]`
 - `--limit <N>`
 - `--out-flows-list <path>`
@@ -53,7 +54,7 @@ The command applies query stages in this order:
 
 1. canonical flow set;
 2. explicit flow-number selection, if provided;
-3. text filter, if provided;
+3. text `--filter` or structured `--adv-filter`, if provided (mutually exclusive);
 4. sort, if provided;
 5. limit, if provided.
 
@@ -103,9 +104,19 @@ The terminal table currently renders these columns:
 ## Filtering
 
 `--filter <text>` applies the shared flow text filter used by the query layer.
+It searches user-visible Flow fields, not retained non-terminal IP context.
 
-This is a free-text flow filter. The command documentation does not define a
-separate fragment-only or flag-only mini-language.
+`--adv-filter <path>` loads the shared `.filter` document. Terminal
+`ip.either.*`, `ip.a.*`, and `ip.b.*` match Flow endpoints; separate
+`non_terminal_ip.outer.*`, `.intermediate.*`, and `.any.*` predicates match
+either address at the selected retained context level (exact IPv4/IPv6 or
+CIDR). Active non-terminal predicates return an explicit unavailable status
+when import discarded context, rather than zero matches or a syntax error.
+Raw captures and compatible indexes use the same metadata-backed evaluator;
+no dedicated outer-IP CLI option or source-packet rescan is required.
+
+`--filter` is free-text flow search. The command documentation does not define
+a separate fragment-only or flag-only mini-language for it.
 
 ## Sorting
 
