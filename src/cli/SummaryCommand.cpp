@@ -1491,7 +1491,7 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
         stdout_builder << '\n'
             << render_protocol_path_preview_text(
                 build_frontend_protocol_path_statistics(
-                    context_summary.has_value()
+                    explicit_context_tree
                         ? *context_summary
                         : build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode)
                 ),
@@ -1508,7 +1508,7 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
     if (options.out_protocol_path_tree_path.has_value()) {
         std::string error_text {};
         if (!session_detail::export_protocol_path_tree_text(
-                context_summary.has_value()
+                explicit_context_tree
                     ? *context_summary
                     : build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode),
                 *options.out_protocol_path_tree_path,

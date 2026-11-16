@@ -1989,6 +1989,47 @@ void expect_ip_context_tree_empty_context_remains_available() {
     }
 }
 
+void expect_ip_context_tree_rejects_incomplete_retained_context() {
+    ProtocolPathRegistry path_registry {};
+    NonTerminalIpContextRegistry context_registry {};
+    const auto one_level_id = context_registry.intern(NonTerminalIpContext {{
+        NonTerminalIpLevel::ipv4(ipv4(192, 0, 2, 60), ipv4(198, 51, 100, 60)),
+    }});
+    const auto two_level_id = context_registry.intern(NonTerminalIpContext {{
+        NonTerminalIpLevel::ipv4(ipv4(192, 0, 2, 60), ipv4(198, 51, 100, 60)),
+        NonTerminalIpLevel::ipv4(ipv4(10, 60, 0, 10), ipv4(10, 60, 0, 20)),
+    }});
+    const auto three_ip_path_id = path_registry.intern(ProtocolPath {{
+        LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::ipv4(), LayerKey::ipv4(), LayerKey::udp(),
+    }});
+    const auto two_ip_path_id = path_registry.intern(ProtocolPath {{
+        LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::ipv4(), LayerKey::udp(),
+    }});
+    const auto one_ip_path_id = path_registry.intern(ProtocolPath {{
+        LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp(),
+    }});
+    const auto summarize = [&](const ProtocolPathId path_id, const NonTerminalIpContextId context_id) {
+        const std::array<session_detail::CanonicalFlowMetadata, 1U> flows {{
+            {.protocol_path_id = path_id, .non_terminal_ip_context_id = context_id,
+                .packet_count = 1U, .total_bytes = 64U},
+        }};
+        return session_detail::build_protocol_path_summary_with_ip_context(
+            path_registry, context_registry, CaptureImportSettingsSnapshot {}, flows);
+    };
+
+    for (const auto& summary : {
+            summarize(three_ip_path_id, one_level_id),
+            summarize(two_ip_path_id, kEmptyNonTerminalIpContextId),
+            summarize(two_ip_path_id, two_level_id),
+        }) {
+        PFL_EXPECT(summary.status == ProtocolPathStatisticsStatus::missing_non_terminal_ip_context);
+        PFL_EXPECT(summary.rows.empty());
+    }
+    const auto valid_empty = summarize(one_ip_path_id, kEmptyNonTerminalIpContextId);
+    PFL_EXPECT(valid_empty.status == ProtocolPathStatisticsStatus::ok);
+    PFL_EXPECT(valid_empty.rows.size() == 3U);
+}
+
 void expect_ip_context_tree_reports_ignored_import_metadata_raw_and_indexed() {
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_ip_context_tree_ignored.idx";
     std::filesystem::remove(index_path);
@@ -3574,6 +3615,7 @@ void run_protocol_path_tests() {
     expect_ip_context_tree_maps_nested_levels_and_preserves_prefix_membership();
     expect_ip_context_tree_maps_outer_ipv6_without_decorating_terminal_ipv4();
     expect_ip_context_tree_empty_context_remains_available();
+    expect_ip_context_tree_rejects_incomplete_retained_context();
     expect_ip_context_tree_reports_ignored_import_metadata_raw_and_indexed();
     expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overview();
     expect_protocol_path_statistics_tree_metadata();

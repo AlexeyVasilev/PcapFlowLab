@@ -1999,13 +1999,6 @@ AdvancedFlowFilterFlowMatchResult matches_compiled_advanced_flow_filter(
     }
 
     if (filter.non_terminal_ip.has_include_predicates() || filter.non_terminal_ip.has_exclude_predicates()) {
-        if (context.non_terminal_ip_metadata == AdvancedFlowFilterNonTerminalIpMetadataAvailability::discarded_at_import) {
-            return {.status = AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable};
-        }
-        if (context.non_terminal_ip_context_registry == nullptr) {
-            return {.status = AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context};
-        }
-
         const NonTerminalIpContext empty_context {};
         const NonTerminalIpContext* non_terminal_context = &empty_context;
         const auto context_id = non_terminal_ip_context_id(flow);
@@ -2028,6 +2021,22 @@ AdvancedFlowFilterFlowMatchResult matches_compiled_advanced_flow_filter(
     return {.matches = matches_service_criteria(filter.service, service_hint_value(flow))};
 }
 
+AdvancedFlowFilterEvaluationStatus validate_non_terminal_ip_filter_applicability(
+    const CompiledAdvancedFlowFilter& filter,
+    const AdvancedFlowFilterEvaluationContext& context
+) noexcept {
+    if (!filter.non_terminal_ip.has_include_predicates() && !filter.non_terminal_ip.has_exclude_predicates()) {
+        return AdvancedFlowFilterEvaluationStatus::ok;
+    }
+    if (context.non_terminal_ip_metadata == AdvancedFlowFilterNonTerminalIpMetadataAvailability::discarded_at_import) {
+        return AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable;
+    }
+    if (context.non_terminal_ip_context_registry == nullptr) {
+        return AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context;
+    }
+    return AdvancedFlowFilterEvaluationStatus::ok;
+}
+
 template <typename FlowLike>
 AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
     std::span<const FlowLike> flows,
@@ -2046,7 +2055,14 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter_impl(
                 return result;
             }
         }
+    }
 
+    result.status = validate_non_terminal_ip_filter_applicability(filter, context);
+    if (result.status != AdvancedFlowFilterEvaluationStatus::ok) {
+        return result;
+    }
+
+    if (candidate_flow_indices.has_value()) {
         if (candidate_flow_indices->empty()) {
             return result;
         }

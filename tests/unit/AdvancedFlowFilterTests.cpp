@@ -4268,6 +4268,51 @@ void run_non_terminal_ip_import_settings_tests() {
     PFL_EXPECT(result.status == AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable);
     PFL_EXPECT(result.compile_status == AdvancedFlowFilterCompileStatus::ok);
     PFL_EXPECT(result.ordered_flow_indices.empty());
+
+    const auto compiled = session_detail::compile_advanced_flow_filter(
+        effective, ignored_context_session.state().protocol_path_registry, AnalysisSettings {});
+    PFL_REQUIRE(compiled.status == AdvancedFlowFilterCompileStatus::ok);
+    const session_detail::AdvancedFlowFilterEvaluationContext discarded_context {
+        .non_terminal_ip_context_registry = &ignored_context_session.state().non_terminal_ip_context_registry,
+        .non_terminal_ip_metadata =
+            session_detail::AdvancedFlowFilterNonTerminalIpMetadataAvailability::discarded_at_import,
+    };
+    const std::span<const session_detail::CanonicalFlowMetadata> empty_flows {};
+    const std::vector<std::size_t> empty_candidates {};
+    const auto empty_candidate_result = session_detail::evaluate_advanced_flow_filter(
+        empty_flows, compiled.filter, std::span<const std::size_t>(empty_candidates), discarded_context);
+    PFL_EXPECT(empty_candidate_result.status == AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable);
+    const auto empty_flows_result = session_detail::evaluate_advanced_flow_filter(
+        empty_flows, compiled.filter, std::nullopt, discarded_context);
+    PFL_EXPECT(empty_flows_result.status == AdvancedFlowFilterEvaluationStatus::non_terminal_ip_metadata_unavailable);
+
+    const std::vector<std::size_t> invalid_candidates {0U};
+    const auto invalid_candidate_result = session_detail::evaluate_advanced_flow_filter(
+        empty_flows, compiled.filter, std::span<const std::size_t>(invalid_candidates), discarded_context);
+    PFL_EXPECT(invalid_candidate_result.status == AdvancedFlowFilterEvaluationStatus::invalid_candidate_index);
+    PFL_EXPECT(invalid_candidate_result.invalid_candidate_index == 0U);
+
+    const auto missing_registry_result = session_detail::evaluate_advanced_flow_filter(
+        empty_flows, compiled.filter, std::span<const std::size_t>(empty_candidates));
+    PFL_EXPECT(missing_registry_result.status == AdvancedFlowFilterEvaluationStatus::missing_non_terminal_ip_context);
+
+    const auto mismatched_parsed = require_parse_success(
+        "format_version = 3\n"
+        "ip.either.include = 203.0.113.99\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n"
+    );
+    const auto mismatched_effective = session_detail::make_effective_advanced_flow_filter_spec(mismatched_parsed.document);
+    const auto mismatched_result = ignored_context_session.query_advanced_flows(mismatched_effective);
+    PFL_EXPECT(mismatched_result.status == AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable);
+
+    const auto disabled_parsed = require_parse_success(
+        "format_version = 3\n"
+        "section.non_terminal_ip.enabled = false\n"
+        "non_terminal_ip.outer.include = 192.0.2.60\n"
+    );
+    const auto disabled_effective = session_detail::make_effective_advanced_flow_filter_spec(disabled_parsed.document);
+    const auto disabled_result = ignored_context_session.query_advanced_flows(disabled_effective);
+    PFL_EXPECT(disabled_result.status == AdvancedFlowQueryStatus::ok);
 }
 
 void run_frontend_structured_document_tests() {

@@ -1366,7 +1366,7 @@ CaptureProtocolPathSummary build_context_protocol_path_summary(
             path->layers().begin(), path->layers().end(), [](const LayerKey& layer) {
                 return layer.kind == ProtocolLayerKind::ipv4 || layer.kind == ProtocolLayerKind::ipv6;
             }));
-        if (context_size > (ip_count == 0U ? 0U : ip_count - 1U)) {
+        if (context_size != (ip_count == 0U ? 0U : ip_count - 1U)) {
             valid = false;
             return;
         }

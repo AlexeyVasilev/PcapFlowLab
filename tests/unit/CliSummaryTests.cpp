@@ -1912,6 +1912,41 @@ void expect_statistics_report_ip_context_cli_raw_and_index() {
     PFL_EXPECT(contains_text(index_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
     PFL_EXPECT(contains_text(index_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
 
+    const auto combined_markdown_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_combined.md";
+    std::filesystem::remove(combined_markdown_path);
+    cli::SummaryCommandOptions combined_preview_options {};
+    combined_preview_options.input_path = index_path;
+    combined_preview_options.protocol_path_tree = true;
+    combined_preview_options.protocol_path_mode = ProtocolPathStatisticsMode::identity_tree;
+    combined_preview_options.out_statistics_markdown_path = combined_markdown_path;
+    const auto combined_preview = cli::execute_summary_command(combined_preview_options);
+    PFL_REQUIRE(combined_preview.exit_code == 0);
+    PFL_EXPECT(contains_text(combined_preview.stdout_text, "Mode: Identity tree"));
+    PFL_EXPECT(!contains_text(combined_preview.stdout_text, "Mode: Identity Tree + IP Context"));
+    PFL_EXPECT(!contains_text(combined_preview.stdout_text, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    const auto combined_markdown = read_text_file(combined_markdown_path);
+    PFL_EXPECT(contains_text(combined_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(combined_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    const auto combined_tree_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_terminal_tree.txt";
+    const auto combined_html_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_combined.html";
+    std::filesystem::remove(combined_tree_path);
+    std::filesystem::remove(combined_html_path);
+    cli::SummaryCommandOptions combined_export_options {};
+    combined_export_options.input_path = index_path;
+    combined_export_options.protocol_path_mode = ProtocolPathStatisticsMode::terminal_paths;
+    combined_export_options.out_protocol_path_tree_path = combined_tree_path;
+    combined_export_options.out_statistics_html_path = combined_html_path;
+    const auto combined_export = cli::execute_summary_command(combined_export_options);
+    PFL_REQUIRE(combined_export.exit_code == 0);
+    const auto combined_tree = read_text_file(combined_tree_path);
+    PFL_EXPECT(contains_text(combined_tree, "Mode: Terminal paths"));
+    PFL_EXPECT(!contains_text(combined_tree, "Mode: Identity Tree + IP Context"));
+    PFL_EXPECT(!contains_text(combined_tree, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    const auto combined_html = read_text_file(combined_html_path);
+    PFL_EXPECT(contains_text(combined_html, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
+    PFL_EXPECT(contains_text(combined_html, "IPv4 [192.0.2.60 &lt;-&gt; 198.51.100.60]"));
+
     const auto ignored_capture_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.pcap";
     const auto ignored_index_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.idx";
     const auto ignored_raw_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored_raw.md";
