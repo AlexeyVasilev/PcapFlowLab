@@ -1847,6 +1847,8 @@ void expect_ip_context_tree_splits_outer_identity_without_changing_existing_mode
 
     PFL_EXPECT(enriched.mode == kIdentityTreeIpContextMode);
     PFL_EXPECT(enriched.status == ProtocolPathStatisticsStatus::ok);
+    PFL_EXPECT(enriched.flow_index_pool.empty());
+    PFL_EXPECT(enriched.node_membership_ranges.empty());
     PFL_EXPECT(enriched.total_flow_count == 2U);
     PFL_EXPECT(enriched.total_packet_count == 2U);
     PFL_EXPECT(enriched.total_original_byte_count == flows[0].total_bytes + flows[1].total_bytes);
@@ -1946,6 +1948,80 @@ void expect_ip_context_tree_maps_nested_levels_and_preserves_prefix_membership()
     if (udp != nullptr) {
         PFL_EXPECT(udp->parent_node_id == terminal->node_id);
     }
+}
+
+void expect_ip_context_tree_resolves_intermediate_and_descendant_membership_on_demand() {
+    CaptureSession session {};
+    auto& state = session.state();
+    const auto path_id = state.protocol_path_registry.intern(ProtocolPath {{
+        LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::ipv4(), LayerKey::ipv4(), LayerKey::udp(),
+    }});
+    const auto outer_level = NonTerminalIpLevel::ipv4(
+        ipv4(192, 0, 2, 60), ipv4(198, 51, 100, 60));
+    const auto intermediate_a = NonTerminalIpLevel::ipv4(
+        ipv4(10, 60, 0, 10), ipv4(10, 60, 0, 20));
+    const auto intermediate_b = NonTerminalIpLevel::ipv4(
+        ipv4(10, 61, 0, 10), ipv4(10, 61, 0, 20));
+    const auto context_a_id = state.non_terminal_ip_context_registry.intern(
+        NonTerminalIpContext {{outer_level, intermediate_a}});
+    const auto context_b_id = state.non_terminal_ip_context_registry.intern(
+        NonTerminalIpContext {{outer_level, intermediate_b}});
+    const auto add_flow = [&](const NonTerminalIpContextId context_id, const std::uint64_t bytes) {
+        auto& connection = state.ipv4_connections.get_or_create(ConnectionKeyV4 {
+            .first = EndpointKeyV4 {.addr = ipv4(10, 70, 0, 10), .port = 53600U},
+            .second = EndpointKeyV4 {.addr = ipv4(10, 70, 0, 20), .port = 443U},
+            .protocol = ProtocolId::udp,
+            .protocol_path_id = path_id,
+            .non_terminal_ip_context_id = context_id,
+        });
+        connection.has_flow_a = true;
+        connection.flow_a.packet_count = 1U;
+        connection.packet_count = 1U;
+        connection.total_bytes = bytes;
+    };
+    add_flow(context_a_id, 200U);
+    add_flow(context_b_id, 100U);
+
+    const auto summary = session.protocol_path_summary(kIdentityTreeIpContextMode);
+    PFL_REQUIRE(summary.status == ProtocolPathStatisticsStatus::ok);
+    PFL_EXPECT(summary.flow_index_pool.empty());
+    PFL_EXPECT(summary.node_membership_ranges.empty());
+    PFL_EXPECT(summary.total_flow_count == 2U);
+    const auto* outer = find_context_stats_row(summary, "EthernetII -> IPv4",
+        "IPv4 [192.0.2.60 <-> 198.51.100.60]");
+    const auto* first = find_context_stats_row(summary, "EthernetII -> IPv4 -> IPv4",
+        "IPv4 [10.60.0.10 <-> 10.60.0.20]");
+    const auto* second = find_context_stats_row(summary, "EthernetII -> IPv4 -> IPv4",
+        "IPv4 [10.61.0.10 <-> 10.61.0.20]");
+    PFL_REQUIRE(outer != nullptr);
+    PFL_REQUIRE(first != nullptr);
+    PFL_REQUIRE(second != nullptr);
+    PFL_EXPECT(outer->flow_count == 2U);
+    PFL_EXPECT(outer->packet_count == 2U);
+    PFL_EXPECT(first->flow_count == 1U && second->flow_count == 1U);
+    PFL_EXPECT(first->parent_node_id == outer->node_id);
+    PFL_EXPECT(second->parent_node_id == outer->node_id);
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, outer->node_id) ==
+        (std::vector<FlowIndex> {0U, 1U}));
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, first->node_id) ==
+        (std::vector<FlowIndex> {0U}));
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, second->node_id) ==
+        (std::vector<FlowIndex> {1U}));
+
+    const auto terminal = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.parent_node_id == first->node_id && row.path.size() == 4U;
+    });
+    PFL_REQUIRE(terminal != summary.rows.end());
+    PFL_EXPECT(!terminal->non_terminal_ip_context_level.has_value());
+    const auto udp = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.parent_node_id == terminal->node_id && row.layer.kind == ProtocolLayerKind::udp;
+    });
+    PFL_REQUIRE(udp != summary.rows.end());
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, udp->node_id) ==
+        (std::vector<FlowIndex> {0U}));
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(
+        kIdentityTreeIpContextMode, kInvalidProtocolPathStatisticsNodeId).empty());
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, 9999U).empty());
 }
 
 void expect_ip_context_tree_maps_outer_ipv6_without_decorating_terminal_ipv4() {
@@ -2286,21 +2362,35 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
 }
 
 void expect_ip_context_tree_raw_index_parity_without_source_attachment() {
-    const auto capture_path = fixture_path(
-        "parsing/ip_encapsulation/13_same_inner_tuple_different_outer_ipv4_tunnels.pcap");
+    const auto capture_path = std::filesystem::temp_directory_path() / "pfl_ip_context_tree_roundtrip_source.pcap";
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_ip_context_tree_roundtrip.idx";
     std::filesystem::remove(index_path);
+    PFL_REQUIRE(std::filesystem::copy_file(
+        fixture_path("parsing/ip_encapsulation/13_same_inner_tuple_different_outer_ipv4_tunnels.pcap"),
+        capture_path, std::filesystem::copy_options::overwrite_existing));
 
-    CaptureSession raw {};
-    PFL_REQUIRE(raw.open_capture(capture_path));
-    const auto raw_summary = raw.protocol_path_summary(kIdentityTreeIpContextMode);
-    PFL_REQUIRE(raw.save_index(index_path));
+    CaptureProtocolPathSummary raw_summary {};
+    std::vector<std::vector<FlowIndex>> raw_memberships {};
+    {
+        CaptureSession raw {};
+        PFL_REQUIRE(raw.open_capture(capture_path));
+        raw_summary = raw.protocol_path_summary(kIdentityTreeIpContextMode);
+        for (const auto& row : raw_summary.rows) {
+            raw_memberships.push_back(raw.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, row.node_id));
+        }
+        PFL_REQUIRE(raw.save_index(index_path));
+    }
+    PFL_REQUIRE(std::filesystem::remove(capture_path));
 
     CaptureSession indexed {};
     PFL_REQUIRE(indexed.load_index(index_path));
     const auto indexed_summary = indexed.protocol_path_summary(kIdentityTreeIpContextMode);
     PFL_EXPECT(raw_summary.status == ProtocolPathStatisticsStatus::ok);
     PFL_EXPECT(indexed_summary.status == raw_summary.status);
+    PFL_EXPECT(raw_summary.flow_index_pool.empty());
+    PFL_EXPECT(raw_summary.node_membership_ranges.empty());
+    PFL_EXPECT(indexed_summary.flow_index_pool.empty());
+    PFL_EXPECT(indexed_summary.node_membership_ranges.empty());
     PFL_EXPECT(indexed_summary.mode == raw_summary.mode);
     PFL_EXPECT(indexed_summary.total_flow_count == raw_summary.total_flow_count);
     PFL_EXPECT(indexed_summary.total_packet_count == raw_summary.total_packet_count);
@@ -2319,7 +2409,7 @@ void expect_ip_context_tree_raw_index_parity_without_source_attachment() {
         PFL_EXPECT(indexed_row.packet_count == raw_row.packet_count);
         PFL_EXPECT(indexed_row.original_byte_count == raw_row.original_byte_count);
         PFL_EXPECT(indexed.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, indexed_row.node_id) ==
-            raw.protocol_path_summary_flow_indices(kIdentityTreeIpContextMode, raw_row.node_id));
+            raw_memberships[index]);
     }
     PFL_EXPECT(find_context_stats_row(raw_summary, "EthernetII -> IPv4",
         "IPv4 [192.0.2.60 <-> 198.51.100.60]") != nullptr);
@@ -3613,6 +3703,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_statistics_identity_tree_distinguish_gtpu_teids();
     expect_ip_context_tree_splits_outer_identity_without_changing_existing_modes();
     expect_ip_context_tree_maps_nested_levels_and_preserves_prefix_membership();
+    expect_ip_context_tree_resolves_intermediate_and_descendant_membership_on_demand();
     expect_ip_context_tree_maps_outer_ipv6_without_decorating_terminal_ipv4();
     expect_ip_context_tree_empty_context_remains_available();
     expect_ip_context_tree_rejects_incomplete_retained_context();

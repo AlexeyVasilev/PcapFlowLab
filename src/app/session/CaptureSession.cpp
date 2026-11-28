@@ -3453,6 +3453,19 @@ std::vector<FlowIndex> CaptureSession::protocol_path_summary_flow_indices(
     }
 
     const auto& summary = *protocol_path_summary_cache_[cache_index];
+    if (mode == ProtocolPathStatisticsMode::identity_tree_ip_context) {
+        if (uses_v16_storage()) {
+            return session_detail::resolve_protocol_path_summary_flow_indices_with_ip_context(
+                summary, node_id,
+                v16_storage_->fast_statistics_tier.protocol_path_registry,
+                v16_storage_->fast_statistics_tier.non_terminal_ip_context_registry,
+                v16_storage_->flows);
+        }
+        return session_detail::resolve_protocol_path_summary_flow_indices_with_ip_context(
+            summary, node_id, state_.protocol_path_registry,
+            state_.non_terminal_ip_context_registry, listed_connections());
+    }
+
     const auto membership_index = static_cast<std::size_t>(node_id);
     if (membership_index >= summary.node_membership_ranges.size()) {
         return {};
