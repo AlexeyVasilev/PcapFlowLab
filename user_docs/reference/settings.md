@@ -87,6 +87,25 @@ What does **not** change:
   TEID when packet inspection has that information;
 - this is a grouping-identity change, not a packet-content rewrite.
 
+### `ignore_non_terminal_ip_endpoints_when_grouping_flows`
+
+When this setting is `true`, concrete outer/intermediate IPv4 and IPv6
+endpoint pairs do not participate in Flow identity. Otherwise-identical inner
+traffic carried over different non-terminal IP endpoints may merge. Terminal
+Flow endpoints, ports, and structural Protocol Path identity remain relevant.
+
+The ignored concrete context is not retained for later
+`non_terminal_ip.outer.*`, `.intermediate.*`, or `.any.*` Advanced Filter
+predicates or for `Identity Tree + IP Context` Statistics. Active requests for
+those features report unavailable metadata rather than rescanning packet
+bytes. Compatible indexes preserve the import choice and its provenance;
+changing current settings does not regroup an already opened index.
+
+The desktop `Flow grouping` block shows this setting alongside the independent
+VLAN/MPLS and GTP-U options, with one common next-import note. A compact
+session line lists only the grouping relaxations used by the loaded capture or
+index, not the current editable Settings. See [Settings](../ui/settings.md).
+
 ## Selected-packet checksum validation
 
 ### `validate_selected_packet_checksums`

@@ -25,6 +25,14 @@ When an index depends on original packet bytes, the UI can also show a
 `Source PCAP` path. This matters for packet bytes, stream reconstruction, and
 other byte-backed inspection features.
 
+If the loaded capture or index used non-default Flow grouping, one muted
+session-level line lists only the active relaxations, in order:
+`VLAN/MPLS ignored`, `GTP-U TEID ignored`, `Non-terminal IP ignored`. For
+example, `Flow grouping: Non-terminal IP ignored`. With default grouping there
+is no persistent line. This is import provenance, not an error and not a mirror
+of the currently editable Settings; feature-specific unavailability messages
+still appear where a requested filter or Statistics mode needs missing data.
+
 For the dedicated end-user guide to opening raw captures, opening/saving
 indexes, source-capture reattachment, and open-progress behavior, see
 [Captures and indexes](capture-and-index.md).
@@ -306,6 +314,14 @@ Current controls include:
 Use `Show flows` to pivot from an aggregate protocol-path row back to the
 matching flow set.
 
+`Identity Tree + IP Context` is the Statistics-only mode that distinguishes
+retained outer/intermediate IP endpoint pairs in the tree. Its pairs are
+bidirectional Flow identity, not packet direction; terminal Flow IPs stay
+undecorated. Selecting a row restricts Flows to that tree branch. When import
+ignored the context, the visible mode explains why it is unavailable rather
+than silently falling back. Full HTML/Markdown Statistics reports select the
+enriched tree automatically when available, regardless of the live mode.
+
 ## Settings
 
 Open `View -> Settings` to change current GUI behavior and capture-processing
@@ -328,12 +344,16 @@ Examples of immediate GUI-facing settings:
 - `Show fragmented packet count column in the flow table`
 - `Validate IPv4/TCP/UDP checksums for selected packet`
 
-Examples of next-open capture-processing settings:
+The `Flow grouping` block within `Capture Processing` has three independent
+next-import settings and one shared lifecycle note:
 
-- `HTTP: use request path as service hint when Host is missing`
-- `Ignore VLAN and MPLS layers when grouping flows`
-- `Ignore GTP-U TEIDs when grouping inner flows`
-- `Ignore non-terminal IP endpoints when grouping flows`
+- `Ignore VLAN and MPLS layers`
+- `Ignore GTP-U TEIDs`
+- `Ignore non-terminal IP endpoints`
+
+`Applied when importing the next raw capture. Existing indexes keep their
+stored flow grouping.` The `HTTP: use request path as service hint when Host is
+missing` setting is separate from this block.
 
 Important distinction:
 

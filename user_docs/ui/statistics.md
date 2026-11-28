@@ -416,6 +416,11 @@ Depending on the mode, rows can be:
 - exact identifier-aware prefix nodes;
 - full terminal paths.
 
+The four modes are `Kind overview`, `Identity tree`, `Identity Tree + IP
+Context`, and `Terminal paths`. The context mode is specific to Statistics;
+the Advanced Filter Protocol Path selector still has only its three structural
+views.
+
 ### Percentages and aggregation
 
 Protocol Path Tree percentages do not all use the same denominator.
@@ -474,6 +479,23 @@ Examples visible in the showcase capture include:
 This mode is useful when you want to distinguish traffic that would collapse
 together in `Kind overview`.
 
+### Identity Tree + IP Context
+
+This mode keeps the structural `Identity tree` but decorates retained outer and
+intermediate IPv4/IPv6 layers with their concrete endpoint pairs. Different
+retained pairs can split branches; the effective terminal Flow IP layer stays
+undecorated. A label such as `IPv4 [192.0.2.1 <-> 192.0.2.2]` represents
+bidirectional Flow identity, not packet source/destination direction or
+Endpoint A/B. IPv6 context labels use compact address text.
+
+The mode is built on demand from stored Protocol Path and non-terminal IP
+context metadata. It does not add addresses to Protocol Path identity or read
+packet bytes. If that context was intentionally ignored when the capture was
+imported, the mode remains visible but explains why it is unavailable; it does
+not silently show the structural tree instead. Other modes remain usable. A
+capture with retained metadata but no non-terminal levels is still valid for
+this mode.
+
 ### Terminal paths
 
 ![Protocol Path Tree - Terminal paths](images/statistics/statistics-protocol-path-terminal.png)
@@ -494,10 +516,11 @@ Current semantics:
 
 ### Expand and Collapse
 
-`Expand all` and `Collapse all` are available in the two tree modes:
+`Expand all` and `Collapse all` are available in the tree modes:
 
 - `Kind overview`
 - `Identity tree`
+- `Identity Tree + IP Context`
 
 They are intentionally not shown in `Terminal paths`, because that mode is a
 flat list of full paths rather than an expandable tree.
@@ -518,7 +541,7 @@ plain text search string.*
 When you select a Protocol Path row and activate `Show flows`, the application:
 
 - switches to `Flows`;
-- applies a structured Protocol Path filter;
+- applies a structured Protocol Path branch restriction;
 - limits the visible Flow inventory to the matching Flows;
 - keeps the primary Flow filter controls as separate controls.
 
@@ -526,6 +549,8 @@ Mode-specific matching semantics:
 
 - `Kind overview` filters by the selected kind-only prefix semantics.
 - `Identity tree` filters by the selected identifier-aware prefix semantics.
+- `Identity Tree + IP Context` filters by both the structural prefix and the
+  retained IP-context prefix represented by the selected branch.
 - `Terminal paths` filters by the selected exact full terminal path.
 
 This is not implemented as text injected into the normal text search box.
@@ -550,8 +575,8 @@ For structured Protocol Path rules in the primary filter, see
 
 Current export behavior:
 
-- export uses the current mode (`Kind overview`, `Identity tree`, or
-  `Terminal paths`);
+- export uses the current mode (`Kind overview`, `Identity tree`, `Identity
+  Tree + IP Context`, or `Terminal paths`);
 - output is a text file, not a CSV file;
 - the file starts with a mode header and then writes aligned columns:
   `Layer`, `Flows`, `Packets`, `Original Bytes`;
@@ -876,8 +901,8 @@ is currently report/CLI-only rather than a live Qt/Tauri Statistics section.
 It records the import-time provenance stored with the capture or index, such
 as Flow-grouping import options, not the user's current mutable runtime
 Settings. For user-editable Settings, see [Settings](settings.md).
-Examples include whether VLAN/MPLS layers or GTP-U TEIDs were ignored for Flow
-grouping at import time.
+Examples include whether VLAN/MPLS layers, GTP-U TEIDs, or non-terminal IP
+endpoints were ignored for Flow grouping at import time.
 
 ![Exported HTML Statistics report](images/statistics/statistics-html-report.png)
 
@@ -904,7 +929,9 @@ Current full Statistics reports include the main shared Statistics areas:
 - QUIC and TLS;
 - Top Flows by Original Bytes;
 - Top Endpoints and Ports;
-- Protocol Path statistics in Identity tree form.
+- Protocol Path statistics in Identity Tree + IP Context form when retained, or
+  structural Identity Tree form when non-terminal IP metadata was discarded at
+  import.
 
 Use HTML when you want a formatted standalone report that is convenient to open
 in a browser. Use Markdown when you want text-oriented output for technical
@@ -917,10 +944,13 @@ or sharing the HTML output with someone who does not need the raw capture.
 
 Statistics report export works from an opened raw capture and from compatible
 Pcap Flow Lab indexes. For compatible indexes containing current Statistics
-data, summary-style report generation can use the index's fast Statistics
-tier. That path does not need source packet bytes merely to export Statistics
-and does not probe the recorded source capture just to check whether it is
-currently accessible.
+data, enriched Protocol Path reporting uses persisted Flow and context
+metadata alongside the Statistics snapshot. It does not need source packet
+bytes or probe the recorded source capture just to check accessibility.
+The full report chooses its one enriched tree automatically, independently of
+the selected live Statistics mode. If context was intentionally discarded at
+import, the report uses a noted structural Identity Tree fallback. Missing or
+inconsistent retained context instead causes an explicit export error.
 
 Byte-backed workflows such as Packet Details `Bytes` or Stream item data still
 have their own source-byte requirements. Statistics report export is

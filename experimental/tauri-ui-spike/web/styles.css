@@ -523,6 +523,29 @@ body.is-resizing-vertical {
   display: none !important;
 }
 
+.advanced-filter-ip-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.advanced-filter-ip-subsection + .advanced-filter-ip-subsection {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.advanced-filter-ip-subsection-title {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.advanced-filter-ip-subsection .advanced-filter-helper-copy {
+  margin: 0;
+}
+
 .advanced-filter-section-enabled {
   display: inline-flex;
   align-items: center;
@@ -1277,6 +1300,13 @@ body.is-resizing-vertical {
   text-overflow: ellipsis;
 }
 
+.flow-grouping-provenance {
+  margin: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .open-progress-panel {
   display: none;
   gap: 6px;
@@ -1415,26 +1445,6 @@ body.is-resizing-vertical {
 .partial-open-warning-text {
   margin: 0;
   color: var(--warning-text);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.info-banner {
-  display: none;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border-color: var(--info-border);
-  background: var(--info-bg);
-}
-
-.info-banner.is-visible {
-  display: flex;
-}
-
-.info-banner-text {
-  margin: 0;
-  color: var(--info-text);
   font-size: 12px;
   line-height: 1.4;
 }

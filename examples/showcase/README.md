@@ -1,9 +1,9 @@
 # Pcap Flow Lab Showcase Capture
 
-This directory contains the first materialized version of the long-lived PcapFlowLab showcase capture.
+This directory contains the versioned, long-lived PcapFlowLab showcase capture.
 
 - `capture_id`: `pcap-flow-lab-showcase`
-- `capture_version`: `1.0.0`
+- `capture_version`: `1.1.0`
 - file: [`pcap_flow_lab_showcase.pcap`](pcap_flow_lab_showcase.pcap)
 - manifest: [`manifest.json`](manifest.json)
 
@@ -11,12 +11,13 @@ The primary capture is a classic Ethernet PCAP. It is intentionally versioned as
 
 ## Scope
 
-Version `1.0.0` establishes:
+Version `1.1.0` includes:
 
 - four Analysis hero flows;
 - core application-protocol demonstrations;
 - complete Ethernet-compatible supported-protocol coverage for the current Supported Protocol Catalog, with companion-capture exceptions documented explicitly;
 - identity/grouping showcase pairs for VLAN, MPLS, GTP-U, VXLAN, and Geneve;
+- dedicated non-terminal IP identity examples for differing outer IPv4, differing intermediate IPv4, and outer IPv6 context;
 - key Packet Details / Bytes edge cases;
 - curated Unrecognized Packets coverage with distinct current reason classes;
 - one shared deterministic timeline with overlapping traffic;
@@ -24,11 +25,12 @@ Version `1.0.0` establishes:
 
 ## Current Totals
 
-Rough capture totals for `1.0.0`:
+Current capture totals for `1.1.0`:
 
-- total packets after the local final-showcase regeneration: about `1567`
-- total duration after the local final-showcase regeneration: about `115.54 s`
-- file size after the local final-showcase regeneration: about `730 KB`
+- strict/default Flows: `66`
+- total packets: `1577`
+- total duration: about `118.10 s`
+- file size: about `731 KB`
 - link type: classic Ethernet (`DLT_EN10MB`)
 
 ## Stable Scenario Identification
@@ -114,6 +116,9 @@ Identity / grouping demonstrations:
 - `OVL-GTPU-TEID-01`
 - `OVL-VXLAN-VNI-01`
 - `OVL-GENEVE-VNI-01`
+- `ID-IPCTX-OUTER-01`
+- `ID-IPCTX-INTERMEDIATE-01`
+- `ID-IPCTX-IPV6-01`
 
 Edge cases:
 
@@ -147,7 +152,7 @@ Each top-level family is classified as one of:
 - `fixture-infrastructure`
 - `packet-inspection-only`
 
-Current `1.0.0` highlights:
+Current `1.1.0` highlights:
 
 - `represented`
   Includes `ah`, `amqp`, `arp`, `dns`, `eoip`, `esp`, `geneve`, `gre`, `gtpu`, `http`, `icmp`, `igmp`, `ip_encapsulation`, `ip_options`, `llc_snap`, `mdns`, `mqtt`, `ntp`, `mpls`, `mpls_pw`, `pbb`, `pppoe`, `quic`, `sctp`, `tcp_options`, `tls`, `vlan`, and `vxlan`.
@@ -164,7 +169,7 @@ This keeps packet-only/no-flow capabilities visible without overstating them as 
 
 ## Unrecognized Packet Showcase
 
-Version `1.0.0` intentionally includes a small curated set of packets that current import semantics do not assign to normal flows:
+Version `1.1.0` intentionally includes a small curated set of packets that current import semantics do not assign to normal flows:
 
 - `EDGE-UNREC-01`
   Truncated Ethernet record with Packet Summary fallback and Captured Packet Bytes fallback.
@@ -222,6 +227,7 @@ Three short UDP flows intentionally exercise unusually large captured packet rec
    The scenario intentionally spans two multicast source flows under one stable `scenario_id`; use the manifest's `expected_flow_count` to validate it scenario-wide.
 13. Open `APP-TLS-NOSNI-01` to demonstrate `Statistics -> QUIC and TLS -> TLS` coverage where `Without SNI` is non-zero while Packet Summary still shows structured TLS `ServerHello`.
 14. Open one identity pair such as `OVL-GTPU-TEID-01` or `ID-VLAN-PAIR-01` and verify that default identity keeps the same effective tuple split into separate flows.
+    For Advanced Filter, use `ID-IPCTX-OUTER-01`, `ID-IPCTX-INTERMEDIATE-01`, and `ID-IPCTX-IPV6-01` to compare Flow endpoint IPs (terminal) with Encapsulation IPs (non-terminal). `ID-IPCTX-INTERMEDIATE-01` is the clearest example for Outer, Intermediate, Any non-terminal IP, and terminal endpoint matching. These scenarios also demonstrate the `Identity Tree + IP Context` Statistics mode.
 15. Open `NET-IPV4-OPTIONS-01` and `TCP-OPTIONS-01` to confirm the current structured options presentation.
 16. Open `AN-LARGEPKT-2500-01`, `AN-LARGEPKT-7500-01`, and `AN-LARGEPKT-60000-01` to compare Analysis max packet size, per-flow size contrast, and capture `Packet Size Distribution` large buckets.
 17. Open `EDGE-SNAPLEN-01` and compare captured versus original length semantics.
@@ -258,7 +264,7 @@ python tmp/generate_showcase_protocol_parity.py --input examples/showcase/pcap_f
 
 ## Known Limitations
 
-Version `1.0.0` does not advertise:
+Version `1.1.0` does not advertise:
 
 - retransmission classification;
 - out-of-order or overlap storytelling;

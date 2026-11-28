@@ -15,6 +15,7 @@
 #include "app/session/SessionFormatting.h"
 #include "core/domain/DirectionDistribution.h"
 #include "core/domain/FlowHints.h"
+#include "core/index/Serialization.h"
 
 namespace pfl::session_detail {
 
@@ -788,6 +789,7 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::size_t depth {0};
     LayerKey layer {};
     ProtocolPath path {};
+    std::optional<NonTerminalIpLevel> non_terminal_ip_context_level {};
     std::size_t parent_index {std::numeric_limits<std::size_t>::max()};
     std::vector<std::size_t> child_indices {};
     std::uint64_t flow_count {0};
@@ -831,6 +833,24 @@ struct PrefixStepKeyHash {
     [[nodiscard]] std::size_t operator()(const PrefixStepKey& key) const noexcept {
         auto seed = std::hash<std::size_t> {}(key.parent_index);
         seed = detail::hash_combine(seed, LayerKeyHash {}(key.layer));
+        return seed;
+    }
+};
+
+struct ContextPrefixStepKey {
+    std::size_t parent_index {std::numeric_limits<std::size_t>::max()};
+    LayerKey layer {};
+    std::optional<NonTerminalIpLevel> context_level {};
+
+    [[nodiscard]] friend bool operator==(const ContextPrefixStepKey&, const ContextPrefixStepKey&) = default;
+};
+
+struct ContextPrefixStepKeyHash {
+    [[nodiscard]] std::size_t operator()(const ContextPrefixStepKey& key) const noexcept {
+        auto seed = detail::hash_combine(std::hash<std::size_t> {}(key.parent_index), LayerKeyHash {}(key.layer));
+        if (key.context_level) {
+            seed = detail::hash_combine(seed, NonTerminalIpLevelHash {}(*key.context_level));
+        }
         return seed;
     }
 };
@@ -1099,7 +1119,10 @@ void append_protocol_path_statistics_rows(
         if (left_node.flow_count != right_node.flow_count) {
             return left_node.flow_count > right_node.flow_count;
         }
-        return left_node.path_text < right_node.path_text;
+        if (left_node.path_text != right_node.path_text) {
+            return left_node.path_text < right_node.path_text;
+        }
+        return left_node.layer_text < right_node.layer_text;
     });
 
     for (const auto node_index : sorted_indices) {
@@ -1126,6 +1149,7 @@ void append_protocol_path_statistics_rows(
             .depth = node.depth,
             .layer = node.layer,
             .path = node.path,
+            .non_terminal_ip_context_level = node.non_terminal_ip_context_level,
             .layer_text = node.layer_text,
             .path_text = node.path_text,
             .compact_text = node.compact_text,
@@ -1291,6 +1315,218 @@ CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics_i
     }
     append_protocol_path_statistics_rows(nodes, summary, root_indices);
     return summary;
+}
+
+std::string format_context_level_address(
+    const NonTerminalIpLevel& level,
+    const std::array<std::uint8_t, 16>& bytes
+) {
+    if (level.family == NonTerminalIpAddressFamily::ipv4) {
+        return format_ipv4_address(std::array<std::uint8_t, 4> {bytes[0], bytes[1], bytes[2], bytes[3]});
+    }
+    return format_ipv6_address_compact(bytes);
+}
+
+template <typename VisitFlows>
+CaptureProtocolPathSummary build_context_protocol_path_summary(
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    const CaptureImportSettingsSnapshot& import_settings,
+    VisitFlows&& visit_flows
+) {
+    CaptureProtocolPathSummary summary {.mode = ProtocolPathStatisticsMode::identity_tree_ip_context};
+    if (capture_import_settings_bool_value(
+            import_settings, kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows).value_or(false)) {
+        summary.status = ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable;
+        return summary;
+    }
+
+    std::unordered_map<ContextPrefixStepKey, std::size_t, ContextPrefixStepKeyHash> node_by_step {};
+    std::vector<ProtocolPathStatisticsAccumulatorNode> nodes {};
+    bool valid = true;
+    visit_flows([&](
+        const FlowIndex,
+        const ProtocolPathId path_id,
+        const NonTerminalIpContextId context_id,
+        const std::uint64_t packets,
+        const std::uint64_t bytes
+    ) {
+        if (!valid) {
+            return;
+        }
+        const auto* path = path_registry.find(path_id);
+        const auto* context = context_id == kEmptyNonTerminalIpContextId
+            ? nullptr : context_registry.find(context_id);
+        if (path == nullptr || (context_id != kEmptyNonTerminalIpContextId && context == nullptr)) {
+            valid = false;
+            return;
+        }
+        const auto context_size = context == nullptr ? 0U : context->size();
+        const auto ip_count = static_cast<std::size_t>(std::count_if(
+            path->layers().begin(), path->layers().end(), [](const LayerKey& layer) {
+                return layer.kind == ProtocolLayerKind::ipv4 || layer.kind == ProtocolLayerKind::ipv6;
+            }));
+        if (context_size != (ip_count == 0U ? 0U : ip_count - 1U)) {
+            valid = false;
+            return;
+        }
+        std::size_t context_index = 0U;
+        for (const auto& layer : path->layers()) {
+            if (context_index >= context_size) {
+                break;
+            }
+            if (layer.kind != ProtocolLayerKind::ipv4 && layer.kind != ProtocolLayerKind::ipv6) {
+                continue;
+            }
+            const auto expected_family = layer.kind == ProtocolLayerKind::ipv4
+                ? NonTerminalIpAddressFamily::ipv4 : NonTerminalIpAddressFamily::ipv6;
+            if ((*context)[context_index++].family != expected_family) {
+                valid = false;
+                return;
+            }
+        }
+
+        ++summary.total_flow_count;
+        summary.total_packet_count += packets;
+        summary.total_original_byte_count += bytes;
+        std::size_t parent_index = std::numeric_limits<std::size_t>::max();
+        context_index = 0U;
+        for (std::size_t depth = 0; depth < path->size(); ++depth) {
+            const auto& layer = (*path)[depth];
+            std::optional<NonTerminalIpLevel> context_level {};
+            if (context_index < context_size &&
+                (layer.kind == ProtocolLayerKind::ipv4 || layer.kind == ProtocolLayerKind::ipv6)) {
+                context_level = (*context)[context_index++];
+            }
+            const ContextPrefixStepKey key {parent_index, layer, context_level};
+            const auto [it, inserted] = node_by_step.emplace(key, nodes.size());
+            if (inserted) {
+                ProtocolPath prefix_path {};
+                if (parent_index == std::numeric_limits<std::size_t>::max()) {
+                    prefix_path = ProtocolPath {{layer}};
+                } else {
+                    auto layers = nodes[parent_index].path.layers();
+                    layers.push_back(layer);
+                    prefix_path = ProtocolPath {std::move(layers)};
+                }
+                nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
+                    .depth = depth,
+                    .layer = layer,
+                    .path = std::move(prefix_path),
+                    .non_terminal_ip_context_level = context_level,
+                    .parent_index = parent_index,
+                    .is_terminal = depth + 1U == path->size(),
+                });
+                if (parent_index != std::numeric_limits<std::size_t>::max()) {
+                    nodes[parent_index].child_indices.push_back(it->second);
+                }
+            }
+            auto& node = nodes[it->second];
+            ++node.flow_count;
+            node.packet_count += packets;
+            node.original_byte_count += bytes;
+            parent_index = it->second;
+        }
+    });
+
+    if (!valid) {
+        return CaptureProtocolPathSummary {
+            .mode = ProtocolPathStatisticsMode::identity_tree_ip_context,
+            .status = ProtocolPathStatisticsStatus::missing_non_terminal_ip_context,
+        };
+    }
+    std::vector<std::size_t> roots {};
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto& node = nodes[index];
+        auto presentation = build_protocol_path_presentation(&node.path);
+        node.path_text = presentation.full_text;
+        node.compact_text = presentation.compact_text;
+        node.badges = std::move(presentation.badges);
+        node.layer_text = format_protocol_path_layer_display_text(node.layer);
+        if (node.non_terminal_ip_context_level) {
+            const auto& level = *node.non_terminal_ip_context_level;
+            node.layer_text += " [" + format_context_level_address(level, level.source) + " <-> " +
+                format_context_level_address(level, level.destination) + "]";
+        }
+        node.flow_percent = safe_percent(node.flow_count, summary.total_flow_count);
+        node.packet_percent = safe_percent(node.packet_count, summary.total_packet_count);
+        node.original_byte_percent = safe_percent(node.original_byte_count, summary.total_original_byte_count);
+        node.flow_count_text = format_count_with_percent_text(node.flow_count, node.flow_percent);
+        node.packet_count_text = format_count_with_percent_text(node.packet_count, node.packet_percent);
+        node.original_byte_count_text = format_byte_count_with_percent_text(
+            node.original_byte_count, node.original_byte_percent);
+        if (node.parent_index == std::numeric_limits<std::size_t>::max()) {
+            roots.push_back(index);
+        }
+    }
+    summary.rows.reserve(nodes.size());
+    append_protocol_path_statistics_rows(nodes, summary, roots);
+    return summary;
+}
+
+template <typename VisitFlows>
+std::vector<FlowIndex> resolve_context_protocol_path_summary_flow_indices(
+    const CaptureProtocolPathSummary& summary,
+    const std::uint64_t node_id,
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    VisitFlows&& visit_flows
+) {
+    if (summary.mode != ProtocolPathStatisticsMode::identity_tree_ip_context ||
+        summary.status != ProtocolPathStatisticsStatus::ok ||
+        node_id == kInvalidProtocolPathStatisticsNodeId) {
+        return {};
+    }
+
+    const auto selected = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.node_id == node_id;
+    });
+    if (selected == summary.rows.end()) {
+        return {};
+    }
+
+    std::vector<NonTerminalIpLevel> context_prefix {};
+    const ProtocolPathStatisticsRow* ancestor = &*selected;
+    for (std::size_t visited = 0U; ancestor != nullptr; ++visited) {
+        if (visited >= summary.rows.size()) {
+            return {};
+        }
+        if (ancestor->non_terminal_ip_context_level.has_value()) {
+            context_prefix.push_back(*ancestor->non_terminal_ip_context_level);
+        }
+        if (ancestor->parent_node_id == kInvalidProtocolPathStatisticsNodeId) {
+            break;
+        }
+        const auto parent = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+            return row.node_id == ancestor->parent_node_id;
+        });
+        if (parent == summary.rows.end()) {
+            return {};
+        }
+        ancestor = &*parent;
+    }
+    std::reverse(context_prefix.begin(), context_prefix.end());
+
+    std::vector<FlowIndex> matching_indices {};
+    visit_flows([&](const FlowIndex flow_index, const ProtocolPathId path_id,
+                    const NonTerminalIpContextId context_id) {
+        const auto* path = path_registry.find(path_id);
+        if (path == nullptr || path->size() < selected->path.size() ||
+            !std::equal(selected->path.begin(), selected->path.end(), path->begin())) {
+            return;
+        }
+        if (!context_prefix.empty()) {
+            const auto* context = context_registry.find(context_id);
+            if (context == nullptr || context->size() < context_prefix.size() ||
+                !std::equal(context_prefix.begin(), context_prefix.end(), context->begin())) {
+                return;
+            }
+        }
+        matching_indices.push_back(flow_index);
+    });
+    std::sort(matching_indices.begin(), matching_indices.end());
+    matching_indices.erase(std::unique(matching_indices.begin(), matching_indices.end()), matching_indices.end());
+    return matching_indices;
 }
 
 ProtocolPathDisplayStatisticsBuildResult build_protocol_path_display_statistics_impl(
@@ -3673,6 +3909,12 @@ CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
     const std::uint64_t total_original_byte_count,
     const ProtocolPathStatisticsMode mode
 ) {
+    if (mode == ProtocolPathStatisticsMode::identity_tree_ip_context) {
+        return CaptureProtocolPathSummary {
+            .mode = mode,
+            .status = ProtocolPathStatisticsStatus::missing_non_terminal_ip_context,
+        };
+    }
     return build_protocol_path_summary_from_display_statistics_impl(
         registry,
         statistics,
@@ -3689,6 +3931,22 @@ CaptureProtocolPathSummary build_protocol_path_summary(
     const std::vector<ListedConnectionRef>& connections,
     const ProtocolPathStatisticsMode mode
 ) {
+    if (mode == ProtocolPathStatisticsMode::identity_tree_ip_context) {
+        return build_context_protocol_path_summary(
+            state.protocol_path_registry,
+            state.non_terminal_ip_context_registry,
+            state.capture_import_settings,
+            [&](auto&& visit) {
+                for (std::size_t index = 0; index < connections.size(); ++index) {
+                    const auto& connection = connections[index];
+                    const auto context_id = connection.family == FlowAddressFamily::ipv4
+                        ? connection.ipv4->key.non_terminal_ip_context_id
+                        : connection.ipv6->key.non_terminal_ip_context_id;
+                    visit(static_cast<FlowIndex>(index), protocol_path_id(connection), context_id,
+                        packet_count(connection), total_bytes(connection));
+                }
+            });
+    }
     const auto display_statistics = build_protocol_path_display_statistics_impl(state, connections);
     return build_protocol_path_summary_from_display_statistics_impl(
         state.protocol_path_registry,
@@ -3699,6 +3957,101 @@ CaptureProtocolPathSummary build_protocol_path_summary(
         mode,
         &display_statistics.membership_by_path_id
     );
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    const CaptureImportSettingsSnapshot& import_settings,
+    const std::span<const CanonicalFlowMetadata> flows
+) {
+    return build_context_protocol_path_summary(path_registry, context_registry, import_settings, [&](auto&& visit) {
+        for (const auto& flow : flows) {
+            visit(static_cast<FlowIndex>(flow.canonical_index), flow.protocol_path_id,
+                flow.non_terminal_ip_context_id, flow.packet_count, flow.total_bytes);
+        }
+    });
+}
+
+static CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const std::span<const CaptureIndexV16ConnectionMetadataV4> ipv4_connections,
+    const std::span<const CaptureIndexV16ConnectionMetadataV6> ipv6_connections
+) {
+    return build_context_protocol_path_summary(
+        fast_tier.protocol_path_registry,
+        fast_tier.non_terminal_ip_context_registry,
+        fast_tier.capture_import_settings,
+        [&](auto&& visit) {
+            const auto visit_row = [&](const auto& row) {
+                if (!row.has_flow_a || row.flow_a.packet_count == 0U) {
+                    visit(static_cast<FlowIndex>(row.canonical_connection_ordinal), kInvalidProtocolPathId,
+                        kEmptyNonTerminalIpContextId, 0U, 0U);
+                    return;
+                }
+                visit(static_cast<FlowIndex>(row.canonical_connection_ordinal), row.key.protocol_path_id,
+                    row.key.non_terminal_ip_context_id,
+                    row.flow_a.packet_count + (row.has_flow_b ? row.flow_b.packet_count : 0U),
+                    row.flow_a.original_byte_count + (row.has_flow_b ? row.flow_b.original_byte_count : 0U));
+            };
+            for (const auto& row : ipv4_connections) {
+                visit_row(row);
+            }
+            for (const auto& row : ipv6_connections) {
+                visit_row(row);
+            }
+        });
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16MetadataTier& metadata
+) {
+    return build_protocol_path_summary_with_ip_context(
+        fast_tier, metadata.ipv4_connections, metadata.ipv6_connections);
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16FlowMetadataTier& metadata
+) {
+    return build_protocol_path_summary_with_ip_context(
+        fast_tier, metadata.ipv4_connections, metadata.ipv6_connections);
+}
+
+std::vector<FlowIndex> resolve_protocol_path_summary_flow_indices_with_ip_context(
+    const CaptureProtocolPathSummary& summary,
+    const std::uint64_t node_id,
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    const std::span<const ListedConnectionRef> connections
+) {
+    return resolve_context_protocol_path_summary_flow_indices(
+        summary, node_id, path_registry, context_registry, [&](auto&& visit) {
+            for (std::size_t index = 0U; index < connections.size(); ++index) {
+                const auto& connection = connections[index];
+                const auto context_id = connection.family == FlowAddressFamily::ipv4
+                    ? connection.ipv4->key.non_terminal_ip_context_id
+                    : connection.ipv6->key.non_terminal_ip_context_id;
+                visit(static_cast<FlowIndex>(index), protocol_path_id(connection), context_id);
+            }
+        });
+}
+
+std::vector<FlowIndex> resolve_protocol_path_summary_flow_indices_with_ip_context(
+    const CaptureProtocolPathSummary& summary,
+    const std::uint64_t node_id,
+    const ProtocolPathRegistry& path_registry,
+    const NonTerminalIpContextRegistry& context_registry,
+    const std::span<const CanonicalFlowMetadata> flows
+) {
+    return resolve_context_protocol_path_summary_flow_indices(
+        summary, node_id, path_registry, context_registry, [&](auto&& visit) {
+            for (const auto& flow : flows) {
+                visit(static_cast<FlowIndex>(flow.canonical_index), flow.protocol_path_id,
+                    flow.non_terminal_ip_context_id);
+            }
+        });
 }
 
 }  // namespace pfl::session_detail

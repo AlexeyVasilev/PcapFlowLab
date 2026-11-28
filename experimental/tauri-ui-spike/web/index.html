@@ -102,17 +102,7 @@
           <button id="attachSourceButton" type="button" class="secondary-button">Locate Source...</button>
         </section>
 
-        <section id="flowGroupingWarningBanner" class="panel info-banner">
-          <div class="partial-open-warning-copy">
-            <p id="flowGroupingWarningText" class="info-banner-text"></p>
-          </div>
-        </section>
-
-        <section id="gtpuGroupingInfoBanner" class="panel info-banner">
-          <div class="partial-open-warning-copy">
-            <p id="gtpuGroupingInfoText" class="info-banner-text"></p>
-          </div>
-        </section>
+        <p id="flowGroupingSummaryText" class="flow-grouping-provenance" hidden></p>
 
         <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
@@ -557,6 +547,7 @@
                       <div class="statistics-mode-tabs" aria-label="Protocol path statistics mode">
                         <button id="protocolPathStatsModeKindOverview" type="button" class="secondary-button">Kind overview</button>
                         <button id="protocolPathStatsModeIdentityTree" type="button" class="secondary-button">Identity tree</button>
+                        <button id="protocolPathStatsModeIdentityTreeIpContext" type="button" class="secondary-button">Identity Tree + IP Context</button>
                         <button id="protocolPathStatsModeTerminalPaths" type="button" class="secondary-button">Terminal paths</button>
                       </div>
                       <div class="statistics-mode-actions">
@@ -566,6 +557,7 @@
                       </div>
                     </div>
                   </div>
+                  <p id="protocolPathIpContextHelp" class="panel-subtitle compact-help-text" hidden>IP pairs represent bidirectional Flow identity, not packet direction. Terminal Flow IPs remain undecorated.</p>
                   <div id="protocolPathStatsViewport" class="table-wrap protocol-path-stats-viewport">
                     <table class="data-table compact-stats-table">
                       <thead>
@@ -1152,25 +1144,20 @@
                 <p class="settings-help">Applied when the next raw capture is opened.</p>
               </section>
               <section class="settings-section">
+                <h3>Flow grouping</h3>
                 <label class="settings-checkbox-row">
                   <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
-                  <span>Ignore VLAN and MPLS layers when grouping flows</span>
+                  <span>Ignore VLAN and MPLS layers</span>
                 </label>
-                <p class="settings-help">Applied when importing a raw capture. Existing indexes keep their stored flow grouping.</p>
-              </section>
-              <section class="settings-section">
                 <label class="settings-checkbox-row">
                   <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
-                  <span>Ignore GTP-U TEIDs when grouping inner flows</span>
+                  <span>Ignore GTP-U TEIDs</span>
                 </label>
-                <p class="settings-help">Applied when importing a raw capture. Existing indexes keep their stored flow grouping.</p>
-              </section>
-              <section class="settings-section">
                 <label class="settings-checkbox-row">
                   <input id="settingsIgnoreNonTerminalIpEndpointsWhenGroupingFlows" type="checkbox" />
-                  <span>Ignore non-terminal IP endpoints when grouping flows</span>
+                  <span>Ignore non-terminal IP endpoints</span>
                 </label>
-                <p class="settings-help">Applied when importing a raw capture. Existing indexes keep their stored flow grouping.</p>
+                <p class="settings-help">Applied when importing the next raw capture. Existing indexes keep their stored flow grouping.</p>
               </section>
             </div>
           </div>

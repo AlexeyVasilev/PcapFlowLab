@@ -10,6 +10,8 @@ pub struct SourceAvailabilityDto {
     pub flow_grouping_ignores_vlan_and_mpls_layers: bool,
     pub flow_grouping_ignores_gtpu_teids: bool,
     pub flow_grouping_ignores_non_terminal_ip_endpoints: bool,
+    #[serde(default)]
+    pub flow_grouping_summary_text: String,
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
 }
@@ -243,6 +245,16 @@ pub struct AdvancedFlowFilterIpAddressSectionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterNonTerminalIpSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterTrafficRowDto {
     pub metric_id: String,
     pub unit_id: String,
@@ -349,6 +361,7 @@ pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub traffic_distribution: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub non_terminal_ip_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub protocol_path_selector_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub contains_layer_identifier_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub contains_layer_kind: Vec<AdvancedFlowFilterContainsLayerOptionDto>,
@@ -365,6 +378,7 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub directionality: AdvancedFlowFilterFiniteSectionDto,
     pub ports: AdvancedFlowFilterPortSectionDto,
     pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
+    pub non_terminal_ip: AdvancedFlowFilterNonTerminalIpSectionDto,
     pub time: AdvancedFlowFilterTimeSectionDto,
     pub traffic: AdvancedFlowFilterTrafficSectionDto,
     pub service: AdvancedFlowFilterServiceSectionDto,

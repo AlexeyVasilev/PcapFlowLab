@@ -21,6 +21,7 @@ struct FrontendSourceAvailabilityDto {
     bool flow_grouping_ignores_vlan_and_mpls_layers {false};
     bool flow_grouping_ignores_gtpu_teids {false};
     bool flow_grouping_ignores_non_terminal_ip_endpoints {false};
+    std::string flow_grouping_summary_text {};
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
 };
@@ -405,6 +406,7 @@ struct FrontendProtocolPathStatsDto {
     std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
     std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
     std::size_t depth {0};
+    std::optional<NonTerminalIpLevel> non_terminal_ip_context_level {};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};

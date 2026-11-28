@@ -77,6 +77,10 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+    ) -> c_uchar;
     fn pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
@@ -165,6 +169,17 @@ extern "C" {
         ip_exclude_address_text_utf8: *const *const c_char,
         ip_exclude_prefix_text_utf8: *const *const c_char,
         ip_exclude_count: usize,
+        non_terminal_ip_enabled: c_uchar,
+        non_terminal_ip_include_scope_ids_utf8: *const *const c_char,
+        non_terminal_ip_include_subnet_enabled: *const c_uchar,
+        non_terminal_ip_include_address_text_utf8: *const *const c_char,
+        non_terminal_ip_include_prefix_text_utf8: *const *const c_char,
+        non_terminal_ip_include_count: usize,
+        non_terminal_ip_exclude_scope_ids_utf8: *const *const c_char,
+        non_terminal_ip_exclude_subnet_enabled: *const c_uchar,
+        non_terminal_ip_exclude_address_text_utf8: *const *const c_char,
+        non_terminal_ip_exclude_prefix_text_utf8: *const *const c_char,
+        non_terminal_ip_exclude_count: usize,
         time_enabled: c_uchar,
         time_range_metric_ids_utf8: *const *const c_char,
         time_range_from_text_utf8: *const *const c_char,
@@ -543,6 +558,14 @@ impl CppFrontendSessionAdapter {
     }
 
     pub fn get_protocol_path_statistics(&self, mode: u8) -> Result<Vec<ProtocolPathStatsDto>, String> {
+        if mode == 3 {
+            match unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_status(self.handle, mode) } {
+                1 => return Err("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.".to_string()),
+                2 => return Err("Non-terminal IP context metadata is missing or inconsistent.".to_string()),
+                0 => {}
+                _ => return Err("Protocol Path Statistics are unavailable.".to_string()),
+            }
+        }
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_json(self.handle, mode) };
         parse_json_owned::<Vec<ProtocolPathStatsDto>>(json)
     }
@@ -882,6 +905,14 @@ impl CppFrontendSessionAdapter {
         let (ip_exclude_scope_cstrings, ip_exclude_address_cstrings, ip_exclude_prefix_cstrings,
             ip_exclude_scope_ptrs, ip_exclude_address_ptrs, ip_exclude_prefix_ptrs, ip_exclude_subnet_flags) =
             collect_ip_rows(&document.ip_addresses.exclude)?;
+        let (non_terminal_ip_include_scope_cstrings, non_terminal_ip_include_address_cstrings, non_terminal_ip_include_prefix_cstrings,
+            non_terminal_ip_include_scope_ptrs, non_terminal_ip_include_address_ptrs, non_terminal_ip_include_prefix_ptrs,
+            non_terminal_ip_include_subnet_flags) =
+            collect_ip_rows(&document.non_terminal_ip.include)?;
+        let (non_terminal_ip_exclude_scope_cstrings, non_terminal_ip_exclude_address_cstrings, non_terminal_ip_exclude_prefix_cstrings,
+            non_terminal_ip_exclude_scope_ptrs, non_terminal_ip_exclude_address_ptrs, non_terminal_ip_exclude_prefix_ptrs,
+            non_terminal_ip_exclude_subnet_flags) =
+            collect_ip_rows(&document.non_terminal_ip.exclude)?;
         let (time_range_metric_cstrings, time_range_from_cstrings, time_range_to_cstrings,
             time_range_metric_ptrs, time_range_from_ptrs, time_range_to_ptrs) =
             collect_time_rows(&document.time.ranges)?;
@@ -959,6 +990,12 @@ impl CppFrontendSessionAdapter {
             ip_exclude_scope_cstrings,
             ip_exclude_address_cstrings,
             ip_exclude_prefix_cstrings,
+            non_terminal_ip_include_scope_cstrings,
+            non_terminal_ip_include_address_cstrings,
+            non_terminal_ip_include_prefix_cstrings,
+            non_terminal_ip_exclude_scope_cstrings,
+            non_terminal_ip_exclude_address_cstrings,
+            non_terminal_ip_exclude_prefix_cstrings,
             time_range_metric_cstrings,
             time_range_from_cstrings,
             time_range_to_cstrings,
@@ -1054,6 +1091,17 @@ impl CppFrontendSessionAdapter {
                 ip_exclude_address_ptrs.as_ptr(),
                 ip_exclude_prefix_ptrs.as_ptr(),
                 ip_exclude_scope_ptrs.len(),
+                if document.non_terminal_ip.enabled { 1 } else { 0 },
+                non_terminal_ip_include_scope_ptrs.as_ptr(),
+                non_terminal_ip_include_subnet_flags.as_ptr(),
+                non_terminal_ip_include_address_ptrs.as_ptr(),
+                non_terminal_ip_include_prefix_ptrs.as_ptr(),
+                non_terminal_ip_include_scope_ptrs.len(),
+                non_terminal_ip_exclude_scope_ptrs.as_ptr(),
+                non_terminal_ip_exclude_subnet_flags.as_ptr(),
+                non_terminal_ip_exclude_address_ptrs.as_ptr(),
+                non_terminal_ip_exclude_prefix_ptrs.as_ptr(),
+                non_terminal_ip_exclude_scope_ptrs.len(),
                 if document.time.enabled { 1 } else { 0 },
                 time_range_metric_ptrs.as_ptr(),
                 time_range_from_ptrs.as_ptr(),

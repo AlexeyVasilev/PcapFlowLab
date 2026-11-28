@@ -19,6 +19,28 @@
 
 namespace pfl {
 
+std::string format_frontend_flow_grouping_summary(
+    const bool ignores_vlan_and_mpls_layers,
+    const bool ignores_gtpu_teids,
+    const bool ignores_non_terminal_ip_endpoints
+) {
+    std::string summary {};
+    const auto append_label = [&summary](const std::string_view label) {
+        summary += summary.empty() ? "Flow grouping: " : " · ";
+        summary += label;
+    };
+    if (ignores_vlan_and_mpls_layers) {
+        append_label("VLAN/MPLS ignored");
+    }
+    if (ignores_gtpu_teids) {
+        append_label("GTP-U TEID ignored");
+    }
+    if (ignores_non_terminal_ip_endpoints) {
+        append_label("Non-terminal IP ignored");
+    }
+    return summary;
+}
+
 namespace {
 
 constexpr std::string_view kUnavailableText {"—"};
@@ -1055,6 +1077,7 @@ std::vector<FrontendProtocolPathStatsDto> build_frontend_protocol_path_statistic
             .node_id = row.node_id,
             .parent_node_id = row.parent_node_id,
             .depth = row.depth,
+            .non_terminal_ip_context_level = row.non_terminal_ip_context_level,
             .layer_text = row.layer_text,
             .path_text = row.path_text,
             .compact_text = row.compact_text,

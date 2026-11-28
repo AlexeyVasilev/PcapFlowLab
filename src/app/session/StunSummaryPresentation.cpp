@@ -115,53 +115,6 @@ std::string format_ipv4_address(const std::array<std::uint8_t, 16>& address) {
         std::to_string(address[3]);
 }
 
-std::string format_ipv6_compressed(const std::array<std::uint8_t, 16>& address) {
-    std::array<std::uint16_t, 8> groups {};
-    for (std::size_t index = 0; index < groups.size(); ++index) {
-        groups[index] = static_cast<std::uint16_t>(
-            (static_cast<std::uint16_t>(address[index * 2U]) << 8U) |
-            static_cast<std::uint16_t>(address[(index * 2U) + 1U])
-        );
-    }
-
-    std::size_t best_start = groups.size();
-    std::size_t best_length = 0U;
-    for (std::size_t index = 0; index < groups.size();) {
-        if (groups[index] != 0U) {
-            ++index;
-            continue;
-        }
-        const auto start = index;
-        while (index < groups.size() && groups[index] == 0U) {
-            ++index;
-        }
-        const auto length = index - start;
-        if (length >= 2U && length > best_length) {
-            best_start = start;
-            best_length = length;
-        }
-    }
-
-    std::ostringstream builder {};
-    builder << std::hex << std::nouppercase;
-    for (std::size_t index = 0; index < groups.size();) {
-        if (index == best_start) {
-            builder << "::";
-            index += best_length;
-            if (index >= groups.size()) {
-                break;
-            }
-            continue;
-        }
-        if (index != 0U && !(best_length > 0U && index == best_start + best_length)) {
-            builder << ':';
-        }
-        builder << groups[index];
-        ++index;
-    }
-    return builder.str();
-}
-
 std::string format_address_family(const StunAddressFamily family) {
     switch (family) {
     case StunAddressFamily::ipv4:
@@ -178,7 +131,7 @@ std::string format_address(const StunAddress& address) {
     case StunAddressFamily::ipv4:
         return format_ipv4_address(address.address);
     case StunAddressFamily::ipv6:
-        return format_ipv6_compressed(address.address);
+        return format_ipv6_address_compact(address.address);
     default:
         return "Unknown";
     }

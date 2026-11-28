@@ -75,6 +75,7 @@ signals:
 
 private:
     [[nodiscard]] bool isTreeMode() const noexcept;
+    [[nodiscard]] QString compositeDisplayPathLabel(const ProtocolPathStatisticsRow& row) const;
     void rebuildIndexMaps();
     void materializeVisibleRows();
     void applyExpandedStateChange();

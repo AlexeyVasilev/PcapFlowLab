@@ -1,6 +1,7 @@
 #include "ui/app/ProtocolPathStatsModel.h"
 
 #include <QString>
+#include <QStringList>
 
 namespace pfl {
 
@@ -12,6 +13,9 @@ ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode
     }
     if (mode == static_cast<int>(ProtocolPathStatisticsMode::terminal_paths)) {
         return ProtocolPathStatisticsMode::terminal_paths;
+    }
+    if (mode == static_cast<int>(ProtocolPathStatisticsMode::identity_tree_ip_context)) {
+        return ProtocolPathStatisticsMode::identity_tree_ip_context;
     }
     return ProtocolPathStatisticsMode::kind_overview;
 }
@@ -75,7 +79,9 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
     case CanExpandRole:
         return isTreeMode() && row.has_children;
     case TooltipRole:
-        return QString::fromStdString(row.path_text);
+        return mode_ == ProtocolPathStatisticsMode::identity_tree_ip_context
+            ? compositeDisplayPathLabel(row)
+            : QString::fromStdString(row.path_text);
     case IsTerminalRole:
         return row.is_terminal;
     case RowIndexRole:
@@ -242,7 +248,9 @@ void ProtocolPathStatsModel::selectNode(const qulonglong nodeId) {
 
     const auto old_node_id = selected_node_id_;
     selected_node_id_ = row.node_id;
-    selected_node_filter_label_ = QString::fromStdString(row.path_text);
+    selected_node_filter_label_ = mode_ == ProtocolPathStatisticsMode::identity_tree_ip_context
+        ? compositeDisplayPathLabel(row)
+        : QString::fromStdString(row.path_text);
     selected_node_flow_count_ = static_cast<qulonglong>(row.flow_count);
 
     for (int visible_row = 0; visible_row < rowCount(); ++visible_row) {
@@ -297,6 +305,17 @@ qulonglong ProtocolPathStatsModel::selectedNodeFlowCount() const noexcept {
 
 bool ProtocolPathStatsModel::isTreeMode() const noexcept {
     return mode_ != ProtocolPathStatisticsMode::terminal_paths;
+}
+
+QString ProtocolPathStatsModel::compositeDisplayPathLabel(const ProtocolPathStatisticsRow& row) const {
+    QStringList labels {};
+    const ProtocolPathStatisticsRow* current = &row;
+    for (std::size_t depth = 0U; current != nullptr && depth < rows_.size(); ++depth) {
+        labels.prepend(QString::fromStdString(current->layer_text));
+        const auto parent = row_index_by_node_id_.find(current->parent_node_id);
+        current = parent == row_index_by_node_id_.end() ? nullptr : &rows_[parent->second];
+    }
+    return labels.join(QStringLiteral(" -> "));
 }
 
 void ProtocolPathStatsModel::rebuildIndexMaps() {

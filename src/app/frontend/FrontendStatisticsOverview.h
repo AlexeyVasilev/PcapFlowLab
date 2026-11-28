@@ -71,6 +71,11 @@ namespace pfl {
 [[nodiscard]] std::vector<FrontendCaptureImportSettingDto> build_frontend_capture_import_settings(
     const CaptureImportSettingsSnapshot& snapshot
 );
+[[nodiscard]] std::string format_frontend_flow_grouping_summary(
+    bool ignores_vlan_and_mpls_layers,
+    bool ignores_gtpu_teids,
+    bool ignores_non_terminal_ip_endpoints
+);
 [[nodiscard]] FrontendProtocolHintStatisticsDto build_frontend_protocol_hint_statistics(
     const CaptureProtocolSummary& summary
 );

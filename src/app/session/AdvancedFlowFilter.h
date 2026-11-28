@@ -10,6 +10,7 @@
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/FlowHints.h"
 #include "core/domain/DirectionDistribution.h"
+#include "core/domain/NonTerminalIpContext.h"
 #include "core/domain/ProtocolId.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/AnalysisSettings.h"
@@ -108,6 +109,39 @@ struct AdvancedFlowFilterAddressCriteria {
     std::vector<AdvancedFlowFilterIpv6AddressPredicate> ipv6_exclude {};
 
     bool operator==(const AdvancedFlowFilterAddressCriteria&) const = default;
+};
+
+enum class AdvancedFlowFilterNonTerminalIpScope : std::uint8_t {
+    outer = 0,
+    intermediate,
+    any,
+};
+
+struct AdvancedFlowFilterNonTerminalIpv4Predicate {
+    AdvancedFlowFilterAddressMatchKind match_kind {AdvancedFlowFilterAddressMatchKind::exact};
+    AdvancedFlowFilterNonTerminalIpScope scope {AdvancedFlowFilterNonTerminalIpScope::any};
+    std::uint32_t value {0};
+    std::uint8_t prefix_length {32};
+
+    bool operator==(const AdvancedFlowFilterNonTerminalIpv4Predicate&) const = default;
+};
+
+struct AdvancedFlowFilterNonTerminalIpv6Predicate {
+    AdvancedFlowFilterAddressMatchKind match_kind {AdvancedFlowFilterAddressMatchKind::exact};
+    AdvancedFlowFilterNonTerminalIpScope scope {AdvancedFlowFilterNonTerminalIpScope::any};
+    std::array<std::uint8_t, 16> value {};
+    std::uint8_t prefix_length {128};
+
+    bool operator==(const AdvancedFlowFilterNonTerminalIpv6Predicate&) const = default;
+};
+
+struct AdvancedFlowFilterNonTerminalIpCriteria {
+    std::vector<AdvancedFlowFilterNonTerminalIpv4Predicate> ipv4_include {};
+    std::vector<AdvancedFlowFilterNonTerminalIpv4Predicate> ipv4_exclude {};
+    std::vector<AdvancedFlowFilterNonTerminalIpv6Predicate> ipv6_include {};
+    std::vector<AdvancedFlowFilterNonTerminalIpv6Predicate> ipv6_exclude {};
+
+    bool operator==(const AdvancedFlowFilterNonTerminalIpCriteria&) const = default;
 };
 
 struct AdvancedFlowFilterTlsVersionCriteria {
@@ -240,6 +274,7 @@ struct AdvancedFlowFilterSpec {
     AdvancedFlowFilterPortCriteria ports {};
     AdvancedFlowFilterDirectionalityCriteria directionality {};
     AdvancedFlowFilterAddressCriteria addresses {};
+    AdvancedFlowFilterNonTerminalIpCriteria non_terminal_ip {};
     AdvancedFlowFilterTimeCriteria time {};
     AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterServiceCriteria service {};
@@ -256,6 +291,7 @@ struct AdvancedFlowFilterDocumentSectionStates {
     bool directionality {true};
     bool ports {true};
     bool ip_addresses {true};
+    bool non_terminal_ip {true};
     bool time {true};
     bool traffic {true};
     bool service {true};
@@ -404,6 +440,29 @@ struct CompiledAdvancedFlowFilterAddressCriteria {
     [[nodiscard]] bool has_exclude_predicates() const noexcept;
 };
 
+struct CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate {
+    AdvancedFlowFilterNonTerminalIpScope scope {AdvancedFlowFilterNonTerminalIpScope::any};
+    std::uint32_t network {0};
+    std::uint32_t mask {0};
+    std::uint8_t prefix_length {0};
+};
+
+struct CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate {
+    AdvancedFlowFilterNonTerminalIpScope scope {AdvancedFlowFilterNonTerminalIpScope::any};
+    std::array<std::uint8_t, 16> network {};
+    std::uint8_t prefix_length {0};
+};
+
+struct CompiledAdvancedFlowFilterNonTerminalIpCriteria {
+    std::vector<CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate> ipv4_include {};
+    std::vector<CompiledAdvancedFlowFilterNonTerminalIpv4CidrPredicate> ipv4_exclude {};
+    std::vector<CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate> ipv6_include {};
+    std::vector<CompiledAdvancedFlowFilterNonTerminalIpv6CidrPredicate> ipv6_exclude {};
+
+    [[nodiscard]] bool has_include_predicates() const noexcept;
+    [[nodiscard]] bool has_exclude_predicates() const noexcept;
+};
+
 struct CompiledAdvancedFlowFilterServicePredicate {
     AdvancedFlowFilterServicePredicateKind kind {AdvancedFlowFilterServicePredicateKind::known};
     std::string value {};
@@ -433,6 +492,7 @@ struct CompiledAdvancedFlowFilter {
     CompiledAdvancedFlowFilterPortCriteria ports {};
     CompiledAdvancedFlowFilterDirectionalityCriteria directionality {};
     CompiledAdvancedFlowFilterAddressCriteria addresses {};
+    CompiledAdvancedFlowFilterNonTerminalIpCriteria non_terminal_ip {};
     CompiledAdvancedFlowFilterTimeCriteria time {};
     CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterServiceCriteria service {};
@@ -447,6 +507,20 @@ struct AdvancedFlowFilterCompileResult {
 enum class AdvancedFlowFilterEvaluationStatus : std::uint8_t {
     ok = 0,
     invalid_candidate_index,
+    non_terminal_ip_metadata_unavailable,
+    missing_non_terminal_ip_context,
+};
+
+enum class AdvancedFlowFilterNonTerminalIpMetadataAvailability : std::uint8_t {
+    available = 0,
+    discarded_at_import,
+};
+
+struct AdvancedFlowFilterEvaluationContext {
+    const NonTerminalIpContextRegistry* non_terminal_ip_context_registry {nullptr};
+    AdvancedFlowFilterNonTerminalIpMetadataAvailability non_terminal_ip_metadata {
+        AdvancedFlowFilterNonTerminalIpMetadataAvailability::available
+    };
 };
 
 struct AdvancedFlowFilterResult {
@@ -460,6 +534,8 @@ enum class AdvancedFlowQueryStatus : std::uint8_t {
     invalid_flow_index,
     invalid_limit,
     invalid_advanced_filter,
+    non_terminal_ip_metadata_unavailable,
+    missing_non_terminal_ip_context,
 };
 
 struct AdvancedFlowQueryResult {
@@ -480,13 +556,15 @@ struct AdvancedFlowQueryResult {
 [[nodiscard]] AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     std::span<const ListedConnectionRef> connections,
     const CompiledAdvancedFlowFilter& filter,
-    std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt
+    std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt,
+    AdvancedFlowFilterEvaluationContext context = {}
 );
 
 [[nodiscard]] AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     std::span<const CanonicalFlowMetadata> flows,
     const CompiledAdvancedFlowFilter& filter,
-    std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt
+    std::optional<std::span<const std::size_t>> candidate_flow_indices = std::nullopt,
+    AdvancedFlowFilterEvaluationContext context = {}
 );
 
 [[nodiscard]] AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(

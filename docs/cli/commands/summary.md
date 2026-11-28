@@ -31,7 +31,7 @@ pcap-flow-lab --input <input> [summary options]
 
 - `--extended`
 - `--protocol-path-tree`
-- `--protocol-path-mode kind-overview|identity-tree|terminal-paths`
+- `--protocol-path-mode kind-overview|identity-tree|identity-tree-ip-context|terminal-paths`
 - `--out-index <path>`
 - `--out-flows-list <path>`
 - `--out-protocol-path-tree <path>`
@@ -67,18 +67,21 @@ flags, including:
   `--out-protocol-path-tree`.
 
 For current stable revision 20 indexes using the v16 physical architecture,
-compatible summary invocations use the Statistics fast tier directly. The fast path is used for the basic summary,
-`--extended`, Protocol Path Tree preview, Protocol Path Tree export, and full
-Statistics report side outputs because those outputs are backed by the stable
-header, capture Statistics snapshot, early Protocol Path registry, and terminal
-Protocol Path aggregates.
+basic summary, `--extended`, and Protocol Path modes 0-2 use the Statistics
+fast tier backed by the stable header, capture Statistics snapshot, early
+Protocol Path registry, and terminal Protocol Path aggregates. Mode 3
+(`identity-tree-ip-context`) additionally needs persisted Flow metadata,
+`NonTerminalIpContextRegistry`, and import-settings provenance. Full Statistics
+reports also need those retained sections for their enriched tree, except
+when import intentionally discarded context and the report selects a noted
+structural fallback.
 
-The fast path intentionally stops before later flow-metadata and packet-detail
-sections. A successful fast summary read therefore proves only the header and
-Statistics-tier data needed by `summary`; it does not validate the complete
-index. Options that require full flow metadata, such as `--out-flows-list`, use
-the normal full-session index path instead. Raw capture input continues to use
-the normal import/session path.
+The basic fast path stops before later flow-metadata and packet-detail
+sections. A successful basic fast summary read therefore does not validate the
+complete index. Mode 3 and enriched reports validate their required retained
+metadata, not packet-detail/source-byte sections. Options that require full
+session state, such as `--out-flows-list`, use the normal full-session index
+path. Raw capture input uses the normal import/session path.
 
 Fast v16 index summaries do not open, fingerprint, stat for current
 availability, or otherwise probe the recorded source capture. If the `Input`
@@ -234,7 +237,14 @@ that `--out-protocol-path-tree <path>` exports the complete tree.
 
 - `kind-overview`
 - `identity-tree`
+- `identity-tree-ip-context`
 - `terminal-paths`
+
+Mode 3 decorates the structural Identity tree with retained non-terminal IP
+endpoint pairs. The pairs are bidirectional Flow identity, not packet
+direction; the effective terminal Flow IP layer stays undecorated. If import
+intentionally ignored that metadata, explicit mode-3 preview/export fails
+with an applicability message rather than silently showing a structural tree.
 
 ## Side outputs
 
@@ -276,7 +286,9 @@ CLI-specific recalculation. Reports include:
 - TCP flag statistics;
 - QUIC and TLS recognition/version summaries;
 - top flows, top endpoints, and top ports;
-- Protocol Path statistics in Identity tree form at the end of the report.
+- one Protocol Path statistics tree at the end of the report: enriched
+  `Identity Tree + IP Context` when context was retained, or a noted structural
+  `Identity Tree` fallback when import intentionally discarded it.
 
 Report information includes:
 
@@ -300,13 +312,16 @@ as `Not checked`. Full-open/session-backed index reports use the actual
 `CaptureSession` source availability result and report `Available` or
 `Unavailable`.
 
-The full report intentionally includes only the Protocol Path Identity tree. It
-does not duplicate the standalone Protocol Path `kind-overview` or
-`terminal-paths` export views.
+The full report includes exactly one Protocol Path tree, chosen independently
+of `--protocol-path-mode` or the GUI Statistics selection. Missing or corrupt
+retained context is an explicit report error, not a fallback. The report does
+not duplicate the standalone `kind-overview` or `terminal-paths` export views.
 
-For v16 index input, report generation can use the Statistics fast tier without
-opening the recorded source capture and without validating later flow-metadata
-or packet-detail sections.
+For v16-architecture index input, enriched reporting reads persisted Flow
+metadata, `ProtocolPathRegistry`, `NonTerminalIpContextRegistry`, and
+import-settings provenance as well as the Statistics snapshot. It does not
+open the recorded source capture, read packets, re-dissect traffic, or require
+a new index revision. Modes 0-2 retain the earlier structural fast path.
 
 ## Help and errors
 

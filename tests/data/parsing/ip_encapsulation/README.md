@@ -53,7 +53,7 @@ Implemented in the current narrow parser pass:
 - inner IPv4 ICMP continuation for fixture `15`;
 - inner IPv6 ICMPv6 continuation for fixture `16`;
 - conservative rejection for malformed or too-short inner IPv4/IPv6 payloads;
-- accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
+- non-terminal IP endpoint context participates in Flow identity by default; differing outer tunnel endpoints keep otherwise-identical inner tuples in separate Flows.
 
 Still deferred:
 - arbitrary recursive or mixed-family nested encapsulation;
@@ -103,7 +103,7 @@ Current parser behavior:
 - inner IPv4 ICMP and inner IPv6 ICMPv6 through outer IPv4 follow the existing zero-port control-protocol flow model;
 - outer VLAN/QinQ should remain preserved before the outer IP layer;
 - no tunnel namespace identifier is added in v1 for basic IP-in-IP encapsulation;
-- same inner tuple through different outer tunnel endpoints may merge in v1 because outer tunnel endpoints are not intended to participate in protocol-path identity.
+- concrete outer tunnel endpoints are retained as non-terminal IP Flow-identity context even though the structural Protocol Path can be identical; the explicit ignore-non-terminal-IP grouping setting removes this distinction.
 
 Current implemented paths include:
 - `EthernetII -> IPv4 -> IPv4 -> TCP`
@@ -220,7 +220,8 @@ Control-protocol note:
 
 - Packets: 2
 - Same inner IPv4/UDP tuple appears through two different outer IPv4 tunnel endpoint pairs.
-- Current accepted v1 tradeoff: these merge into one flow because outer tunnel endpoints do not participate in flow identity.
+- Current default behavior: two Flows, because the outer non-terminal IPv4 endpoint pairs differ.
+- With `Ignore non-terminal IP endpoints when grouping flows` enabled: one Flow, since the remaining identity is otherwise equal.
 
 ### 14_same_inner_tuple_same_outer_ipv4_two_packets.pcap
 

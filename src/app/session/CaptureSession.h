@@ -688,7 +688,7 @@ private:
     mutable std::optional<SelectedFlowStreamContext> selected_flow_stream_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
     mutable std::optional<CaptureGeneralStatistics> general_statistics_cache_ {};
-    mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
+    mutable std::array<std::optional<CaptureProtocolPathSummary>, 4> protocol_path_summary_cache_ {};
     mutable session_detail::QuicInitialConnectionIdDiscoveryCache quic_initial_connection_id_cache_ {};
     mutable std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
     mutable std::uint64_t selected_flow_stream_context_generation_ {0};

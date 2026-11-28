@@ -162,6 +162,7 @@
     ...advancedFlowFilterSectionDefinitions.map((definition) => definition.id),
     "ports",
     "ip_addresses",
+    "non_terminal_ip",
     "time",
     "traffic",
     "service",
@@ -535,6 +536,8 @@
         return document.ports || null;
       case "ip_addresses":
         return document.ip_addresses || null;
+      case "non_terminal_ip":
+        return document.non_terminal_ip || null;
       case "time":
         return document.time || null;
       case "traffic":
@@ -568,6 +571,8 @@
         return "Ports";
       case "ip_addresses":
         return "IP addresses";
+      case "non_terminal_ip":
+        return "Encapsulation IPs (non-terminal)";
       case "time":
         return "Time";
       case "traffic":
@@ -639,11 +644,11 @@
       || String(row?.scope_id || "either") !== "either";
   }
 
-  function advancedFlowFilterIpRowConfigured(row) {
+  function advancedFlowFilterIpRowConfigured(row, defaultScope = "either") {
     return advancedFlowFilterHasMeaningfulText(row?.address_text)
       || advancedFlowFilterHasMeaningfulText(row?.prefix_text)
       || Boolean(row?.subnet_enabled)
-      || String(row?.scope_id || "either") !== "either";
+      || String(row?.scope_id || defaultScope) !== defaultScope;
   }
 
   function advancedFlowFilterTrafficRowConfigured(row) {
@@ -690,8 +695,13 @@
         ].length;
       case "ip_addresses":
         return [
-          ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterIpRowConfigured),
-          ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterIpRowConfigured),
+          ...(Array.isArray(section.include) ? section.include : []).filter((row) => advancedFlowFilterIpRowConfigured(row)),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter((row) => advancedFlowFilterIpRowConfigured(row)),
+        ].length;
+      case "non_terminal_ip":
+        return [
+          ...(Array.isArray(section.include) ? section.include : []).filter((row) => advancedFlowFilterIpRowConfigured(row, "outer")),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter((row) => advancedFlowFilterIpRowConfigured(row, "outer")),
         ].length;
       case "time":
         return [
@@ -769,6 +779,8 @@
       nextState.expandedById[sectionId] = advancedFlowFilterSectionHasConfiguredContent(sectionId, section);
       nextState.exclusionsExpandedById[sectionId] = advancedFlowFilterSectionHasExclusions(sectionId, section);
     }
+    nextState.expandedById.ip_addresses = nextState.expandedById.ip_addresses
+      || nextState.expandedById.non_terminal_ip;
     return nextState;
   }
 
@@ -838,9 +850,9 @@
     };
   }
 
-  function makeAdvancedFlowFilterIpAddressRow() {
+  function makeAdvancedFlowFilterIpAddressRow(sectionId = "ip_addresses") {
     return {
-      scope_id: "either",
+      scope_id: sectionId === "non_terminal_ip" ? "outer" : "either",
       subnet_enabled: false,
       address_text: "",
       prefix_text: "",
@@ -1018,12 +1030,12 @@
       : [];
   }
 
-  function normalizeAdvancedFlowFilterIpAddressRows(rows) {
+  function normalizeAdvancedFlowFilterIpAddressRows(rows, sectionId = "ip_addresses") {
     return Array.isArray(rows)
       ? rows.map((row) => ({
-        ...makeAdvancedFlowFilterIpAddressRow(),
+        ...makeAdvancedFlowFilterIpAddressRow(sectionId),
         ...(row && typeof row === "object" ? row : {}),
-        scope_id: String(row?.scope_id || "either"),
+        scope_id: String(row?.scope_id || (sectionId === "non_terminal_ip" ? "outer" : "either")),
         subnet_enabled: Boolean(row?.subnet_enabled),
         address_text: String(row?.address_text || ""),
         prefix_text: String(row?.prefix_text || ""),
@@ -1126,6 +1138,12 @@
         enabled: sourceDocument.ip_addresses?.enabled === undefined ? true : Boolean(sourceDocument.ip_addresses.enabled),
         include: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.include),
         exclude: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.exclude),
+      },
+      non_terminal_ip: {
+        ...(sourceDocument.non_terminal_ip && typeof sourceDocument.non_terminal_ip === "object" ? sourceDocument.non_terminal_ip : {}),
+        enabled: sourceDocument.non_terminal_ip?.enabled === undefined ? true : Boolean(sourceDocument.non_terminal_ip.enabled),
+        include: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.non_terminal_ip?.include, "non_terminal_ip"),
+        exclude: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.non_terminal_ip?.exclude, "non_terminal_ip"),
       },
       time: {
         ...(sourceDocument.time && typeof sourceDocument.time === "object" ? sourceDocument.time : {}),
@@ -1266,6 +1284,15 @@
           : [],
         exclude: Array.isArray(document?.ip_addresses?.exclude)
           ? document.ip_addresses.exclude.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
+          : [],
+      },
+      non_terminal_ip: {
+        enabled: Boolean(document?.non_terminal_ip?.enabled),
+        include: Array.isArray(document?.non_terminal_ip?.include)
+          ? document.non_terminal_ip.include.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
+          : [],
+        exclude: Array.isArray(document?.non_terminal_ip?.exclude)
+          ? document.non_terminal_ip.exclude.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
           : [],
       },
       time: {
@@ -1556,6 +1583,11 @@
     return Array.isArray(values) ? values : [];
   }
 
+  function advancedFlowFilterNonTerminalIpScopeOptions() {
+    const values = state.advancedFlowFilterSettings.optionCatalog?.non_terminal_ip_scope;
+    return Array.isArray(values) ? values : [];
+  }
+
   function adoptAdvancedFlowFilterStructuredResult(result, workflowPayload = null) {
     if (String(result?.status || "") !== "ok" || !result?.document) {
       throw new Error(String(result?.error_text || "Failed to prepare the structured Advanced Filter document."));
@@ -1694,7 +1726,7 @@
               </div>
             </div>
           </div>
-          <label class="advanced-filter-section-enabled">
+          ${options.showEnabled === false ? "" : `<label class="advanced-filter-section-enabled">
             <input
               type="checkbox"
               data-advanced-filter-enabled-section-id="${escapeHtml(sectionId)}"
@@ -1702,7 +1734,7 @@
               ${dialogBusy ? " disabled" : ""}
             />
             <span>Enabled</span>
-          </label>
+          </label>`}
         </div>
         <div class="advanced-filter-section-content"${expanded ? "" : " hidden"}>
           ${bodyMarkup}
@@ -1825,7 +1857,12 @@
 
   function renderAdvancedFlowFilterIpGroup(groupName, rows, sectionEnabled, dialogBusy, config = {}) {
     const groupKey = groupName.toLowerCase();
-    const scopeOptions = advancedFlowFilterEndpointScopeOptions();
+    const sectionId = config.sectionId || "ip_addresses";
+    const nonTerminal = sectionId === "non_terminal_ip";
+    const defaultScope = nonTerminal ? "outer" : "either";
+    const scopeOptions = nonTerminal
+      ? advancedFlowFilterNonTerminalIpScopeOptions()
+      : advancedFlowFilterEndpointScopeOptions();
     const editingDisabled = dialogBusy || !sectionEnabled;
     const showGroupTitle = config.showGroupTitle !== false;
     const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
@@ -1837,14 +1874,14 @@
             <div class="advanced-filter-row-card">
               <div class="advanced-filter-inline-fields-row is-wide">
                 <select
-                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-row-section-id="${escapeHtml(sectionId)}"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   data-advanced-filter-row-field="scope_id"
                   ${editingDisabled ? "disabled" : ""}
                 >
                   ${scopeOptions.map((option) => `
-                    <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
+                    <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || defaultScope) ? " selected" : ""}>
                       ${escapeHtml(String(option?.label || option?.stable_id || ""))}
                     </option>
                   `).join("")}
@@ -1852,7 +1889,7 @@
                 <label class="advanced-filter-inline-toggle">
                   <input
                     type="checkbox"
-                    data-advanced-filter-row-section-id="ip_addresses"
+                    data-advanced-filter-row-section-id="${escapeHtml(sectionId)}"
                     data-advanced-filter-group="${escapeHtml(groupKey)}"
                     data-advanced-filter-row-index="${rowIndex}"
                     data-advanced-filter-row-field="subnet_enabled"
@@ -1865,7 +1902,7 @@
                   type="text"
                   placeholder="Address"
                   value="${escapeHtml(String(row?.address_text || ""))}"
-                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-row-section-id="${escapeHtml(sectionId)}"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   data-advanced-filter-row-field="address_text"
@@ -1876,7 +1913,7 @@
                   class="${row?.subnet_enabled ? "" : "advanced-filter-inline-hidden"}"
                   placeholder="Prefix"
                   value="${escapeHtml(String(row?.prefix_text || ""))}"
-                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-row-section-id="${escapeHtml(sectionId)}"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   data-advanced-filter-row-field="prefix_text"
@@ -1885,7 +1922,7 @@
                 <button
                   type="button"
                   class="secondary-button advanced-filter-remove-row-button"
-                  data-advanced-filter-remove-row-section-id="ip_addresses"
+                  data-advanced-filter-remove-row-section-id="${escapeHtml(sectionId)}"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   ${dialogBusy ? "disabled" : ""}
@@ -1897,7 +1934,7 @@
         <button
           type="button"
           class="secondary-button advanced-filter-add-row-button"
-          data-advanced-filter-add-row-section-id="ip_addresses"
+          data-advanced-filter-add-row-section-id="${escapeHtml(sectionId)}"
           data-advanced-filter-group="${escapeHtml(groupKey)}"
           ${editingDisabled ? "disabled" : ""}
         >Add address rule</button>
@@ -1966,34 +2003,57 @@
     );
   }
 
-  function renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy) {
-    const ipSection = document?.ip_addresses || { enabled: true, include: [], exclude: [] };
-    const sectionId = "ip_addresses";
+  function renderAdvancedFlowFilterIpSubsection(document, sectionId, dialogBusy) {
+    const ipSection = advancedFlowFilterSectionById(document, sectionId) || { enabled: true, include: [], exclude: [] };
+    const nonTerminal = sectionId === "non_terminal_ip";
+    const title = nonTerminal ? "Encapsulation IPs (non-terminal)" : "Flow endpoint IPs (terminal)";
+    const help = nonTerminal
+      ? "IP layers outside the Flow endpoints. Outer matches the outermost non-terminal layer; Intermediate matches non-terminal layers between Outer and the terminal Flow endpoints."
+      : "Terminal IP addresses used by the Flow; for tunneled traffic, usually the innermost IP endpoints.";
+    const summary = advancedFlowFilterSectionSummaryText(document, sectionId);
     const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const showApplicability = nonTerminal && ipSection.applicability_known && !ipSection.applicable;
+    return `
+      <div class="advanced-filter-ip-subsection" data-advanced-filter-ip-subsection-id="${escapeHtml(sectionId)}">
+        <div class="advanced-filter-section-header">
+          <div class="advanced-filter-section-title-row">
+            <h4 class="advanced-filter-ip-subsection-title">${escapeHtml(title)}</h4>
+            ${summary ? `<span class="advanced-filter-section-summary">${escapeHtml(summary)}</span>` : ""}
+          </div>
+          <label class="advanced-filter-section-enabled">
+            <input type="checkbox" data-advanced-filter-enabled-section-id="${escapeHtml(sectionId)}"
+              ${ipSection.enabled ? "checked" : ""} ${dialogBusy ? "disabled" : ""} />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <p class="advanced-filter-helper-copy">${escapeHtml(help)}</p>
+        ${showApplicability ? `<p class="advanced-filter-helper-copy advanced-filter-ip-applicability" role="status">${escapeHtml(String(ipSection.status_text || ""))}</p>` : ""}
+        ${renderAdvancedFlowFilterIpGroup("Include", ipSection.include, Boolean(ipSection.enabled), dialogBusy, { sectionId })}
+        ${exclusionsExpanded
+          ? renderAdvancedFlowFilterExclusionsGroup(
+              sectionId,
+              renderAdvancedFlowFilterIpGroup("Exclude", ipSection.exclude, Boolean(ipSection.enabled), dialogBusy,
+                { sectionId, showGroupTitle: false }),
+              dialogBusy
+            )
+          : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy)}
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy) {
     const bodyMarkup = [
-      renderAdvancedFlowFilterIpGroup("Include", ipSection.include, Boolean(ipSection.enabled), dialogBusy),
-      exclusionsExpanded
-        ? renderAdvancedFlowFilterExclusionsGroup(
-            sectionId,
-            renderAdvancedFlowFilterIpGroup(
-              "Exclude",
-              ipSection.exclude,
-              Boolean(ipSection.enabled),
-              dialogBusy,
-              { showGroupTitle: false }
-            ),
-            dialogBusy
-          )
-        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+      renderAdvancedFlowFilterIpSubsection(document, "ip_addresses", dialogBusy),
+      renderAdvancedFlowFilterIpSubsection(document, "non_terminal_ip", dialogBusy),
     ].join("");
     return renderAdvancedFlowFilterSectionCard(
-      sectionId,
+      "ip_addresses",
       "IP addresses",
-      advancedFlowFilterSectionSummaryText(document, sectionId),
-      Boolean(ipSection.enabled),
+      "",
+      true,
       dialogBusy,
       bodyMarkup,
-      { wide: true }
+      { wide: true, showEnabled: false }
     );
   }
 
@@ -2764,7 +2824,10 @@
         sectionId === "service"
         && input.dataset.advancedFilterDisabledWhenUnrecognizedOnly === "true"
         && advancedFlowFilterServiceIncludeTextEditingDisabled(section, false);
-      input.disabled = interactionBlocked || !Boolean(section?.enabled) || disableForUnrecognizedOnly;
+      const disableIpPrefix = (sectionId === "ip_addresses" || sectionId === "non_terminal_ip")
+        && input.dataset.advancedFilterRowField === "prefix_text"
+        && !section?.[input.dataset.advancedFilterGroup]?.[Number(input.dataset.advancedFilterRowIndex)]?.subnet_enabled;
+      input.disabled = interactionBlocked || !Boolean(section?.enabled) || disableForUnrecognizedOnly || disableIpPrefix;
     }
     for (const addButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-add-row-section-id]")) {
       const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
@@ -2835,6 +2898,8 @@
   }
 
   function rerenderAdvancedFlowFilterSettingsSection(sectionId) {
+    // Both document sections share one visual card. Rebuild only on structural actions.
+    sectionId = sectionId === "non_terminal_ip" ? "ip_addresses" : sectionId;
     const structuredDocument = state.advancedFlowFilterSettings.document;
     if (!structuredDocument || state.advancedFlowFilterSettings.loading || !elements.advancedFlowFilterSettingsSections) {
       renderAdvancedFlowFilterSettingsStructure(true);
@@ -3409,10 +3474,7 @@
     sourceWarningBanner: document.getElementById("sourceWarningBanner"),
     sourceWarningText: document.getElementById("sourceWarningText"),
     sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
-    flowGroupingWarningBanner: document.getElementById("flowGroupingWarningBanner"),
-    flowGroupingWarningText: document.getElementById("flowGroupingWarningText"),
-    gtpuGroupingInfoBanner: document.getElementById("gtpuGroupingInfoBanner"),
-    gtpuGroupingInfoText: document.getElementById("gtpuGroupingInfoText"),
+    flowGroupingSummaryText: document.getElementById("flowGroupingSummaryText"),
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
@@ -3652,6 +3714,8 @@
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
+    protocolPathStatsModeIdentityTreeIpContext: document.getElementById("protocolPathStatsModeIdentityTreeIpContext"),
+    protocolPathIpContextHelp: document.getElementById("protocolPathIpContextHelp"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
     protocolPathExportButton: document.getElementById("protocolPathExportButton"),
@@ -4177,6 +4241,11 @@
     return Number(state.protocolPathStatsMode ?? state.overview?.protocol_path_statistics_default_mode ?? 0);
   }
 
+  function normalizeProtocolPathStatsMode(mode) {
+    const value = Number(mode);
+    return value === 1 || value === 2 || value === 3 ? value : 0;
+  }
+
   function currentProtocolPathStatsRows() {
     const protocolPathMode = currentProtocolPathMode();
     const rows = state.protocolPathStatsByMode.get(protocolPathMode);
@@ -4188,6 +4257,9 @@
     if (normalizedMode === 1) {
       return "Identity tree";
     }
+    if (normalizedMode === 3) {
+      return "Identity Tree + IP Context";
+    }
     if (normalizedMode === 2) {
       return "Terminal paths";
     }
@@ -4197,7 +4269,22 @@
   function protocolPathRowFilterLabel(row, mode) {
     const pathText = String(row?.path_text || "").trim();
     const layerText = String(row?.layer_text || "").trim();
-    const suffix = pathText.length > 0 ? pathText : layerText;
+    let suffix = pathText.length > 0 ? pathText : layerText;
+    if (Number(mode) === 3 && row) {
+      const rows = currentProtocolPathStatsRows();
+      const labels = [layerText];
+      let parentId = Number(row.parent_node_id);
+      for (let index = rows.indexOf(row) - 1; index >= 0 && parentId > 0; index -= 1) {
+        const candidate = rows[index];
+        if (Number(candidate?.node_id) === parentId) {
+          labels.push(String(candidate.layer_text || "").trim());
+          parentId = Number(candidate.parent_node_id);
+        }
+      }
+      if (labels.length > 0) {
+        suffix = labels.reverse().join(" -> ");
+      }
+    }
     return suffix.length > 0
       ? `${protocolPathModeLabel(mode)} / ${suffix}`
       : protocolPathModeLabel(mode);
@@ -4685,6 +4772,7 @@
       flow_grouping_ignores_gtpu_teids: Boolean(sourceAvailability?.flow_grouping_ignores_gtpu_teids),
       flow_grouping_ignores_non_terminal_ip_endpoints:
         Boolean(sourceAvailability?.flow_grouping_ignores_non_terminal_ip_endpoints),
+      flow_grouping_summary_text: String(sourceAvailability?.flow_grouping_summary_text || ""),
       active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
       expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
     };
@@ -5420,50 +5508,47 @@
         || preparedCandidate.sourceCanonicalText
         || defaultAdvancedFlowFilterText()
       );
+      let queryResult = null;
       if (advancedFlowFilterEvaluationAvailable()) {
-        const queryResult = await invoke("query_advanced_flows_text", {
+        queryResult = await invoke("query_advanced_flows_text", {
           filter_text: canonicalText,
           candidate_flow_indices: null,
         });
-        if (String(queryResult?.status || "") !== "ok") {
+        if (String(queryResult?.status || "") !== "ok"
+            && String(queryResult?.status || "") !== "non_terminal_ip_metadata_unavailable") {
           setAdvancedFlowFilterSettingsStatus(
             String(queryResult?.error_text || "Failed to open the selected Advanced Filter document."),
             "error"
           );
           return false;
         }
-        const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
-          filter_text: canonicalText,
-          source_path: String(preparedCandidate.sourcePath || ""),
-        });
+      }
+      const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
+        filter_text: canonicalText,
+        source_path: String(preparedCandidate.sourcePath || ""),
+      });
+      if (queryResult && String(queryResult.status) === "ok") {
         applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
         notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
-        dismissAdvancedFlowFilterPendingDestructiveAction();
-        installAdvancedFlowFilterSettingsDraft({
-          document: normalizeAdvancedFlowFilterEditorDraftDocument(
-            cloneAdvancedFlowFilterValue(preparedCandidate.document)
-          ),
-          optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
-          workflow,
-        });
       } else {
-        const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
-          filter_text: canonicalText,
-          source_path: String(preparedCandidate.sourcePath || ""),
-        });
         applyAdvancedFlowFilterWorkflowWithoutEvaluation(canonicalText, workflow);
-        dismissAdvancedFlowFilterPendingDestructiveAction();
-        installAdvancedFlowFilterSettingsDraft({
-          document: normalizeAdvancedFlowFilterEditorDraftDocument(
-            cloneAdvancedFlowFilterValue(preparedCandidate.document)
-          ),
-          optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
-          workflow,
-        });
+        if (queryResult) {
+          setAdvancedFlowFilterStatus(String(queryResult.error_text), "error");
+        }
       }
+      dismissAdvancedFlowFilterPendingDestructiveAction();
+      installAdvancedFlowFilterSettingsDraft({
+        document: normalizeAdvancedFlowFilterEditorDraftDocument(
+          cloneAdvancedFlowFilterValue(preparedCandidate.document)
+        ),
+        optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
+        workflow,
+      });
+      const unavailableText = queryResult && String(queryResult.status) !== "ok"
+        ? String(queryResult.error_text || "") : "";
       setAdvancedFlowFilterSettingsStatus(
-        `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
-        "success"
+        [`Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`, unavailableText].filter(Boolean).join(" "),
+        unavailableText ? "neutral" : "success"
       );
       return true;
     } catch (error) {
@@ -5520,7 +5605,8 @@
           filter_text: canonicalText,
           candidate_flow_indices: null,
         });
-        if (String(queryResult?.status || "") !== "ok") {
+        if (String(queryResult?.status || "") !== "ok"
+            && String(queryResult?.status || "") !== "non_terminal_ip_metadata_unavailable") {
           setAdvancedFlowFilterSettingsStatus(
             String(queryResult?.error_text || "Failed to save the Advanced Filter draft."),
             "error"
@@ -5545,10 +5631,13 @@
       const workflow = persistResult.workflow;
       const outputPath = String(persistResult.outputPath || "");
 
-      if (queryResult) {
+      if (queryResult && String(queryResult.status) === "ok") {
         applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
       } else {
         applyAdvancedFlowFilterWorkflowWithoutEvaluation(canonicalText, workflow);
+        if (queryResult) {
+          setAdvancedFlowFilterStatus(String(queryResult.error_text), "error");
+        }
       }
       if (keepDialogOpen) {
         adoptAdvancedFlowFilterStructuredResult(structuredResult, workflow);
@@ -5556,8 +5645,13 @@
         resetAdvancedFlowFilterSettingsState();
       }
 
-      if (successStatusText.length > 0) {
-        setAdvancedFlowFilterSettingsStatus(successStatusText, "success");
+      const unavailableText = queryResult && String(queryResult.status) !== "ok"
+        ? String(queryResult.error_text || "") : "";
+      if (successStatusText.length > 0 || unavailableText) {
+        setAdvancedFlowFilterSettingsStatus(
+          [successStatusText, unavailableText].filter(Boolean).join(" "),
+          unavailableText ? "neutral" : "success"
+        );
       }
 
       return {
@@ -5717,6 +5811,7 @@
       return false;
     }
     clearAdvancedFlowFilterSettingsStatus();
+    // Text input already updates this same draft synchronously, including the other IP subsection.
     mutator(draft);
     refreshAdvancedFlowFilterSettingsAfterDraftChange(options);
     return true;
@@ -5858,7 +5953,7 @@
   }
 
   function syncProtocolPathSectionRequestState(mode = currentProtocolPathMode()) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (state.protocolPathStatsPendingByMode.has(normalizedMode)) {
       setStatisticsSectionRequestState(statisticsSectionKeys.protocolPath, statisticsSectionRequestStates.loading);
       return;
@@ -5876,7 +5971,7 @@
   }
 
   async function ensureProtocolPathStatsLoaded(mode = currentProtocolPathMode()) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (state.openState !== "opened" || !state.overview) {
       return [];
     }
@@ -5925,7 +6020,11 @@
           return [];
         }
 
-        const errorText = `Failed to load protocol-path statistics: ${String(error)}`;
+        const rawError = String(error);
+        const errorText = normalizedMode === 3 && (
+          rawError === "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."
+          || rawError === "Non-terminal IP context metadata is missing or inconsistent."
+        ) ? rawError : `Failed to load protocol-path statistics: ${rawError}`;
         state.protocolPathStatsErrorsByMode.set(normalizedMode, errorText);
         if (currentProtocolPathMode() === normalizedMode) {
           setStatisticsSectionRequestState(statisticsSectionKeys.protocolPath, statisticsSectionRequestStates.error, errorText);
@@ -5997,7 +6096,7 @@
   }
 
   async function setProtocolPathStatsMode(mode) {
-    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    const normalizedMode = normalizeProtocolPathStatsMode(mode);
     if (currentProtocolPathMode() === normalizedMode) {
       if (statisticsSectionEligible(statisticsSectionKeys.protocolPath)) {
         await ensureProtocolPathStatsLoaded(normalizedMode);
@@ -6522,6 +6621,11 @@
     const protocolPathRows = currentProtocolPathStatsRows();
     const protocolPathRowsLoading = state.protocolPathStatsPendingByMode.has(protocolPathMode);
     const protocolPathErrorText = state.protocolPathStatsErrorsByMode.get(protocolPathMode) || "";
+    if (elements.protocolPathIpContextHelp) {
+      elements.protocolPathIpContextHelp.hidden = protocolPathMode !== 3 ||
+        state.openState !== "opened" || !state.overview || protocolPathRowsLoading ||
+        protocolPathErrorText.length > 0 || !state.protocolPathStatsByMode.has(3);
+    }
 
     pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
     const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
@@ -6533,16 +6637,18 @@
 
     elements.protocolPathStatsModeKindOverview?.classList.toggle("is-active", protocolPathMode === 0);
     elements.protocolPathStatsModeIdentityTree?.classList.toggle("is-active", protocolPathMode === 1);
+    elements.protocolPathStatsModeIdentityTreeIpContext?.classList.toggle("is-active", protocolPathMode === 3);
     elements.protocolPathStatsModeTerminalPaths?.classList.toggle("is-active", protocolPathMode === 2);
     elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
     elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
+    elements.protocolPathStatsModeIdentityTreeIpContext?.setAttribute("aria-pressed", protocolPathMode === 3 ? "true" : "false");
     elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
 
     if (elements.protocolPathShowFlowsButton) {
       elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
     }
     if (elements.protocolPathExportButton) {
-      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree();
+      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree() || protocolPathErrorText.length > 0;
     }
     if (elements.protocolPathExpandAllButton) {
       elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
@@ -8041,40 +8147,12 @@
     elements.partialOpenWarningText.textContent = showBanner ? warningText : "";
   }
 
-  function flowGroupingWarningBannerText() {
-    const availability = currentSourceAvailability();
-    if (state.openState !== "opened") {
-      return "";
-    }
-    if (availability.flow_grouping_ignores_vlan_and_mpls_layers) {
-      return "VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.";
-    }
-    return "";
-  }
-
-  function renderFlowGroupingWarningBanner() {
-    const warningText = flowGroupingWarningBannerText();
-    const showBanner = warningText.length > 0;
-    elements.flowGroupingWarningBanner.classList.toggle("is-visible", showBanner);
-    elements.flowGroupingWarningText.textContent = showBanner ? warningText : "";
-  }
-
-  function gtpuGroupingInfoBannerText() {
-    const availability = currentSourceAvailability();
-    if (state.openState !== "opened") {
-      return "";
-    }
-    if (availability.flow_grouping_ignores_gtpu_teids) {
-      return "GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.";
-    }
-    return "";
-  }
-
-  function renderGtpuGroupingInfoBanner() {
-    const infoText = gtpuGroupingInfoBannerText();
-    const showBanner = infoText.length > 0;
-    elements.gtpuGroupingInfoBanner.classList.toggle("is-visible", showBanner);
-    elements.gtpuGroupingInfoText.textContent = showBanner ? infoText : "";
+  function renderFlowGroupingSummary() {
+    const summary = state.openState === "opened"
+      ? currentSourceAvailability().flow_grouping_summary_text
+      : "";
+    elements.flowGroupingSummaryText.textContent = summary;
+    elements.flowGroupingSummaryText.hidden = summary.length === 0;
   }
 
   function renderStatisticsOverview() {
@@ -10488,8 +10566,7 @@
       ["open state", renderOpenState],
       ["partial-open warning banner", renderPartialOpenWarningBanner],
       ["source warning banner", renderSourceWarningBanner],
-      ["flow-grouping warning banner", renderFlowGroupingWarningBanner],
-      ["gtpu-grouping info banner", renderGtpuGroupingInfoBanner],
+      ["flow-grouping summary", renderFlowGroupingSummary],
       ["status", renderStatus],
     ];
 
@@ -13120,11 +13197,11 @@
             return;
           }
           rows.push(makeAdvancedFlowFilterPortRow());
-        } else if (sectionId === "ip_addresses") {
+        } else if (sectionId === "ip_addresses" || sectionId === "non_terminal_ip") {
           if (group !== "include" && group !== "exclude") {
             return;
           }
-          rows.push(makeAdvancedFlowFilterIpAddressRow());
+          rows.push(makeAdvancedFlowFilterIpAddressRow(sectionId));
         } else if (sectionId === "service") {
           if (group !== "include_text" && group !== "exclude_text") {
             return;
@@ -13332,6 +13409,7 @@
     if (row) {
       row[field] = event.target.value;
     }
+    // Update toolbar/status only: replacing rows here would interrupt typing and selection.
     renderAdvancedFlowFilterSettingsDialogShell();
   });
   elements.useSimpleFlowFilterButton?.addEventListener("click", () => {
@@ -13343,6 +13421,9 @@
   });
   elements.protocolPathStatsModeIdentityTree?.addEventListener("click", () => {
     void setProtocolPathStatsMode(1);
+  });
+  elements.protocolPathStatsModeIdentityTreeIpContext?.addEventListener("click", () => {
+    void setProtocolPathStatsMode(3);
   });
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
     void setProtocolPathStatsMode(2);

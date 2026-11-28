@@ -2,6 +2,7 @@
 
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -2142,6 +2143,10 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
         .flow_grouping_ignores_vlan_and_mpls_layers = session_.flow_grouping_ignores_vlan_and_mpls_layers(),
         .flow_grouping_ignores_gtpu_teids = session_.flow_grouping_ignores_gtpu_teids(),
         .flow_grouping_ignores_non_terminal_ip_endpoints = session_.flow_grouping_ignores_non_terminal_ip_endpoints(),
+        .flow_grouping_summary_text = session_.has_capture() ? format_frontend_flow_grouping_summary(
+            session_.flow_grouping_ignores_vlan_and_mpls_layers(),
+            session_.flow_grouping_ignores_gtpu_teids(),
+            session_.flow_grouping_ignores_non_terminal_ip_endpoints()) : std::string {},
         .active_source_capture_path = path_to_string(session_.attached_source_capture_path()),
         .expected_source_capture_path = path_to_string(session_.expected_source_capture_path()),
     };
@@ -2263,6 +2268,10 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::fi
                 .flow_grouping_ignores_gtpu_teids = worker_session.flow_grouping_ignores_gtpu_teids(),
                 .flow_grouping_ignores_non_terminal_ip_endpoints =
                     worker_session.flow_grouping_ignores_non_terminal_ip_endpoints(),
+                .flow_grouping_summary_text = format_frontend_flow_grouping_summary(
+                    worker_session.flow_grouping_ignores_vlan_and_mpls_layers(),
+                    worker_session.flow_grouping_ignores_gtpu_teids(),
+                    worker_session.flow_grouping_ignores_non_terminal_ip_endpoints()),
                 .active_source_capture_path = path_to_string(worker_session.attached_source_capture_path()),
                 .expected_source_capture_path = path_to_string(worker_session.expected_source_capture_path()),
             };
@@ -2615,6 +2624,12 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
         return result;
     }
 
+    auto path_selection = get_statistics_report_protocol_path_tree();
+    if (!path_selection.tree) {
+        result.error_text = path_selection.error_text;
+        return result;
+    }
+
     const auto overview = build_frontend_overview(session_, false);
     FrontendStatisticsReportMetadata metadata {
         .application_name = "Pcap Flow Lab",
@@ -2640,8 +2655,7 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
         .quic_tls_statistics = get_quic_tls_statistics(),
         .top_endpoint_port_statistics =
             get_top_endpoint_port_statistics(kStatisticsReportTopEndpointPortLimit),
-        .protocol_path_identity_tree =
-            get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree),
+        .protocol_path_tree = std::move(*path_selection.tree),
     };
     const auto report = build_frontend_statistics_report_data(input);
 
@@ -2672,6 +2686,14 @@ FrontendExportStatisticsReportResult FrontendSessionAdapter::export_statistics_r
     result.exported = true;
     result.output_path = path_to_string(output_path);
     return result;
+}
+
+FrontendStatisticsReportProtocolPathSelectionResult FrontendSessionAdapter::get_statistics_report_protocol_path_tree() const {
+    if (!session_.has_capture()) {
+        return {.error_text = "No capture is open."};
+    }
+    return select_statistics_report_protocol_path_tree(
+        [this](const ProtocolPathStatisticsMode mode) { return session_.protocol_path_summary(mode); });
 }
 
 std::optional<std::uint32_t> FrontendSessionAdapter::loaded_index_revision() const noexcept {
@@ -3181,6 +3203,14 @@ FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows(
             .compile_status = query_result.compile_status,
             .compile_issue = query_result.compile_issue,
         };
+    case session_detail::AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable,
+        };
+    case session_detail::AdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context,
+        };
     }
 
     return FrontendAdvancedFlowQueryResult {};
@@ -3283,6 +3313,20 @@ std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_p
     }
 
     return build_frontend_protocol_path_statistics(session_.protocol_path_summary(mode));
+}
+
+ProtocolPathStatisticsStatus FrontendSessionAdapter::get_protocol_path_statistics_status(
+    const ProtocolPathStatisticsMode mode
+) const {
+    return session_.protocol_path_summary(mode).status;
+}
+
+std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_non_terminal_ip_applicability() const noexcept {
+    if (!session_.has_capture()) {
+        return std::nullopt;
+    }
+
+    return !session_.flow_grouping_ignores_non_terminal_ip_endpoints();
 }
 
 std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_protocol_path_predicate_applicability(

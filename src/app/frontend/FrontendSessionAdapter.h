@@ -12,6 +12,7 @@
 
 #include "app/frontend/AdvancedFlowFilterStructuredDocument.h"
 #include "app/frontend/FrontendDtos.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "app/session/CaptureSession.h"
@@ -58,6 +59,7 @@ public:
         FrontendStatisticsReportFormat format,
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] FrontendStatisticsReportProtocolPathSelectionResult get_statistics_report_protocol_path_tree() const;
     [[nodiscard]] std::optional<std::uint32_t> loaded_index_revision() const noexcept;
     [[nodiscard]] std::vector<FrontendByteExportFormatDto> get_byte_export_formats() const;
     [[nodiscard]] FrontendByteExportResult export_selected_flow_packet_byte_view(
@@ -121,6 +123,10 @@ public:
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
         ProtocolPathStatisticsMode mode
     ) const;
+    [[nodiscard]] ProtocolPathStatisticsStatus get_protocol_path_statistics_status(
+        ProtocolPathStatisticsMode mode
+    ) const;
+    [[nodiscard]] std::optional<bool> advanced_flow_filter_non_terminal_ip_applicability() const noexcept;
     [[nodiscard]] std::optional<bool> advanced_flow_filter_protocol_path_predicate_applicability(
         const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
     ) const;

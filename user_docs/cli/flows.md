@@ -7,9 +7,9 @@ index. In practice it is usually the next CLI step after `summary`:
 - `flows` lets you inspect, filter, rank, select, and export the recognized
   flow list.
 
-The examples below were captured from the 0.4.0 CLI using the repository
-showcase raw capture. Shell-specific executable prefixes such as `.\` are
-omitted.
+The examples marked as verified output below were captured from the 0.4.0 CLI
+using the repository showcase raw capture. Other commands illustrate usage.
+Shell-specific executable prefixes such as `.\` are omitted.
 
 ## List flows from an index
 
@@ -119,7 +119,9 @@ In other words, `--filter` can match things like:
 - `:443`
 - a full endpoint string such as `192.0.2.10:41000`
 
-It does **not** currently search the compact `Path` column.
+It does **not** currently search the compact `Path` column or retained
+non-terminal IP addresses. Endpoint addresses here are the terminal Flow
+endpoints; use `--adv-filter` to select encapsulation IPs.
 
 ## Use a structured Advanced Filter document
 
@@ -137,8 +139,8 @@ This is separate from the legacy text `--filter` option:
 
 The two modes are mutually exclusive.
 
-Advanced `.filter` documents can include the same current Time and directional
-Traffic predicates used by the desktop UI, for example:
+Advanced `.filter` documents can include the same current IP, Time, and
+directional Traffic predicates used by the desktop UI, for example:
 
 - flow start / end bounds;
 - flow lifetime overlap;
@@ -149,6 +151,40 @@ Traffic predicates used by the desktop UI, for example:
 
 These predicates stay metadata-backed for ordinary flow listing. They do not
 require source-packet rereads or packet rescanning during evaluation.
+
+### Terminal and non-terminal IP addresses
+
+In a `.filter` document, `ip.either.*`, `ip.a.*`, and `ip.b.*` match the
+terminal Flow endpoints. They do not search outer or intermediate IP headers.
+Use `non_terminal_ip.outer.*` for the outermost non-terminal IP header,
+`non_terminal_ip.intermediate.*` for IP headers between the outermost and
+terminal headers, or `non_terminal_ip.any.*` for any non-terminal IP header.
+Each non-terminal predicate matches either source or destination address at
+the selected level, regardless of packet direction; it does not use Endpoint
+A/B orientation. Include and exclude predicates accept exact addresses or
+CIDR ranges.
+
+For example, `tunnel.filter` can contain:
+
+```text
+format_version = 3
+non_terminal_ip.outer.include = 192.0.2.0/24
+non_terminal_ip.intermediate.exclude = 10.0.0.50
+```
+
+Use the same filter with a raw capture or a compatible saved index:
+
+```text
+pcap-flow-lab flows capture.pcap --adv-filter tunnel.filter
+pcap-flow-lab flows capture.idx --adv-filter tunnel.filter
+```
+
+An index with retained non-terminal IP metadata evaluates this filter without
+reading the source capture. If the import setting
+`ignore_non_terminal_ip_endpoints_when_grouping_flows` omitted that metadata,
+an active non-terminal predicate returns an error rather than an empty set of
+matches. See [Import settings](../reference/settings.md). A disabled
+non-terminal section does not require that metadata.
 
 For the desktop workflow and user-facing meaning of Advanced Filter sections,
 including condition combination, Endpoint A/B directionality, `.filter` files,
@@ -453,6 +489,7 @@ Supported selection and filtering options:
 | `--flow-number <N>` | Select one one-based Flow. |
 | `--flow-numbers <ranges>` | Select inclusive one-based ranges such as `1-10,24,31-35`. |
 | `--filter <text>` | Apply case-insensitive text matching across the verified flow fields. |
+| `--adv-filter <path>` | Evaluate a structured `.filter` document using the shared Advanced Flow Filter backend. |
 | `--limit <N>` | Limit the logical result flow count after selection, filtering, and sorting. |
 
 Verified filter fields:
@@ -496,6 +533,7 @@ Current tie behavior is stable and falls back to Flow number order.
 | `--flow-number` | `<N>` | Select one one-based Flow number. |
 | `--flow-numbers` | `<ranges>` | Select one-based inclusive ranges such as `1-10,24,31-35`. |
 | `--filter` | `<text>` | Apply case-insensitive flow-text filtering. |
+| `--adv-filter` | `<path>` | Load and evaluate a structured `.filter` document. |
 | `--sort` | `<field>:<asc\|desc>` | Sort the selected flow set. |
 | `--limit` | `<N>` | Limit the final logical flow result. |
 | `--out-flows-list` | `<path>` | Export the final logical flow result as CSV. |
@@ -524,6 +562,7 @@ Important verified rules:
 
 - positional input and `--input` cannot be combined;
 - `--flow-number` and `--flow-numbers` are mutually exclusive;
+- `--filter` and `--adv-filter` are mutually exclusive;
 - `--settings` is valid only for raw capture input;
 - `--limit` must be a positive flow count;
 - out-of-range Flow numbers fail instead of silently disappearing;

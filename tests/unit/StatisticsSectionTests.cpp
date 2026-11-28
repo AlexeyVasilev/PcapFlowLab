@@ -3422,6 +3422,59 @@ void expect_frontend_statistics_report_export_uses_tauri_metadata() {
     PFL_EXPECT(!contains_text(html, "Index file size"));
 }
 
+void expect_frontend_statistics_report_protocol_path_selection() {
+    const auto capture_path = fixture_path("parsing/ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap");
+    const auto markdown_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report.md";
+    const auto html_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report.html";
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report.idx";
+    const auto index_report_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report_index.md";
+    std::filesystem::remove(markdown_path);
+    std::filesystem::remove(html_path);
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(index_report_path);
+
+    FrontendSessionAdapter raw {};
+    PFL_REQUIRE(raw.open_capture(capture_path).opened);
+    PFL_REQUIRE(raw.export_statistics_report(FrontendStatisticsReportFormat::markdown, markdown_path).exported);
+    PFL_REQUIRE(raw.export_statistics_report(FrontendStatisticsReportFormat::html, html_path).exported);
+    const auto markdown = read_text_file(markdown_path);
+    const auto html = read_text_file(html_path);
+    PFL_EXPECT(contains_text(markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+    PFL_EXPECT(contains_text(html, "IPv4 [192.0.2.60 &lt;-&gt; 198.51.100.60]"));
+    PFL_REQUIRE(raw.save_index(index_path).saved);
+
+    FrontendSessionAdapter indexed {};
+    PFL_REQUIRE(indexed.open_capture(index_path).opened);
+    PFL_REQUIRE(indexed.export_statistics_report(FrontendStatisticsReportFormat::markdown, index_report_path).exported);
+    PFL_EXPECT(contains_text(read_text_file(index_report_path),
+        "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    const auto ignored_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report_ignored.md";
+    const auto ignored_index_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report_ignored.idx";
+    const auto ignored_index_report_path = std::filesystem::temp_directory_path() / "pfl_frontend_context_report_ignored_index.md";
+    std::filesystem::remove(ignored_path);
+    std::filesystem::remove(ignored_index_path);
+    std::filesystem::remove(ignored_index_report_path);
+    FrontendSessionAdapter ignored {};
+    auto settings = ignored.get_settings();
+    settings.ignore_non_terminal_ip_endpoints_when_grouping_flows = true;
+    [[maybe_unused]] const auto applied_settings = ignored.update_settings(settings);
+    PFL_REQUIRE(ignored.open_capture(capture_path).opened);
+    PFL_REQUIRE(ignored.export_statistics_report(FrontendStatisticsReportFormat::markdown, ignored_path).exported);
+    const auto ignored_report = read_text_file(ignored_path);
+    PFL_EXPECT(contains_text(ignored_report, "## Protocol Path Statistics - Identity Tree\n"));
+    PFL_EXPECT(contains_text(ignored_report, "The report shows the structural Identity Tree without IP context."));
+    PFL_EXPECT(!contains_text(ignored_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_REQUIRE(ignored.save_index(ignored_index_path).saved);
+    FrontendSessionAdapter ignored_indexed {};
+    PFL_REQUIRE(ignored_indexed.open_capture(ignored_index_path).opened);
+    PFL_REQUIRE(ignored_indexed.export_statistics_report(
+        FrontendStatisticsReportFormat::markdown, ignored_index_report_path).exported);
+    PFL_EXPECT(contains_text(read_text_file(ignored_index_report_path),
+        "The report shows the structural Identity Tree without IP context."));
+}
+
 void expect_frontend_statistics_report_export_works_from_v16_index_without_source() {
     const auto capture_path = write_temp_capture_file(
         "pfl_statistics_report_index_source.pcap",
@@ -3570,7 +3623,7 @@ void expect_frontend_statistics_report_export_works_from_v16_index_without_sourc
     PFL_EXPECT(contains_text(report, "| Source capture status | Unavailable |"));
     PFL_EXPECT(!contains_text(report, "Input file size"));
     PFL_EXPECT(contains_text(report, "## Top Endpoints and Ports"));
-    PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree"));
+    PFL_EXPECT(contains_text(report, "## Protocol Path Statistics - Identity Tree + IP Context"));
     PFL_EXPECT(markdown_section(report, "## Capture Import Settings") ==
                markdown_section(raw_report, "## Capture Import Settings"));
     PFL_EXPECT(markdown_section(report, "## Flows by Duration") ==
@@ -3910,6 +3963,15 @@ void expect_session_diagnostics_text_covers_runtime_states() {
 }  // namespace
 
 void run_statistics_section_tests() {
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, false, false).empty());
+    PFL_EXPECT(format_frontend_flow_grouping_summary(true, false, false) ==
+               "Flow grouping: VLAN/MPLS ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, true, false) ==
+               "Flow grouping: GTP-U TEID ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(false, false, true) ==
+               "Flow grouping: Non-terminal IP ignored");
+    PFL_EXPECT(format_frontend_flow_grouping_summary(true, true, true) ==
+               "Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored");
     expect_shared_statistics_formatting_helpers();
     expect_protocol_hint_statistics_rows_handle_zero_denominators();
     expect_flow_packet_count_histogram_boundaries();
@@ -3958,6 +4020,7 @@ void run_statistics_section_tests() {
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
     expect_frontend_statistics_report_export_uses_tauri_metadata();
+    expect_frontend_statistics_report_protocol_path_selection();
     expect_frontend_statistics_report_export_works_from_v16_index_without_source();
     expect_frontend_statistics_report_export_reports_write_failure();
     expect_statistics_report_bridge_export_contract();

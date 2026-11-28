@@ -2,6 +2,7 @@
 
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -77,6 +78,7 @@ constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
 constexpr int kProtocolPathStatisticsModeKindOverview = 0;
 constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
 constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
+constexpr int kProtocolPathStatisticsModeIdentityTreeIpContext = 3;
 constexpr std::size_t kTopSummaryLimit = 5U;
 constexpr std::size_t kStatisticsReportTopEndpointPortLimit = kCaptureStatisticsSnapshotTopEndpointCapacity;
 constexpr std::size_t kInitialPacketRows = 30U;
@@ -276,7 +278,8 @@ FrontendOverviewDto build_statistics_report_overview(const CaptureSession& sessi
 FrontendStatisticsReportInput build_statistics_report_input(
     const CaptureSession& session,
     const AnalysisSettings& settings,
-    FrontendStatisticsReportMetadata metadata
+    FrontendStatisticsReportMetadata metadata,
+    FrontendStatisticsReportProtocolPathTree protocol_path_tree
 ) {
     const auto top_summary = session.top_summary(kStatisticsReportTopEndpointPortLimit);
     const auto flow_characteristics = session.flow_characteristics_statistics();
@@ -316,9 +319,7 @@ FrontendStatisticsReportInput build_statistics_report_input(
                 settings
             ),
         },
-        .protocol_path_identity_tree = build_frontend_protocol_path_statistics(
-            session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree)
-        ),
+        .protocol_path_tree = std::move(protocol_path_tree),
     };
 }
 
@@ -1268,6 +1269,8 @@ ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode
     switch (mode) {
     case kProtocolPathStatisticsModeIdentityTree:
         return ProtocolPathStatisticsMode::identity_tree;
+    case kProtocolPathStatisticsModeIdentityTreeIpContext:
+        return ProtocolPathStatisticsMode::identity_tree_ip_context;
     case kProtocolPathStatisticsModeTerminalPaths:
         return ProtocolPathStatisticsMode::terminal_paths;
     case kProtocolPathStatisticsModeKindOverview:
@@ -1280,6 +1283,8 @@ QString protocol_path_statistics_mode_label(const ProtocolPathStatisticsMode mod
     switch (mode) {
     case ProtocolPathStatisticsMode::identity_tree:
         return QStringLiteral("Identity tree");
+    case ProtocolPathStatisticsMode::identity_tree_ip_context:
+        return QStringLiteral("Identity Tree + IP Context");
     case ProtocolPathStatisticsMode::terminal_paths:
         return QStringLiteral("Terminal paths");
     case ProtocolPathStatisticsMode::kind_overview:
@@ -2758,6 +2763,12 @@ MainController::MainController(QObject* parent)
     advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     advanced_flow_filter_editor_model_.setProtocolPathApplicabilityResolver([this](const auto& predicate) {
         return protocol_path_predicate_applicability(session_, predicate);
+    });
+    advanced_flow_filter_editor_model_.setNonTerminalIpApplicabilityResolver([this]() -> std::optional<bool> {
+        if (!session_.has_capture()) {
+            return std::nullopt;
+        }
+        return !session_.flow_grouping_ignores_non_terminal_ip_endpoints();
     });
 
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
@@ -4266,24 +4277,15 @@ QString MainController::debugInformationText() const {
     return QString::fromStdString(format_session_diagnostics_text(snapshot));
 }
 
-QString MainController::flowGroupingWarningText() const {
+QString MainController::flowGroupingSummaryText() const {
     if (!session_.has_capture()) {
         return {};
     }
 
-    return session_.flow_grouping_ignores_vlan_and_mpls_layers()
-        ? QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.")
-        : QString {};
-}
-
-QString MainController::gtpuTeidGroupingInfoText() const {
-    if (!session_.has_capture()) {
-        return {};
-    }
-
-    return session_.flow_grouping_ignores_gtpu_teids()
-        ? QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.")
-        : QString {};
+    return QString::fromStdString(format_frontend_flow_grouping_summary(
+        session_.flow_grouping_ignores_vlan_and_mpls_layers(),
+        session_.flow_grouping_ignores_gtpu_teids(),
+        session_.flow_grouping_ignores_non_terminal_ip_endpoints()));
 }
 
 QString MainController::selectedFlowWiresharkFilter() const {
@@ -4999,6 +5001,13 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    auto path_selection = select_statistics_report_protocol_path_tree(
+        [this](const ProtocolPathStatisticsMode mode) { return session_.protocol_path_summary(mode); });
+    if (!path_selection.tree) {
+        setStatusText(QString::fromStdString(path_selection.error_text), true);
+        return false;
+    }
+
     QSaveFile file(trimmedPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         setStatusText(
@@ -5017,7 +5026,8 @@ bool MainController::exportStatisticsReport(const QString& path, const Statistic
         .index_revision = session_.loaded_index_revision(),
     };
     const auto report = build_frontend_statistics_report_data(
-        build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata))
+        build_statistics_report_input(session_, pending_analysis_settings_, std::move(metadata),
+            std::move(*path_selection.tree))
     );
     const std::string rendered = format == StatisticsReportFormat::html
         ? render_frontend_statistics_report_html(report)
@@ -6273,7 +6283,8 @@ void MainController::ensureProtocolPathSectionLoaded() {
     }
 
     const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
-    if (protocol_path_section_state_ == StatisticsSectionRequestState::ready &&
+    if ((protocol_path_section_state_ == StatisticsSectionRequestState::ready ||
+         protocol_path_section_state_ == StatisticsSectionRequestState::error) &&
         loaded_protocol_path_statistics_mode_ == statistics_mode_) {
         return;
     }
@@ -6283,6 +6294,14 @@ void MainController::ensureProtocolPathSectionLoaded() {
     protocol_path_summary_ = session_.protocol_path_summary(current_mode);
     protocol_path_stats_model_.refresh(protocol_path_summary_);
     loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    if (protocol_path_summary_.status != ProtocolPathStatisticsStatus::ok) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::error,
+            protocol_path_summary_.status == ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable
+                ? QStringLiteral("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.")
+                : QStringLiteral("Non-terminal IP context metadata is missing or inconsistent."));
+        emit stateChanged();
+        return;
+    }
     setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }
@@ -6467,11 +6486,7 @@ void MainController::setFlowDetailsTabIndex(const int index) {
 }
 
 void MainController::setStatisticsMode(const int mode) {
-    const int normalizedMode = (mode == kProtocolPathStatisticsModeIdentityTree)
-        ? kProtocolPathStatisticsModeIdentityTree
-        : (mode == kProtocolPathStatisticsModeTerminalPaths
-            ? kProtocolPathStatisticsModeTerminalPaths
-            : kProtocolPathStatisticsModeKindOverview);
+    const int normalizedMode = static_cast<int>(protocol_path_statistics_mode_from_int(mode));
 
     if (statistics_mode_ == normalizedMode) {
         return;
@@ -7788,6 +7803,19 @@ void MainController::refreshAdvancedFlowFilter() {
     case session_detail::AdvancedFlowQueryStatus::invalid_limit:
         flow_model_.clearAdvancedFilterFlowIndices();
         setStatusText(QStringLiteral("Advanced filter could not be applied because the limit is invalid."), true);
+        break;
+    case session_detail::AdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(
+            QStringLiteral(
+                "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."
+            ),
+            true
+        );
+        break;
+    case session_detail::AdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not resolve retained non-terminal IP metadata."), true);
         break;
     }
 

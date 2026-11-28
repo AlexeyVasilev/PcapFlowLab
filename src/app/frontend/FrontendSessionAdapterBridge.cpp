@@ -198,6 +198,10 @@ std::string advanced_flow_query_status_json(const pfl::FrontendAdvancedFlowQuery
         return json_string("invalid_limit");
     case pfl::FrontendAdvancedFlowQueryStatus::invalid_advanced_filter:
         return json_string("invalid_advanced_filter");
+    case pfl::FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return json_string("non_terminal_ip_metadata_unavailable");
+    case pfl::FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return json_string("missing_non_terminal_ip_context");
     }
 
     return json_string("invalid_advanced_filter");
@@ -323,6 +327,10 @@ std::string advanced_flow_query_error_text(const pfl::FrontendAdvancedFlowQueryR
             return "Advanced filter is invalid: " + result.compile_issue->category + '.';
         }
         return "Advanced filter is invalid.";
+    case pfl::FrontendAdvancedFlowQueryStatus::non_terminal_ip_metadata_unavailable:
+        return "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.";
+    case pfl::FrontendAdvancedFlowQueryStatus::missing_non_terminal_ip_context:
+        return "Advanced filter could not resolve retained non-terminal IP metadata.";
     }
 
     return "Advanced filter query failed.";
@@ -473,6 +481,21 @@ std::string structured_ip_section_json(const pfl::FrontendAdvancedFlowFilterIpAd
         << "\"enabled\":" << bool_json(section.enabled) << ','
         << "\"include\":" << structured_ip_row_array_json(section.include) << ','
         << "\"exclude\":" << structured_ip_row_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
+std::string structured_non_terminal_ip_section_json(
+    const pfl::FrontendAdvancedFlowFilterNonTerminalIpSectionDto& section
+) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << structured_ip_row_array_json(section.include) << ','
+        << "\"exclude\":" << structured_ip_row_array_json(section.exclude) << ','
+        << "\"applicability_known\":" << bool_json(section.applicability_known) << ','
+        << "\"applicable\":" << bool_json(section.applicable) << ','
+        << "\"status_text\":" << json_string(section.status_text)
         << '}';
     return out.str();
 }
@@ -698,6 +721,7 @@ std::string structured_option_catalog_json(
         << "\"directionality\":" << finite_option_array_json(catalog.directionality) << ','
         << "\"traffic_distribution\":" << finite_option_array_json(catalog.traffic_distribution) << ','
         << "\"endpoint_scope\":" << finite_option_array_json(catalog.endpoint_scope) << ','
+        << "\"non_terminal_ip_scope\":" << finite_option_array_json(catalog.non_terminal_ip_scope) << ','
         << "\"protocol_path_selector_mode\":" << finite_option_array_json(catalog.protocol_path_selector_mode) << ','
         << "\"contains_layer_identifier_mode\":"
         << finite_option_array_json(catalog.contains_layer_identifier_mode) << ','
@@ -724,6 +748,7 @@ std::string structured_document_json(
         << "\"directionality\":" << structured_section_json(document->directionality) << ','
         << "\"ports\":" << structured_port_section_json(document->ports) << ','
         << "\"ip_addresses\":" << structured_ip_section_json(document->ip_addresses) << ','
+        << "\"non_terminal_ip\":" << structured_non_terminal_ip_section_json(document->non_terminal_ip) << ','
         << "\"time\":" << structured_time_section_json(document->time) << ','
         << "\"traffic\":" << structured_traffic_section_json(document->traffic) << ','
         << "\"service\":" << structured_service_section_json(document->service) << ','
@@ -874,6 +899,7 @@ std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& s
         << "\"flow_grouping_ignores_gtpu_teids\":" << bool_json(source.flow_grouping_ignores_gtpu_teids) << ','
         << "\"flow_grouping_ignores_non_terminal_ip_endpoints\":"
         << bool_json(source.flow_grouping_ignores_non_terminal_ip_endpoints) << ','
+        << "\"flow_grouping_summary_text\":" << json_string(source.flow_grouping_summary_text) << ','
         << "\"active_source_capture_path\":" << json_string(source.active_source_capture_path) << ','
         << "\"expected_source_capture_path\":" << json_string(source.expected_source_capture_path)
         << '}';
@@ -2771,7 +2797,9 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
         return make_c_string("[]");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -2779,6 +2807,23 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     return make_c_string(protocol_path_statistics_json(
         handle->adapter.get_protocol_path_statistics(statistics_mode)
     ));
+}
+
+std::uint8_t pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode
+) {
+    if (handle == nullptr) {
+        return static_cast<std::uint8_t>(pfl::ProtocolPathStatisticsStatus::missing_non_terminal_ip_context);
+    }
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
+            ? pfl::ProtocolPathStatisticsMode::identity_tree
+            : mode == 2U
+                ? pfl::ProtocolPathStatisticsMode::terminal_paths
+                : pfl::ProtocolPathStatisticsMode::kind_overview;
+    return static_cast<std::uint8_t>(handle->adapter.get_protocol_path_statistics_status(statistics_mode));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
@@ -2790,7 +2835,9 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
         return make_c_string("[]");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -2809,7 +2856,9 @@ char* pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_js
         return make_c_string(structured_protocol_path_row_json({}));
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
@@ -2992,6 +3041,17 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* ip_exclude_address_text_utf8,
     const char* const* ip_exclude_prefix_text_utf8,
     const std::size_t ip_exclude_count,
+    const std::uint8_t non_terminal_ip_enabled,
+    const char* const* non_terminal_ip_include_scope_ids_utf8,
+    const std::uint8_t* non_terminal_ip_include_subnet_enabled,
+    const char* const* non_terminal_ip_include_address_text_utf8,
+    const char* const* non_terminal_ip_include_prefix_text_utf8,
+    const std::size_t non_terminal_ip_include_count,
+    const char* const* non_terminal_ip_exclude_scope_ids_utf8,
+    const std::uint8_t* non_terminal_ip_exclude_subnet_enabled,
+    const char* const* non_terminal_ip_exclude_address_text_utf8,
+    const char* const* non_terminal_ip_exclude_prefix_text_utf8,
+    const std::size_t non_terminal_ip_exclude_count,
     const std::uint8_t time_enabled,
     const char* const* time_range_metric_ids_utf8,
     const char* const* time_range_from_text_utf8,
@@ -3102,6 +3162,14 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         (ip_exclude_count > 0U && (ip_exclude_subnet_enabled == nullptr ||
                                    ip_exclude_address_text_utf8 == nullptr ||
                                    ip_exclude_prefix_text_utf8 == nullptr)) ||
+        string_array_invalid(non_terminal_ip_include_scope_ids_utf8, non_terminal_ip_include_count) ||
+        (non_terminal_ip_include_count > 0U && (non_terminal_ip_include_subnet_enabled == nullptr ||
+                                                non_terminal_ip_include_address_text_utf8 == nullptr ||
+                                                non_terminal_ip_include_prefix_text_utf8 == nullptr)) ||
+        string_array_invalid(non_terminal_ip_exclude_scope_ids_utf8, non_terminal_ip_exclude_count) ||
+        (non_terminal_ip_exclude_count > 0U && (non_terminal_ip_exclude_subnet_enabled == nullptr ||
+                                                non_terminal_ip_exclude_address_text_utf8 == nullptr ||
+                                                non_terminal_ip_exclude_prefix_text_utf8 == nullptr)) ||
         string_array_invalid(time_range_metric_ids_utf8, time_range_count) ||
         (time_range_count > 0U && (time_range_from_text_utf8 == nullptr ||
                                    time_range_to_text_utf8 == nullptr)) ||
@@ -3349,6 +3417,21 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         ip_exclude_prefix_text_utf8,
         ip_exclude_count
     );
+    draft.non_terminal_ip.enabled = non_terminal_ip_enabled != 0U;
+    draft.non_terminal_ip.include = collect_ip_rows(
+        non_terminal_ip_include_scope_ids_utf8,
+        non_terminal_ip_include_subnet_enabled,
+        non_terminal_ip_include_address_text_utf8,
+        non_terminal_ip_include_prefix_text_utf8,
+        non_terminal_ip_include_count
+    );
+    draft.non_terminal_ip.exclude = collect_ip_rows(
+        non_terminal_ip_exclude_scope_ids_utf8,
+        non_terminal_ip_exclude_subnet_enabled,
+        non_terminal_ip_exclude_address_text_utf8,
+        non_terminal_ip_exclude_prefix_text_utf8,
+        non_terminal_ip_exclude_count
+    );
     draft.time.enabled = time_enabled != 0U;
     draft.time.ranges = collect_time_rows(
         time_range_metric_ids_utf8,
@@ -3533,7 +3616,9 @@ char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Invalid export request.\"}");
     }
 
-    const auto statistics_mode = mode == 1U
+    const auto statistics_mode = mode == 3U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree_ip_context
+        : mode == 1U
         ? pfl::ProtocolPathStatisticsMode::identity_tree
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths

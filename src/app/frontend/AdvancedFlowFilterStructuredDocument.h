@@ -20,6 +20,8 @@ enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
     invalid_flow_index,
     invalid_limit,
     invalid_advanced_filter,
+    non_terminal_ip_metadata_unavailable,
+    missing_non_terminal_ip_context,
 };
 
 struct FrontendAdvancedFlowTextParseIssue {
@@ -103,6 +105,18 @@ struct FrontendAdvancedFlowFilterIpAddressSectionDto {
     std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> include {};
     std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> exclude {};
 };
+
+struct FrontendAdvancedFlowFilterNonTerminalIpSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> include {};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> exclude {};
+    bool applicability_known {false};
+    bool applicable {false};
+    std::string status_text {};
+};
+
+[[nodiscard]] FrontendAdvancedFlowFilterNonTerminalIpSectionDto
+make_advanced_flow_filter_non_terminal_ip_applicability(std::optional<bool> applicability);
 
 struct FrontendAdvancedFlowFilterTrafficRowDto {
     std::string metric_id {};
@@ -199,6 +213,7 @@ struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> directionality {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> traffic_distribution {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> endpoint_scope {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> non_terminal_ip_scope {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> protocol_path_selector_mode {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> contains_layer_identifier_mode {};
     std::vector<FrontendAdvancedFlowFilterContainsLayerOptionDto> contains_layer_kind {};
@@ -214,6 +229,7 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterFiniteSectionDto directionality {};
     FrontendAdvancedFlowFilterPortSectionDto ports {};
     FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
+    FrontendAdvancedFlowFilterNonTerminalIpSectionDto non_terminal_ip {};
     FrontendAdvancedFlowFilterTimeSectionDto time {};
     FrontendAdvancedFlowFilterTrafficSectionDto traffic {};
     FrontendAdvancedFlowFilterServiceSectionDto service {};

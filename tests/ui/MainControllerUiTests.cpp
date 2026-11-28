@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -3508,21 +3509,22 @@ int main(int argc, char* argv[]) {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
         auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
         auto* http_help_text = named_object(settings_pane.object.get(), "httpUsePathAsServiceHintHelpText");
-        auto* vlan_help_text = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText");
-        auto* gtpu_help_text = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText");
-        auto* non_terminal_ip_help_text =
-            named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText");
+        auto* grouping_heading = named_object(settings_pane.object.get(), "flowGroupingHeading");
+        auto* grouping_help_text = named_object(settings_pane.object.get(), "flowGroupingHelpText");
         UI_REQUIRE(settings_tabs != nullptr);
         UI_REQUIRE(http_help_text != nullptr);
-        UI_REQUIRE(vlan_help_text != nullptr);
-        UI_REQUIRE(gtpu_help_text != nullptr);
-        UI_REQUIRE(non_terminal_ip_help_text != nullptr);
+        UI_REQUIRE(grouping_heading != nullptr);
+        UI_REQUIRE(grouping_help_text != nullptr);
         settings_tabs->setProperty("currentIndex", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(http_help_text->property("text").toString() == QStringLiteral("Applied when the next raw capture is opened."));
-        UI_EXPECT(vlan_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
-        UI_EXPECT(gtpu_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
-        UI_EXPECT(non_terminal_ip_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(grouping_heading->property("visible").toBool());
+        UI_EXPECT(grouping_heading->property("text").toString() == QStringLiteral("Flow grouping"));
+        UI_EXPECT(grouping_help_text->property("text").toString() ==
+            QStringLiteral("Applied when importing the next raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText") == nullptr);
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText") == nullptr);
+        UI_EXPECT(named_object(settings_pane.object.get(), "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText") == nullptr);
     });
 
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
@@ -3589,12 +3591,12 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(gtpu_grouping_checkbox->property("checked").toBool());
     });
 
-    run_ui_section("flow_grouping_warning_text", [&]() {
+    run_ui_section("flow_grouping_summary_text", [&]() {
         MainController vlan_grouping_controller {};
         UI_EXPECT(!vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
 
         auto* vlan_grouping_flow_model = qobject_cast<FlowListModel*>(vlan_grouping_controller.flowModel());
         UI_REQUIRE(vlan_grouping_flow_model != nullptr);
@@ -3604,34 +3606,34 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_controller.statusText() ==
             QStringLiteral("Reopen the current raw capture to apply the VLAN and MPLS flow-grouping setting."));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
 
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
-        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText() ==
-            QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged."));
+        UI_EXPECT(vlan_grouping_controller.flowGroupingSummaryText() ==
+            QStringLiteral("Flow grouping: VLAN/MPLS ignored"));
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 1);
     });
 
-    run_ui_section("flow_grouping_index_warning_text", [&]() {
+    run_ui_section("flow_grouping_index_summary_text", [&]() {
         MainController vlan_grouping_index_controller {};
         UI_EXPECT(!vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingSummaryText().isEmpty());
         vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
         UI_EXPECT(vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingSummaryText().isEmpty());
     });
 
-    run_ui_section("gtpu_teid_grouping_info_text", [&]() {
+    run_ui_section("gtpu_teid_grouping_summary_text", [&]() {
         MainController gtpu_grouping_controller {};
         UI_EXPECT(!gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
 
         auto* gtpu_grouping_flow_model = qobject_cast<FlowListModel*>(gtpu_grouping_controller.flowModel());
         UI_REQUIRE(gtpu_grouping_flow_model != nullptr);
@@ -3641,29 +3643,55 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_controller.statusText() ==
             QStringLiteral("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting."));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText().isEmpty());
         UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 2);
 
         UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
-        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText() ==
-            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged."));
-        UI_EXPECT(gtpu_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingSummaryText() ==
+            QStringLiteral("Flow grouping: GTP-U TEID ignored"));
         UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 1);
     });
 
-    run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
+    run_ui_section("gtpu_teid_grouping_index_summary_text", [&]() {
         const auto gtpu_teid_grouping_info_text =
-            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.");
+            QStringLiteral("Flow grouping: GTP-U TEID ignored");
         MainController gtpu_grouping_index_controller {};
         UI_EXPECT(!gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
+        UI_EXPECT(gtpu_grouping_index_controller.flowGroupingSummaryText() == gtpu_teid_grouping_info_text);
         gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() == gtpu_teid_grouping_info_text);
+        UI_EXPECT(gtpu_grouping_index_controller.flowGroupingSummaryText() == gtpu_teid_grouping_info_text);
+    });
+
+    run_ui_section("flow_grouping_combined_capture_provenance", [&]() {
+        MainController combined_controller {};
+        auto main_window = load_main_qml_component(combined_controller);
+        auto* summary_label = named_object(main_window.object.get(), "flowGroupingSummaryText");
+        UI_REQUIRE(summary_label != nullptr);
+        UI_EXPECT(combined_controller.flowGroupingSummaryText().isEmpty());
+        UI_EXPECT(!summary_label->property("visible").toBool());
+
+        combined_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
+        combined_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        combined_controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_EXPECT(open_capture_and_wait(app, combined_controller, vlan_grouping_capture_path));
+        const auto expected_summary = QStringLiteral(
+            "Flow grouping: VLAN/MPLS ignored · GTP-U TEID ignored · Non-terminal IP ignored");
+        UI_EXPECT(combined_controller.flowGroupingSummaryText() == expected_summary);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(summary_label->property("visible").toBool());
+        UI_EXPECT(summary_label->property("text").toString() == expected_summary);
+        UI_EXPECT(find_object_with_text(main_window.object.get(),
+            QStringLiteral("Non-terminal IP metadata was not retained because it was ignored when this capture was imported.")) == nullptr);
+
+        combined_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(false);
+        combined_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(false);
+        combined_controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_EXPECT(combined_controller.flowGroupingSummaryText() == expected_summary);
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
@@ -4070,6 +4098,32 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "flowOriginalByteSizeHistogramToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "ipFragmentationStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolPathStatisticsToggleButton") != nullptr);
+        auto* ip_context_mode_button = named_object(
+            statistics_pane.object.get(), "protocolPathStatsModeIdentityTreeIpContextButton");
+        UI_REQUIRE(ip_context_mode_button != nullptr);
+        UI_EXPECT(ip_context_mode_button->property("text").toString() ==
+            QStringLiteral("Identity Tree + IP Context"));
+        auto* ip_context_help = named_object(statistics_pane.object.get(), "protocolPathIpContextHelp");
+        UI_REQUIRE(ip_context_help != nullptr);
+        statistics_pane.object->setProperty("protocolPathExpanded", true);
+        statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
+        statistics_pane.object->setProperty("statisticsMode", 3);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(ip_context_mode_button->property("checked").toBool());
+        UI_EXPECT(ip_context_help->property("visible").toBool());
+        UI_EXPECT(ip_context_help->property("text").toString() ==
+            QStringLiteral("IP pairs represent bidirectional Flow identity, not packet direction. Terminal Flow IPs remain undecorated."));
+        statistics_pane.object->setProperty("statisticsMode", 0);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!ip_context_help->property("visible").toBool());
+        statistics_pane.object->setProperty("statisticsMode", 3);
+        statistics_pane.object->setProperty("protocolPathSectionState",
+            static_cast<int>(MainController::StatisticsSectionRequestState::unavailable));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!ip_context_help->property("visible").toBool());
+        statistics_pane.object->setProperty("statisticsMode", 0);
+        statistics_pane.object->setProperty("protocolPathSectionState", section_not_requested);
+        statistics_pane.object->setProperty("protocolPathExpanded", false);
         auto* protocol_path_export_button = named_object(statistics_pane.object.get(), "protocolPathExportButton");
         UI_REQUIRE(protocol_path_export_button != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
@@ -4960,6 +5014,104 @@ int main(int argc, char* argv[]) {
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
 
+    run_ui_section("protocol_path_ip_context_statistics", [&]() {
+        const auto capture_path = ui_test_root() / "data" / "parsing" / "ip_encapsulation" /
+            "13_same_inner_tuple_different_outer_ipv4_tunnels.pcap";
+        MainController controller {};
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_REQUIRE(open_capture_and_wait(app, controller, capture_path));
+        auto* stats_model = qobject_cast<ProtocolPathStatsModel*>(controller.protocolPathStatsModel());
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(stats_model != nullptr);
+        UI_REQUIRE(flow_model != nullptr);
+        controller.setCurrentTabIndex(2);
+        controller.setStatisticsSectionExpanded(protocol_path_section, true);
+        controller.setStatisticsMode(3);
+        UI_EXPECT(controller.statisticsMode() == 3);
+        UI_EXPECT(controller.protocolPathSectionState() == section_ready);
+        UI_EXPECT(stats_model->canExpand());
+        UI_EXPECT(stats_model->rowCount() == 1);
+        stats_model->expandAll();
+        const auto expanded_count = stats_model->rowCount();
+        UI_EXPECT(expanded_count > 1);
+
+        const auto find_layer = [&](const QString& label) {
+            for (int row = 0; row < stats_model->rowCount(); ++row) {
+                if (stats_model->data(stats_model->index(row, 0), ProtocolPathStatsModel::LayerTextRole)
+                        .toString() == label) {
+                    return row;
+                }
+            }
+            return -1;
+        };
+        const auto outer_a = find_layer(QStringLiteral("IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+        const auto outer_b = find_layer(QStringLiteral("IPv4 [192.0.2.61 <-> 198.51.100.61]"));
+        UI_REQUIRE(outer_a >= 0);
+        UI_REQUIRE(outer_b >= 0);
+        UI_EXPECT(outer_a != outer_b);
+        const auto a_node_id = stats_model->data(stats_model->index(outer_a, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        const auto b_node_id = stats_model->data(stats_model->index(outer_b, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        stats_model->selectNode(a_node_id);
+        UI_EXPECT(stats_model->selectedNodeFilterLabel() ==
+            QStringLiteral("Ethernet II -> IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+        controller.showSelectedProtocolPathFlows();
+        const auto a_flows = flow_model->visibleFlowIndices();
+        UI_EXPECT(a_flows.size() == 1U);
+        UI_EXPECT(controller.protocolPathFlowFilterText().contains(
+            QStringLiteral("192.0.2.60 <-> 198.51.100.60")));
+
+        controller.setCurrentTabIndex(2);
+        stats_model->selectNode(b_node_id);
+        UI_EXPECT(stats_model->selectedNodeFilterLabel() ==
+            QStringLiteral("Ethernet II -> IPv4 [192.0.2.61 <-> 198.51.100.61]"));
+        controller.showSelectedProtocolPathFlows();
+        const auto b_flows = flow_model->visibleFlowIndices();
+        UI_EXPECT(b_flows.size() == 1U);
+        UI_EXPECT(a_flows != b_flows);
+
+        controller.setCurrentTabIndex(2);
+        stats_model->collapseAll();
+        UI_EXPECT(stats_model->rowCount() == 1);
+        stats_model->expandAll();
+        UI_EXPECT(stats_model->rowCount() == expanded_count);
+        controller.setStatisticsMode(1);
+        UI_EXPECT(controller.protocolPathSectionState() == section_ready);
+        stats_model->expandAll();
+        const auto structural_outer = find_protocol_path_stats_row_by_path_text(
+            stats_model, QStringLiteral("EthernetII -> IPv4"));
+        UI_REQUIRE(structural_outer >= 0);
+        UI_EXPECT(stats_model->data(stats_model->index(structural_outer, 0),
+            ProtocolPathStatsModel::LayerTextRole).toString() == QStringLiteral("IPv4"));
+
+        MainController ignored {};
+        ignored.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_REQUIRE(open_capture_and_wait(app, ignored, capture_path));
+        ignored.setCurrentTabIndex(2);
+        ignored.setStatisticsSectionExpanded(protocol_path_section, true);
+        ignored.setStatisticsMode(3);
+        UI_EXPECT(ignored.statisticsMode() == 3);
+        UI_EXPECT(ignored.protocolPathSectionState() ==
+            static_cast<int>(MainController::StatisticsSectionRequestState::error));
+        UI_EXPECT(ignored.protocolPathSectionStatusText() == QStringLiteral(
+            "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+        ignored.setStatisticsMode(1);
+        UI_EXPECT(ignored.protocolPathSectionState() == section_ready);
+        UI_EXPECT(!ignored.protocolPathStatistics().isEmpty());
+
+        MainController no_context {};
+        no_context.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        UI_REQUIRE(open_capture_and_wait(app, no_context,
+            ui_test_root() / "data" / "parsing" / "packet_byte_views" / "01_ethernet_ipv4_udp.pcap"));
+        no_context.setCurrentTabIndex(2);
+        no_context.setStatisticsSectionExpanded(protocol_path_section, true);
+        no_context.setStatisticsMode(3);
+        UI_EXPECT(no_context.protocolPathSectionState() == section_ready);
+        UI_EXPECT(no_context.protocolPathSectionStatusText().isEmpty());
+        UI_EXPECT(!no_context.protocolPathStatistics().isEmpty());
+    });
+
     run_ui_section("protocol_path_export_button_wiring", [&]() {
         MainController protocol_path_export_controller {};
         UI_EXPECT(open_capture_and_wait(app, protocol_path_export_controller, protocol_path_mode_capture_path));
@@ -5064,7 +5216,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(markdown_report, "| Generated at |"));
         UI_EXPECT(contains_text(markdown_report, "| Statistics scope | Complete |"));
         UI_EXPECT(!contains_text(markdown_report, "| Index revision |"));
-        UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree"));
+        UI_EXPECT(contains_text(markdown_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
         UI_EXPECT(!contains_text(markdown_report, "Kind overview"));
         UI_EXPECT(!contains_text(markdown_report, "Terminal paths"));
         UI_EXPECT(contains_text(html_report, "<!doctype html>"));
@@ -5072,7 +5224,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(contains_text(html_report, "<th>Version</th><td>9.9.9-ui-test</td>"));
         UI_EXPECT(contains_text(html_report, "<th>Client</th><td>Qt</td>"));
         UI_EXPECT(!contains_text(html_report, "<th>Index revision</th>"));
-        UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree</h2>"));
+        UI_EXPECT(contains_text(html_report, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
         UI_EXPECT(report_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(report_controller.flowPacketHistogramState() == section_not_requested);
         UI_EXPECT(report_controller.protocolHintsSectionState() == section_not_requested);
@@ -5080,6 +5232,18 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(report_controller.quicTlsSectionState() == section_not_requested);
         UI_EXPECT(report_controller.topFlowSectionState() == section_not_requested);
         UI_EXPECT(report_controller.topEndpointPortSectionState() == section_not_requested);
+
+        MainController context_report_controller {};
+        const auto context_capture_path = ui_test_root() / "data" / "parsing" / "ip_encapsulation"
+            / "12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap";
+        UI_REQUIRE(open_capture_and_wait(app, context_report_controller, context_capture_path));
+        const auto context_report_path = std::filesystem::temp_directory_path() / "pfl_ui_context_statistics_report.md";
+        std::filesystem::remove(context_report_path, remove_error);
+        UI_REQUIRE(context_report_controller.exportStatisticsReportMarkdown(
+            QString::fromStdWString(context_report_path.wstring())));
+        const auto context_report = read_text_file_text(context_report_path);
+        UI_EXPECT(contains_text(context_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
+        UI_EXPECT(contains_text(context_report, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
 
         const auto missing_directory_report_path =
             std::filesystem::temp_directory_path() / "pfl_ui_missing_statistics_report_dir" / "report.md";
@@ -5138,7 +5302,7 @@ int main(int argc, char* argv[]) {
             index_markdown_report,
             std::string {"| Index revision | "} + std::to_string(*report_index_revision) + " |"
         ));
-        UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree"));
+        UI_EXPECT(contains_text(index_markdown_report, "## Protocol Path Statistics - Identity Tree + IP Context"));
 
         UI_EXPECT(index_report_controller.attachSourceCapture(
             QString::fromStdWString(moved_report_index_source_path.wstring())));
@@ -6690,6 +6854,343 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
     });
 
+    run_ui_section("advanced_flow_filter_settings_editor_non_terminal_ip", [&]() {
+        using Section = MainController::AdvancedFlowFilterFiniteSection;
+        using Scope = pfl::AdvancedFlowFilterEditorModel::NonTerminalIpScope;
+        constexpr int section_id = static_cast<int>(Section::non_terminal_ip_addresses);
+        UI_EXPECT(section_id == 13);
+        UI_EXPECT(static_cast<int>(Section::ip_addresses) == 7);
+        const auto capture_path = write_temp_pcap(
+            "pfl_ui_non_terminal_ip_editor.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_udp_packet(ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 2), 53000, 53)},
+            })
+        );
+        MainController controller {};
+        UI_REQUIRE(open_capture_and_wait(app, controller, capture_path));
+        controller.useAdvancedFlowFilter();
+        auto* editor = advanced_filter_editor(controller);
+        UI_REQUIRE(editor != nullptr);
+        auto window = load_main_qml_component(controller);
+        auto* button = named_object(window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* dialog = named_object(window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(button != nullptr);
+        UI_REQUIRE(dialog != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(button, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return dialog->property("visible").toBool()
+                && popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesSection") != nullptr;
+        }));
+        UI_EXPECT(editor->sectionEnabled(section_id));
+        auto* enabled_checkbox = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesEnabledCheckBox");
+        UI_REQUIRE(enabled_checkbox != nullptr);
+        UI_EXPECT(enabled_checkbox->property("checked").toBool());
+        UI_EXPECT(editor->addressRows(false, true).isEmpty());
+        UI_EXPECT(editor->addressRows(true, true).isEmpty());
+        const auto options = editor->nonTerminalIpScopeOptions();
+        UI_REQUIRE(options.size() == 3);
+        UI_EXPECT(options[0].toMap().value("label").toString() == QStringLiteral("Outer"));
+        UI_EXPECT(options[1].toMap().value("label").toString() == QStringLiteral("Intermediate"));
+        UI_EXPECT(options[2].toMap().value("label").toString() == QStringLiteral("Any non-terminal IP"));
+        UI_EXPECT(options[0].toMap().value("stableId").toString() == QStringLiteral("outer"));
+        UI_EXPECT(options[1].toMap().value("stableId").toString() == QStringLiteral("intermediate"));
+        UI_EXPECT(options[2].toMap().value("stableId").toString() == QStringLiteral("any"));
+        auto* group = popup_visual_item(dialog, "advancedFlowFilterIpAddressesGroup");
+        auto* terminal_section = popup_visual_item(dialog, "advancedFlowFilterIpAddressesSection");
+        auto* non_terminal_section = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesSection");
+        UI_REQUIRE(group != nullptr);
+        UI_REQUIRE(terminal_section != nullptr);
+        UI_REQUIRE(non_terminal_section != nullptr);
+        UI_EXPECT(group->property("title").toString() == QStringLiteral("IP addresses"));
+        UI_EXPECT(!group->property("enabledControlVisible").toBool());
+        UI_EXPECT(terminal_section->property("title").toString() == QStringLiteral("Flow endpoint IPs (terminal)"));
+        UI_EXPECT(non_terminal_section->property("title").toString() == QStringLiteral("Encapsulation IPs (non-terminal)"));
+        const auto count_ip_groups = [](auto&& self, QQuickItem* item) -> int {
+            if (item == nullptr) {
+                return 0;
+            }
+            int count = item->property("title").toString() == QStringLiteral("IP addresses") ? 1 : 0;
+            for (auto* child : item->childItems()) {
+                count += self(self, child);
+            }
+            return count;
+        };
+        UI_EXPECT(count_ip_groups(count_ip_groups, popup_content_item(dialog)) == 1);
+        const auto belongs_to = [](QQuickItem* item, QQuickItem* ancestor) {
+            for (auto* parent = item->parentItem(); parent != nullptr; parent = parent->parentItem()) {
+                if (parent == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        UI_EXPECT(belongs_to(terminal_section, group));
+        UI_EXPECT(belongs_to(non_terminal_section, group));
+        UI_EXPECT(popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesCollapseButton") == nullptr);
+        auto* collapse = popup_visual_item(dialog, "advancedFlowFilterIpAddressesCollapseButton");
+        auto* content = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
+        UI_REQUIRE(collapse != nullptr);
+        UI_REQUIRE(content != nullptr);
+        if (!content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* terminal_title = popup_visual_item(dialog, "advancedFlowFilterIpAddressesTitle");
+        auto* non_terminal_title = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesTitle");
+        UI_REQUIRE(terminal_title != nullptr);
+        UI_REQUIRE(non_terminal_title != nullptr);
+        UI_EXPECT(terminal_title->property("visible").toBool());
+        UI_EXPECT(non_terminal_title->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!terminal_title->property("visible").toBool());
+        UI_EXPECT(!non_terminal_title->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        const auto terminal_options = editor->addressScopeOptions();
+        UI_REQUIRE(terminal_options.size() == 3);
+        UI_EXPECT(terminal_options[0].toMap().value("label").toString() == QStringLiteral("Either endpoint"));
+        UI_EXPECT(terminal_options[1].toMap().value("label").toString() == QStringLiteral("Endpoint A"));
+        UI_EXPECT(terminal_options[2].toMap().value("label").toString() == QStringLiteral("Endpoint B"));
+        auto* terminal_add = popup_visual_item(dialog, "advancedFlowFilterIpAddressesAddIncludeButton");
+        auto* terminal_enabled = popup_visual_item(dialog, "advancedFlowFilterIpAddressesEnabledCheckBox");
+        UI_REQUIRE(terminal_add != nullptr);
+        UI_REQUIRE(terminal_enabled != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_add, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0AddressTextField") != nullptr;
+        }));
+        auto* terminal_address = popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0AddressTextField");
+        auto* terminal_scope = popup_visual_item(dialog, "advancedFlowFilterIpAddressesIncludeRow0ScopeComboBox");
+        UI_REQUIRE(terminal_address != nullptr);
+        UI_REQUIRE(terminal_scope != nullptr);
+        UI_EXPECT(terminal_scope->property("count").toInt() == 3);
+        terminal_address->setProperty("text", QStringLiteral("10.72.0.1"));
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_address, "textEdited"));
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_enabled, "click"));
+        UI_EXPECT(!editor->sectionEnabled(static_cast<int>(Section::ip_addresses)));
+        UI_EXPECT(editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->sectionConfiguredRuleCount(static_cast<int>(Section::ip_addresses)) == 1);
+        UI_REQUIRE(QMetaObject::invokeMethod(terminal_enabled, "click"));
+        UI_REQUIRE(QMetaObject::invokeMethod(enabled_checkbox, "click"));
+        UI_EXPECT(editor->sectionEnabled(static_cast<int>(Section::ip_addresses)));
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_REQUIRE(QMetaObject::invokeMethod(enabled_checkbox, "click"));
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false), 0)
+            .value("addressText").toString() == QStringLiteral("10.72.0.1"));
+        auto* flows = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(flows != nullptr);
+        UI_EXPECT(flows->visibleFlowCount() == 1);
+        editor->removeAddressRow(false, 0);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        if (!group->property("expanded").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* ordinary_status = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText");
+        UI_REQUIRE(ordinary_status != nullptr);
+        UI_EXPECT(!ordinary_status->property("visible").toBool());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicabilityKnown").toBool());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        auto* add_include = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesAddIncludeButton");
+        UI_REQUIRE(add_include != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(add_include, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0AddressTextField") != nullptr;
+        }));
+        UI_EXPECT(editor->addressRows(false, true).size() == 1);
+        auto* address = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0AddressTextField");
+        auto* scope = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0ScopeComboBox");
+        auto* subnet = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0SubnetCheckBox");
+        UI_REQUIRE(address != nullptr);
+        UI_REQUIRE(scope != nullptr);
+        UI_REQUIRE(subnet != nullptr);
+        UI_EXPECT(scope->property("count").toInt() == 3);
+        address->setProperty("text", QStringLiteral("192.0.2.1"));
+        UI_REQUIRE(QMetaObject::invokeMethod(address, "textEdited"));
+        const auto revision = editor->revision();
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2."), true);
+        UI_EXPECT(editor->revision() == revision);
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0)
+            .value("addressText").toString() == QStringLiteral("192.0.2."));
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.1"), true);
+        UI_REQUIRE(QMetaObject::invokeMethod(subnet, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        auto* prefix = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesIncludeRow0PrefixTextField");
+        UI_REQUIRE(prefix != nullptr);
+        prefix->setProperty("text", QStringLiteral("24"));
+        UI_REQUIRE(QMetaObject::invokeMethod(prefix, "textEdited"));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0)
+            .value("subnetEnabled").toBool());
+        editor->setAddressRowScope(false, 0, static_cast<int>(Scope::intermediate), true);
+        editor->addAddressRow(false, true);
+        editor->setAddressRowScope(false, 1, static_cast<int>(Scope::any), true);
+        editor->setAddressRowAddressText(false, 1, QStringLiteral("2001:db8::1"), true);
+        auto* exclusions = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesExclusionsToggleButton");
+        UI_REQUIRE(exclusions != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(exclusions, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        auto* add_exclude = popup_visual_item(dialog, "advancedFlowFilterNonTerminalIpAddressesAddExcludeButton");
+        UI_REQUIRE(add_exclude != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(add_exclude, "click"));
+        editor->setAddressRowAddressText(true, 0, QStringLiteral("198.51.100.1"), true);
+        UI_EXPECT(editor->sectionConfiguredRuleCount(section_id) == 3);
+        UI_EXPECT(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_REQUIRE(editor->addressRows(false, true).size() == 2);
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("prefixText").toString() == QStringLiteral("24"));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("scope").toInt() == static_cast<int>(Scope::intermediate));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 1).value("scope").toInt() == static_cast<int>(Scope::any));
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(true, true), 0).value("scope").toInt() == static_cast<int>(Scope::outer));
+        const auto saved_path = std::filesystem::temp_directory_path() / "pfl_ui_non_terminal_ip.filter";
+        controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString(saved_path.wstring());
+        });
+        UI_REQUIRE(controller.saveAdvancedFlowFilterFileAs());
+        const auto saved_text = read_text_file_text(saved_path);
+        const auto adapter = std::make_unique<pfl::FrontendSessionAdapter>();
+        const auto saved = adapter->parse_advanced_flow_filter_structured_document(saved_text);
+        UI_REQUIRE(saved.document.has_value());
+        UI_REQUIRE(saved.document->non_terminal_ip.include.size() == 2U);
+        UI_REQUIRE(saved.document->non_terminal_ip.exclude.size() == 1U);
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].scope_id == "intermediate");
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].subnet_enabled);
+        UI_EXPECT(saved.document->non_terminal_ip.include[0].prefix_text == "24");
+        UI_EXPECT(saved.document->non_terminal_ip.include[1].scope_id == "any");
+        UI_EXPECT(saved.document->non_terminal_ip.exclude[0].scope_id == "outer");
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("invalid"), true);
+        UI_EXPECT(!controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(!controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(read_text_file_text(saved_path) == saved_text);
+        controller.cancelAdvancedFlowFilterEdit();
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(advanced_filter_row_at(editor->addressRows(false, true), 0).value("addressText").toString() == QStringLiteral("192.0.2.1"));
+        editor->setSectionEnabled(section_id, false);
+        UI_EXPECT(controller.applyAdvancedFlowFilterEdit());
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->sectionConfiguredRuleCount(section_id) == 3);
+        UI_EXPECT(controller.saveAdvancedFlowFilterFile());
+        const auto disabled = adapter->parse_advanced_flow_filter_structured_document(read_text_file_text(saved_path));
+        UI_REQUIRE(disabled.document.has_value());
+        UI_EXPECT(!disabled.document->non_terminal_ip.enabled);
+        UI_EXPECT(disabled.document->non_terminal_ip.include.size() == 2U);
+        controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(saved_path.wstring());
+        });
+        controller.openAdvancedFlowFilterFile();
+        controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!editor->sectionEnabled(section_id));
+        UI_EXPECT(editor->addressRows(false, true).size() == 2);
+        UI_EXPECT(group->property("expanded").toBool());
+        editor->addAddressRow(false);
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("10.72.0.1"));
+        UI_EXPECT(editor->addressRows(false).size() == 1);
+        UI_EXPECT(editor->addressScopeOptions().size() == 3);
+        UI_EXPECT(editor->sectionConfiguredRuleCount(static_cast<int>(Section::ip_addresses)) == 1);
+        controller.clearAdvancedFlowFilterUnsavedChanges();
+        UI_EXPECT(editor->addressRows(false).isEmpty());
+        UI_EXPECT(editor->addressRows(false, true).size() == 2);
+        controller.setAdvancedFlowFilterClearDecisionForTests([](bool) {
+            return MainController::AdvancedFlowFilterClearDecision::discard_and_clear;
+        });
+        controller.clearAdvancedFlowFilter();
+        UI_EXPECT(editor->addressRows(false, true).isEmpty());
+        UI_EXPECT(editor->addressRows(true, true).isEmpty());
+        UI_EXPECT(editor->nonTerminalIpApplicability().value("applicable").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(dialog, "close"));
+
+        MainController ignored {};
+        ignored.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(true);
+        UI_REQUIRE(open_capture_and_wait(app, ignored, capture_path));
+        ignored.useAdvancedFlowFilter();
+        auto* ignored_editor = advanced_filter_editor(ignored);
+        UI_REQUIRE(ignored_editor != nullptr);
+        auto ignored_window = load_main_qml_component(ignored);
+        auto* ignored_button = named_object(ignored_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* ignored_dialog = named_object(ignored_window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(ignored_button != nullptr);
+        UI_REQUIRE(ignored_dialog != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_button, "click"));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText") != nullptr;
+        }));
+        auto* ignored_content = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesContent");
+        auto* ignored_collapse = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesCollapseButton");
+        UI_REQUIRE(ignored_content != nullptr);
+        UI_REQUIRE(ignored_collapse != nullptr);
+        if (!ignored_content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(ignored_collapse, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        auto* status = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesApplicabilityText");
+        UI_REQUIRE(status != nullptr);
+        UI_EXPECT(status->property("visible").toBool());
+        UI_EXPECT(status->property("text").toString() == QStringLiteral(
+            "Non-terminal IP metadata was not retained because it was ignored when this capture was imported."));
+        auto* ignored_non_terminal_section = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesSection");
+        auto* ignored_terminal_status = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesApplicabilityText");
+        UI_REQUIRE(ignored_non_terminal_section != nullptr);
+        UI_REQUIRE(ignored_terminal_status != nullptr);
+        UI_EXPECT(belongs_to(status, ignored_non_terminal_section));
+        UI_EXPECT(!ignored_terminal_status->property("visible").toBool());
+        auto* ignored_terminal_add = popup_visual_item(ignored_dialog, "advancedFlowFilterIpAddressesAddIncludeButton");
+        UI_REQUIRE(ignored_terminal_add != nullptr);
+        UI_EXPECT(ignored_terminal_add->property("enabled").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_terminal_add, "click"));
+        ignored_editor->setAddressRowAddressText(false, 0, QStringLiteral("10.72.0.1"));
+        UI_EXPECT(ignored_editor->nonTerminalIpApplicability().value("applicabilityKnown").toBool());
+        UI_EXPECT(!ignored_editor->nonTerminalIpApplicability().value("applicable").toBool());
+        auto* ignored_add = popup_visual_item(ignored_dialog, "advancedFlowFilterNonTerminalIpAddressesAddIncludeButton");
+        UI_REQUIRE(ignored_add != nullptr);
+        UI_EXPECT(ignored_add->property("enabled").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_add, "click"));
+        ignored_editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.1"), true);
+        ignored.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString((saved_path.parent_path() / "pfl_ui_non_terminal_ip_ignored.filter").wstring());
+        });
+        UI_EXPECT(ignored.saveAdvancedFlowFilterFileAs());
+        UI_EXPECT(ignored_editor->sectionEnabled(section_id));
+        ignored_editor->setSectionEnabled(section_id, false);
+        UI_EXPECT(ignored.applyAdvancedFlowFilterEdit());
+        auto* ignored_flows = qobject_cast<FlowListModel*>(ignored.flowModel());
+        UI_REQUIRE(ignored_flows != nullptr);
+        UI_EXPECT(ignored_flows->visibleFlowCount() == 1);
+        UI_REQUIRE(QMetaObject::invokeMethod(ignored_dialog, "close"));
+    });
+
+    run_ui_section("advanced_flow_filter_non_terminal_ip_flow_list_wiring", [&]() {
+        MainController controller {};
+        controller.setIgnoreNonTerminalIpEndpointsWhenGroupingFlows(false);
+        const auto path = ui_test_root() / "data" / "parsing" / "ip_encapsulation"
+            / "12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap";
+        UI_REQUIRE(open_capture_and_wait(app, controller, path));
+        controller.useAdvancedFlowFilter();
+        auto* editor = advanced_filter_editor(controller);
+        auto* model = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(editor != nullptr);
+        UI_REQUIRE(model != nullptr);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->addAddressRow(false, true);
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("192.0.2.60"), true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 1);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->setAddressRowAddressText(false, 0, QStringLiteral("203.0.113.1"), true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 0);
+        controller.beginAdvancedFlowFilterEdit();
+        editor->removeAddressRow(false, 0, true);
+        UI_REQUIRE(controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(model->visibleFlowCount() == 1);
+    });
+
     run_ui_section("advanced_flow_filter_settings_editor_traffic", [&]() {
         using TrafficMetric = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric;
         using TrafficUnit = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit;
@@ -7429,6 +7930,7 @@ int main(int argc, char* argv[]) {
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathKindOverviewModeButton") != nullptr
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathIdentityTreeModeButton") != nullptr
                 && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathTerminalPathsModeButton") != nullptr
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathIdentityTreeIpContextModeButton") == nullptr
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorCancelButton") != nullptr
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorSelectButton") != nullptr;
         }));

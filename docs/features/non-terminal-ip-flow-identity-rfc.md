@@ -16,6 +16,7 @@ Current recognized-flow identity is conceptually:
 ```text
 terminal tuple
 + normalized ProtocolPathId
++ NonTerminalIpContextId
 ```
 
 In this RFC, `terminal tuple` means the effective/terminal:
@@ -906,9 +907,10 @@ This RFC does not prescribe an arbitrary percentage threshold.
 
 ### Stage 5 - Statistics/Presentation Adjustments
 
-Only implement presentation changes required for correct current Flow and
-ProtocolPath semantics. Do not add non-terminal IP Advanced Flow Filter support
-in this stage unless separately approved.
+This identity-only stage did not add non-terminal IP Advanced Flow Filter
+support. The subsequently approved
+[UI integration contract](non-terminal-ip-ui-integration-rfc.md) now provides
+that post-import consumer without changing Flow identity.
 
 ### Stage 6 - Performance And Real-World Validation
 
@@ -923,7 +925,7 @@ This RFC explicitly defers:
 
 - outer/non-terminal transport ports in Flow identity;
 - Flow-level retained outer-port observations;
-- Advanced Flow Filter by non-terminal IP address;
+- directional Endpoint A/B filtering by non-terminal IP address;
 - Advanced Flow Filter by non-terminal port;
 - adding concrete IP addresses to `ProtocolPath`;
 - redesigning existing GTP-U TEID semantics;
@@ -983,7 +985,7 @@ Deferred optimization questions:
   state only.
 - Parent `Connection` owns shared protocol/path/context identity.
 - `FlowHintService` state must be isolated by the new full identity.
-- The next index revision persists shared connection identity and the context
+- Current index revision 20 persists shared connection identity and the context
   registry without repeating shared identity inside directional flow records.
 - Large-capture open performance remains a hard design constraint.
 - Outer-port filtering and general carrier-observation storage are out of

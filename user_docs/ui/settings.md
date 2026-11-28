@@ -102,6 +102,12 @@ These settings affect how a raw capture is interpreted when it is imported into
 the desktop session. They are not just alternate views of the current flow
 inventory.
 
+Under `Flow grouping`, three independent checkboxes control VLAN/MPLS,
+GTP-U TEID, and non-terminal IP endpoint normalization. They share one note:
+`Applied when importing the next raw capture. Existing indexes keep their
+stored flow grouping.` The current loaded capture/index can use different
+grouping from these editable next-import settings.
+
 ### HTTP path as service hint
 
 `HTTP: use request path as service hint when Host is missing` is used when HTTP
@@ -119,7 +125,7 @@ Lifecycle:
 
 ### VLAN and MPLS flow grouping
 
-`Ignore VLAN and MPLS layers when grouping flows` changes canonical flow
+`Ignore VLAN and MPLS layers` under `Flow grouping` changes canonical flow
 identity during raw-capture import.
 
 Normally, VLAN and MPLS layers participate in the canonical grouping identity.
@@ -137,18 +143,23 @@ It does **not** remove the actual packet-level protocol layers from individual
 packets. Packet bytes and packet summaries can still show the real VLAN or MPLS
 structure carried by that packet.
 
-When a raw capture is reopened with this normalization active, the UI can show
-the current-session banner:
+When a raw capture is reopened with this normalization active, the compact
+current-session provenance line can include:
 
-`VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.`
+`Flow grouping: VLAN/MPLS ignored`
 
-Treat that banner as a description of the grouping state that was actually used
-to build the current raw-capture session, not as a simple mirror of the current
-checkbox.
+Treat that line as a description of the grouping state that was actually used
+to build the loaded capture or index, not as a mirror of the current checkbox.
+
+Only active relaxations appear, in order: `VLAN/MPLS ignored`, `GTP-U TEID
+ignored`, `Non-terminal IP ignored`. Default grouping shows no persistent line.
+The same compact informational provenance applies to a loaded index. It does
+not replace feature-specific explanations when non-terminal-IP filtering or
+`Identity Tree + IP Context` Statistics cannot use context discarded at import.
 
 ### GTP-U TEID grouping
 
-`Ignore GTP-U TEIDs when grouping inner flows` works at the same conceptual
+`Ignore GTP-U TEIDs` under `Flow grouping` works at the same conceptual
 level for inner-flow identity.
 
 When enabled:
@@ -167,7 +178,7 @@ Lifecycle:
 
 ### Non-terminal IP endpoint grouping
 
-`Ignore non-terminal IP endpoints when grouping flows` controls how nested IP
+`Ignore non-terminal IP endpoints` under `Flow grouping` controls how nested IP
 captures are grouped.
 
 By default, non-terminal IPv4 and IPv6 endpoint pairs are part of recognized
@@ -250,6 +261,7 @@ protocol layers from packet inspection.
 | HTTP service hint processing | Current imported session is unchanged | Applied |
 | VLAN/MPLS grouping | Current flow inventory is unchanged | Applied |
 | GTP-U TEID grouping | Current flow inventory is unchanged | Applied |
+| Non-terminal IP grouping | Current flow inventory is unchanged | Applied |
 
 ## Settings and indexes
 
@@ -265,7 +277,7 @@ For an index:
 
 - the flow inventory and grouping decisions are already stored;
 - opening the index reuses that stored grouping;
-- changing VLAN/MPLS or GTP-U grouping settings does not regroup the opened
+- changing VLAN/MPLS, GTP-U, or non-terminal IP grouping settings does not regroup the opened
   index.
 
 Use [Captures and indexes](capture-and-index.md) for the broader raw-capture

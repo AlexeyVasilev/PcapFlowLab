@@ -303,68 +303,44 @@ Item {
                         Layout.fillWidth: true
                         spacing: 4
 
+                        Label {
+                            objectName: "flowGroupingHeading"
+                            text: "Flow grouping"
+                            font.bold: true
+                            color: "#334155"
+                        }
+
                         CheckBox {
                             objectName: "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox"
                             Layout.fillWidth: true
-                            text: "Ignore VLAN and MPLS layers when grouping flows"
+                            text: "Ignore VLAN and MPLS layers"
                             checked: root.ignoreVlanAndMplsLayersWhenGroupingFlows
                             onToggled: root.ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(checked)
                         }
 
-                        Label {
-                            objectName: "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText"
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 28
-                            wrapMode: Text.WordWrap
-                            color: "#64748b"
-                            font.pixelSize: 12
-                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-
                         CheckBox {
                             objectName: "ignoreGtpuTeidsWhenGroupingInnerFlowsCheckBox"
                             Layout.fillWidth: true
-                            text: "Ignore GTP-U TEIDs when grouping inner flows"
+                            text: "Ignore GTP-U TEIDs"
                             checked: root.ignoreGtpuTeidsWhenGroupingInnerFlows
                             onToggled: root.ignoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser(checked)
                         }
 
-                        Label {
-                            objectName: "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText"
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 28
-                            wrapMode: Text.WordWrap
-                            color: "#64748b"
-                            font.pixelSize: 12
-                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-
                         CheckBox {
                             objectName: "ignoreNonTerminalIpEndpointsWhenGroupingFlowsCheckBox"
                             Layout.fillWidth: true
-                            text: "Ignore non-terminal IP endpoints when grouping flows"
+                            text: "Ignore non-terminal IP endpoints"
                             checked: root.ignoreNonTerminalIpEndpointsWhenGroupingFlows
                             onToggled: root.ignoreNonTerminalIpEndpointsWhenGroupingFlowsChangedByUser(checked)
                         }
 
                         Label {
-                            objectName: "ignoreNonTerminalIpEndpointsWhenGroupingFlowsHelpText"
+                            objectName: "flowGroupingHelpText"
                             Layout.fillWidth: true
-                            Layout.leftMargin: 28
                             wrapMode: Text.WordWrap
                             color: "#64748b"
                             font.pixelSize: 12
-                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
+                            text: "Applied when importing the next raw capture. Existing indexes keep their stored flow grouping."
                         }
                     }
 

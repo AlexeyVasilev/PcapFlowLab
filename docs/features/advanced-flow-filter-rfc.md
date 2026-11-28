@@ -3,8 +3,8 @@
 Status: implemented backend/compiler/evaluator foundation with current
 `.filter` v3 parse/format support, metadata-backed predicate coverage, current
 `flows --adv-filter` CLI integration, current Qt Advanced Filter UI/workflow,
-and current Tauri parity for the implemented Time and directional-traffic
-surface.
+and current Tauri parity for the implemented editor surface, including
+non-terminal IP filtering.
 
 This document defines the product and semantic filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
@@ -17,6 +17,7 @@ Related RFCs:
 
 - [Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md)
 - [Index v15 Container RFC](index-v15-container-rfc.md)
+- [Non-Terminal IP UI Integration RFC](non-terminal-ip-ui-integration-rfc.md)
 
 ## Goal
 
@@ -210,6 +211,7 @@ section.quic_version.enabled = true | false
 section.directionality.enabled = true | false
 section.ports.enabled = true | false
 section.ip_addresses.enabled = true | false
+section.non_terminal_ip.enabled = true | false
 section.time.enabled = true | false
 section.traffic.enabled = true | false
 section.service.enabled = true | false
@@ -243,6 +245,8 @@ port.<either|a|b>.exclude = <port-or-range>
 
 ip.<either|a|b>.include = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
 ip.<either|a|b>.exclude = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
+non_terminal_ip.<outer|intermediate|any>.include = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
+non_terminal_ip.<outer|intermediate|any>.exclude = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
 
 time.start.from = "<utc-timestamp>"
 time.start.to = "<utc-timestamp>"
@@ -293,10 +297,12 @@ The fixed section-order used for canonical non-default Enabled assignments is:
 6. `directionality`
 7. `ports`
 8. `ip_addresses`
-9. `traffic`
-10. `service`
-11. `protocol_path`
-12. `contains_layer`
+9. `non_terminal_ip`
+10. `time`
+11. `traffic`
+12. `service`
+13. `protocol_path`
+14. `contains_layer`
 
 `protocol_path.contains.*` remains the configured predicate representation for
 Contains Layer rules. `section.protocol_path.enabled` independently controls
@@ -478,7 +484,9 @@ The formatter emits categories in this stable order:
 12. IPv6 include
 13. IPv4 exclude
 14. IPv6 exclude
-15. service include, then exclude
+15. non-terminal IP include, then exclude, in `outer`, `intermediate`,
+    `any` scope order
+16. service include, then exclude
 
 The canonical formatter does not preserve:
 
@@ -540,6 +548,8 @@ The initial backend stage supports these predicate families:
 - QUIC version (`QuicVersionHint`)
 - IPv4 exact-address and CIDR predicates
 - IPv6 exact-address and CIDR predicates
+- non-terminal IPv4/IPv6 exact-address and CIDR predicates over retained
+  `outer`, `intermediate`, or `any` context levels
 - ports
 - cheap numeric / aggregate metadata
 - directionality
@@ -550,6 +560,17 @@ Different active families combine with AND.
 Multiple include predicates inside one family combine with OR.
 
 Exclusion predicates reject a flow when any exclusion matches.
+
+Terminal `ip.either.*`, `ip.a.*`, and `ip.b.*` use first-observed Flow
+endpoints. Non-terminal predicates are direction-agnostic: either address at
+each selected context level may match, with no Endpoint A/B or source/destination
+filter scope. A capture/index imported with
+`ignore_non_terminal_ip_endpoints_when_grouping_flows = true` cannot evaluate
+an active `non_terminal_ip.*` criterion: the backend reports that metadata was
+not retained. This is capture applicability, not invalid syntax or a valid
+zero-match result. If context was retained but contains no non-terminal IP
+levels, the criterion simply matches no Flows. A disabled non-terminal section
+retains its configured rules and does not require the metadata.
 
 An empty `AdvancedFlowFilterSpec` matches every listable flow.
 
@@ -906,8 +927,10 @@ The current backend stage uses this fixed execution order:
 4. flow protocol / detected protocol / TLS version / QUIC version
 5. ports
 6. cheap numeric / aggregate predicates and directionality
-7. IP address / CIDR predicates
-8. service predicates
+7. terminal IP address / CIDR predicates
+8. retained non-terminal IP predicates
+9. time predicates
+10. service predicates
 
 Service matching is deliberately last.
 

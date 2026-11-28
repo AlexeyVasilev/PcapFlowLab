@@ -46,6 +46,10 @@ char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode
 );
+std::uint8_t pfl_frontend_session_adapter_get_protocol_path_statistics_status(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode
+);
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,
@@ -134,6 +138,17 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* ip_exclude_address_text_utf8,
     const char* const* ip_exclude_prefix_text_utf8,
     std::size_t ip_exclude_count,
+    std::uint8_t non_terminal_ip_enabled,
+    const char* const* non_terminal_ip_include_scope_ids_utf8,
+    const std::uint8_t* non_terminal_ip_include_subnet_enabled,
+    const char* const* non_terminal_ip_include_address_text_utf8,
+    const char* const* non_terminal_ip_include_prefix_text_utf8,
+    std::size_t non_terminal_ip_include_count,
+    const char* const* non_terminal_ip_exclude_scope_ids_utf8,
+    const std::uint8_t* non_terminal_ip_exclude_subnet_enabled,
+    const char* const* non_terminal_ip_exclude_address_text_utf8,
+    const char* const* non_terminal_ip_exclude_prefix_text_utf8,
+    std::size_t non_terminal_ip_exclude_count,
     std::uint8_t time_enabled,
     const char* const* time_range_metric_ids_utf8,
     const char* const* time_range_from_text_utf8,

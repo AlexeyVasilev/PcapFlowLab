@@ -15,6 +15,7 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendStatisticsReport.h"
+#include "app/frontend/FrontendStatisticsReportProtocolPathSelection.h"
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -246,10 +247,25 @@ std::optional<ProtocolPathStatisticsMode> parse_protocol_path_mode(const std::st
     if (value == "identity-tree") {
         return ProtocolPathStatisticsMode::identity_tree;
     }
+    if (value == "identity-tree-ip-context") {
+        return ProtocolPathStatisticsMode::identity_tree_ip_context;
+    }
     if (value == "terminal-paths") {
         return ProtocolPathStatisticsMode::terminal_paths;
     }
     return std::nullopt;
+}
+
+std::string_view protocol_path_statistics_status_error(const ProtocolPathStatisticsStatus status) noexcept {
+    switch (status) {
+    case ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable:
+        return "Non-terminal IP metadata was not retained because it was ignored when this capture was imported.";
+    case ProtocolPathStatisticsStatus::missing_non_terminal_ip_context:
+        return "Non-terminal IP context metadata is missing or inconsistent.";
+    case ProtocolPathStatisticsStatus::ok:
+        return {};
+    }
+    return "Protocol Path Statistics are unavailable.";
 }
 
 std::string render_basic_summary_text(
@@ -710,7 +726,7 @@ FrontendStatisticsReportInput make_statistics_report_input(
     FrontendStatisticsReportMetadata metadata,
     FrontendOverviewDto overview,
     SummaryStatisticsDtos statistics,
-    std::vector<FrontendProtocolPathStatsDto> protocol_path_identity_tree
+    FrontendStatisticsReportProtocolPathTree protocol_path_tree
 ) {
     return FrontendStatisticsReportInput {
         .metadata = std::move(metadata),
@@ -724,7 +740,7 @@ FrontendStatisticsReportInput make_statistics_report_input(
         .protocol_hint_statistics = std::move(statistics.protocol_hint_statistics),
         .quic_tls_statistics = std::move(statistics.quic_tls_statistics),
         .top_endpoint_port_statistics = std::move(statistics.top_endpoint_port_statistics),
-        .protocol_path_identity_tree = std::move(protocol_path_identity_tree),
+        .protocol_path_tree = std::move(protocol_path_tree),
     };
 }
 
@@ -1413,6 +1429,46 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
         }
     }
 
+    const bool explicit_context_tree =
+        options.protocol_path_mode == ProtocolPathStatisticsMode::identity_tree_ip_context &&
+        (options.protocol_path_tree || options.out_protocol_path_tree_path.has_value());
+    const bool report_requested = summary_statistics_report_requested(options);
+    const bool context_ignored = capture_import_settings_bool_value(
+        fast_tier.capture_import_settings,
+        kCaptureImportSettingIgnoreNonTerminalIpEndpointsWhenGroupingFlows).value_or(false);
+    std::optional<CaptureProtocolPathSummary> context_summary {};
+    if (explicit_context_tree || report_requested) {
+        if (explicit_context_tree && context_ignored) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = std::string(protocol_path_statistics_status_error(
+                    ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable)) + '\n',
+            };
+        }
+        if (!context_ignored) {
+            std::ifstream stream(options.input_path, std::ios::binary);
+            CaptureIndexV16FlowMetadataTier metadata {};
+            const auto metadata_result = detail::read_v16_flow_metadata_tier(stream, metadata);
+            if (!metadata_result) {
+                return {
+                    .exit_code = 1,
+                    .stdout_text = {},
+                    .stderr_text = "Failed to read index Flow metadata for Protocol Path Statistics.\n",
+                };
+            }
+            context_summary = session_detail::build_protocol_path_summary_with_ip_context(
+                fast_tier, metadata);
+        }
+        if (explicit_context_tree && context_summary->status != ProtocolPathStatisticsStatus::ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = std::string(protocol_path_statistics_status_error(context_summary->status)) + '\n',
+            };
+        }
+    }
+
     const auto overview = build_fast_v16_overview(
         options.input_path,
         file_size_or_zero(options.input_path),
@@ -1435,7 +1491,9 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
         stdout_builder << '\n'
             << render_protocol_path_preview_text(
                 build_frontend_protocol_path_statistics(
-                    build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode)
+                    explicit_context_tree
+                        ? *context_summary
+                        : build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode)
                 ),
                 options.protocol_path_mode
             );
@@ -1450,7 +1508,9 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
     if (options.out_protocol_path_tree_path.has_value()) {
         std::string error_text {};
         if (!session_detail::export_protocol_path_tree_text(
-                build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode),
+                explicit_context_tree
+                    ? *context_summary
+                    : build_fast_protocol_path_summary(fast_tier, options.protocol_path_mode),
                 *options.out_protocol_path_tree_path,
                 session_detail::TextExportOverwritePolicy::overwrite_existing,
                 &error_text)) {
@@ -1467,13 +1527,31 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
     }
 
     if (summary_statistics_report_requested(options)) {
+        auto path_selection = select_statistics_report_protocol_path_tree(
+            [&](const ProtocolPathStatisticsMode mode) {
+                if (mode == ProtocolPathStatisticsMode::identity_tree_ip_context) {
+                    return context_ignored
+                        ? CaptureProtocolPathSummary {
+                            .mode = mode,
+                            .status = ProtocolPathStatisticsStatus::non_terminal_ip_metadata_unavailable,
+                        }
+                        : std::move(*context_summary);
+                }
+                return build_fast_protocol_path_summary(fast_tier, mode);
+            });
+        if (!path_selection.tree) {
+            stderr_text += path_selection.error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = stdout_builder.str(),
+                .stderr_text = std::move(stderr_text),
+            };
+        }
         const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
             make_cli_statistics_report_metadata(overview, read_result.header.index_revision),
             overview,
             report_statistics,
-            build_frontend_protocol_path_statistics(
-                build_fast_protocol_path_summary(fast_tier, ProtocolPathStatisticsMode::identity_tree)
-            )
+            std::move(*path_selection.tree)
         ));
 
         if (options.out_statistics_markdown_path.has_value()) {
@@ -1613,6 +1691,18 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
         stdout_builder << render_extended_summary_text(build_summary_statistics_dtos(adapter), overview);
     }
 
+    if (options.protocol_path_mode == ProtocolPathStatisticsMode::identity_tree_ip_context &&
+        (options.protocol_path_tree || options.out_protocol_path_tree_path.has_value())) {
+        const auto status = adapter.get_protocol_path_statistics_status(options.protocol_path_mode);
+        if (status != ProtocolPathStatisticsStatus::ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = std::string(protocol_path_statistics_status_error(status)) + '\n',
+            };
+        }
+    }
+
     if (options.protocol_path_tree) {
         stdout_builder << '\n'
             << render_protocol_path_preview_text(
@@ -1675,11 +1765,20 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
     }
 
     if (summary_statistics_report_requested(options)) {
+        auto path_selection = adapter.get_statistics_report_protocol_path_tree();
+        if (!path_selection.tree) {
+            stderr_text += path_selection.error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = stdout_builder.str(),
+                .stderr_text = std::move(stderr_text),
+            };
+        }
         const auto report = build_frontend_statistics_report_data(make_statistics_report_input(
             make_cli_statistics_report_metadata(overview, adapter.loaded_index_revision()),
             overview,
             build_summary_statistics_dtos(adapter, kStatisticsReportTopEndpointPortLimit),
-            adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree)
+            std::move(*path_selection.tree)
         ));
 
         if (options.out_statistics_markdown_path.has_value()) {
@@ -1765,7 +1864,7 @@ std::string render_summary_command_help() {
     out << "Presentation\n";
     out << "  --extended\n";
     out << "  --protocol-path-tree\n";
-    out << "  --protocol-path-mode <kind-overview|identity-tree|terminal-paths>\n\n";
+    out << "  --protocol-path-mode <kind-overview|identity-tree|identity-tree-ip-context|terminal-paths>\n\n";
     out << "Side outputs\n";
     out << "  --out-index <path>\n";
     out << "  --out-flows-list <path>\n";

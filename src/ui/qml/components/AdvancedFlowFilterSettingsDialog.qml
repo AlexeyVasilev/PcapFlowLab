@@ -28,6 +28,7 @@ Dialog {
     readonly property int compactTextButtonHorizontalPadding: 10
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
+    readonly property int nonTerminalIpAddressesSectionId: 13
     readonly property int timeSectionId: 8
     readonly property int trafficSectionId: 9
     readonly property int serviceSectionId: 10
@@ -129,6 +130,11 @@ Dialog {
                 ? root.editor.sectionHasConfiguredPredicates(sectionId)
                 : false
         }
+        // One visual group expands when either independent document section has rules.
+        nextState[String(root.ipAddressesSectionId)] = root.editor
+            ? root.editor.sectionHasConfiguredPredicates(root.ipAddressesSectionId)
+                || root.editor.sectionHasConfiguredPredicates(root.nonTerminalIpAddressesSectionId)
+            : false
         sectionExpansionState = nextState
     }
 
@@ -830,333 +836,420 @@ Dialog {
                         }
 
                         AdvancedFlowFilterSection {
-                            id: ipAddressesSection
-                            readonly property bool sectionEnabledState: {
-                                if (!root.editor) {
-                                    return false
-                                }
-                                void(root.editor.revision)
-                                return root.editor.sectionEnabled(root.ipAddressesSectionId)
-                            }
-                            readonly property var scopeOptions: root.editor ? root.editor.addressScopeOptions() : []
-                            readonly property var includeRows: {
-                                if (!root.editor) {
-                                    return []
-                                }
-                                void(root.editor.revision)
-                                return root.editor.addressRows(false)
-                            }
-                            readonly property var excludeRows: {
-                                if (!root.editor) {
-                                    return []
-                                }
-                                void(root.editor.revision)
-                                return root.editor.addressRows(true)
-                            }
-                            readonly property string sectionSummaryText: {
-                                if (!root.editor) {
-                                    return ""
-                                }
-                                void(root.editor.sectionSummaryRevision)
-                                return root.editor.sectionSummaryText(root.ipAddressesSectionId)
-                            }
-                            readonly property int documentReloadRevision: root.editor
-                                ? root.editor.documentReloadRevision
-                                : 0
-
-                            sectionObjectName: "advancedFlowFilterIpAddressesSection"
+                            id: ipAddressesGroup
+                            sectionObjectName: "advancedFlowFilterIpAddressesGroup"
                             collapseButtonObjectName: "advancedFlowFilterIpAddressesCollapseButton"
-                            enabledCheckBoxObjectName: "advancedFlowFilterIpAddressesEnabledCheckBox"
-                            contentObjectName: "advancedFlowFilterIpAddressesContent"
+                            contentObjectName: "advancedFlowFilterIpAddressesGroupContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
                             title: "IP addresses"
-                            summaryText: sectionSummaryText
+                            enabledControlVisible: false
                             expanded: root.sectionExpanded(root.ipAddressesSectionId)
-                            sectionEnabled: sectionEnabledState
-                            contentEnabled: sectionEnabledState
+                            onToggleRequested: root.setSectionExpanded(root.ipAddressesSectionId, !expanded)
 
-                            property bool exclusionsExpanded: false
-
-                            function initializeExclusionsVisibility() {
-                                exclusionsExpanded = root.editor
-                                    ? root.editor.sectionHasExclusions(root.ipAddressesSectionId)
-                                    : false
-                            }
-
-                            Component.onCompleted: initializeExclusionsVisibility()
-                            onDocumentReloadRevisionChanged: initializeExclusionsVisibility()
-
-                            Connections {
-                                target: root
-
-                                function onInitializeDialogState() {
-                                    ipAddressesSection.initializeExclusionsVisibility()
-                                }
-                            }
-
-                            onToggleRequested: root.setSectionExpanded(root.ipAddressesSectionId, !root.sectionExpanded(root.ipAddressesSectionId))
-                            onSectionEnabledToggled: function(checked) {
-                                if (root.editor) {
-                                    root.editor.setSectionEnabled(root.ipAddressesSectionId, checked)
-                                }
-                            }
-
-                            AdvancedFlowFilterSemanticGroup {
-                                Layout.fillWidth: true
-                                title: "Include"
-                                fillColor: root.includeRegionColor
-                                strokeColor: root.includeRegionBorderColor
-
-                                Repeater {
-                                    model: ipAddressesSection.includeRows
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-
-                                        Layout.fillWidth: true
-                                        implicitHeight: includeAddressRowLayout.implicitHeight + 8
-                                        color: root.rowSurfaceColor
-                                        border.color: root.rowBorderColor
-                                        radius: 5
-
-                                        RowLayout {
-                                            id: includeAddressRowLayout
-                                            anchors.fill: parent
-                                            anchors.margins: 4
-                                            spacing: 8
-
-                                            ComboBox {
-                                                objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "ScopeComboBox"
-                                                Layout.preferredWidth: 170
-                                                model: ipAddressesSection.scopeOptions
-                                                textRole: "label"
-                                                currentIndex: root.optionIndex(model, modelData.scope)
-                                                onActivated: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowScope(false, modelData.row, model[currentIndex].value)
-                                                    }
-                                                }
-                                            }
-
-                                            CheckBox {
-                                                objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "SubnetCheckBox"
-                                                text: "Subnet"
-                                                checked: modelData.subnetEnabled
-                                                onToggled: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowSubnetEnabled(false, modelData.row, checked)
-                                                    }
-                                                }
-                                            }
-
-                                            Label {
-                                                Layout.preferredWidth: 52
-                                                text: "Address"
-                                                color: "#475569"
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            TextField {
-                                                objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "AddressTextField"
-                                                Layout.preferredWidth: 220
-                                                text: modelData.addressText
-                                                placeholderText: modelData.subnetEnabled ? "10.0.0.0" : "192.168.1.10"
-                                                onTextEdited: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowAddressText(false, modelData.row, text)
-                                                    }
-                                                }
-                                            }
-
-                                            Label {
-                                                Layout.preferredWidth: 36
-                                                opacity: modelData.subnetEnabled ? 1.0 : 0.0
-                                                enabled: modelData.subnetEnabled
-                                                text: "Prefix"
-                                                color: "#475569"
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            TextField {
-                                                objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "PrefixTextField"
-                                                Layout.preferredWidth: 76
-                                                opacity: modelData.subnetEnabled ? 1.0 : 0.0
-                                                enabled: modelData.subnetEnabled
-                                                text: modelData.prefixText
-                                                placeholderText: "24"
-                                                onTextEdited: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowPrefixText(false, modelData.row, text)
-                                                    }
-                                                }
-                                            }
-
-                                            Item {
-                                                Layout.fillWidth: true
-                                            }
-
-                                            AdvancedFlowFilterRowRemoveButton {
-                                                objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "RemoveButton"
-                                                accessibleLabel: root.rowRemoveAccessibleLabel("IP addresses include")
-                                                tooltipText: "Remove rule"
-                                                onClicked: {
-                                                    if (root.editor) {
-                                                        root.editor.removeAddressRow(false, modelData.row)
-                                                    }
-                                                }
-                                            }
+                            Repeater {
+                                model: [false, true]
+                                delegate: ColumnLayout {
+                                    id: ipAddressesSection
+                                    required property bool modelData
+                                    readonly property bool nonTerminal: modelData
+                                    readonly property int sectionId: nonTerminal ? root.nonTerminalIpAddressesSectionId : root.ipAddressesSectionId
+                                    readonly property string objectNamePrefix: nonTerminal
+                                        ? "advancedFlowFilterNonTerminalIpAddresses"
+                                        : "advancedFlowFilterIpAddresses"
+                                    readonly property bool sectionEnabledState: {
+                                        if (!root.editor) {
+                                            return false
                                         }
+                                        void(root.editor.revision)
+                                        return root.editor.sectionEnabled(ipAddressesSection.sectionId)
                                     }
-                                }
-
-                                FilterTextButton {
-                                    objectName: "advancedFlowFilterIpAddressesAddIncludeButton"
-                                    text: "+ Add address"
-                                    onClicked: {
-                                        if (root.editor) {
-                                            root.editor.addAddressRow(false)
+                                    readonly property var scopeOptions: root.editor ? (nonTerminal ? root.editor.nonTerminalIpScopeOptions() : root.editor.addressScopeOptions()) : []
+                                    readonly property var includeRows: {
+                                        if (!root.editor) {
+                                            return []
                                         }
+                                        void(root.editor.revision)
+                                        return root.editor.addressRows(false, nonTerminal)
                                     }
-                                }
-                            }
+                                    readonly property var excludeRows: {
+                                        if (!root.editor) {
+                                            return []
+                                        }
+                                        void(root.editor.revision)
+                                        return root.editor.addressRows(true, nonTerminal)
+                                    }
+                                    readonly property string sectionSummaryText: {
+                                        if (!root.editor) {
+                                            return ""
+                                        }
+                                        void(root.editor.sectionSummaryRevision)
+                                        return root.editor.sectionSummaryText(ipAddressesSection.sectionId)
+                                    }
+                                    readonly property var applicability: {
+                                        if (!root.editor || !nonTerminal) {
+                                            return ({ applicabilityKnown: false, applicable: false, statusText: "" })
+                                        }
+                                        void(root.editor.revision)
+                                        return root.editor.nonTerminalIpApplicability()
+                                    }
+                                    readonly property int documentReloadRevision: root.editor
+                                        ? root.editor.documentReloadRevision
+                                        : 0
 
-                            RowLayout {
-                                Layout.fillWidth: true
-                                visible: !ipAddressesSection.exclusionsExpanded
-
-                                Item {
+                                    objectName: ipAddressesSection.objectNamePrefix + "Section"
                                     Layout.fillWidth: true
-                                }
+                                    spacing: 6
+                                    readonly property string title: nonTerminal
+                                        ? "Encapsulation IPs (non-terminal)"
+                                        : "Flow endpoint IPs (terminal)"
+                                    readonly property string helpText: nonTerminal
+                                        ? "IP layers outside the Flow endpoints. Outer matches the outermost non-terminal layer; Intermediate matches non-terminal layers between Outer and the terminal Flow endpoints."
+                                        : "Terminal IP addresses used by the Flow; for tunneled traffic, usually the innermost IP endpoints."
 
-                                FilterFlatTextButton {
-                                    objectName: "advancedFlowFilterIpAddressesExclusionsToggleButton"
-                                    text: "Exclusions"
-                                    padding: 2
-                                    onClicked: ipAddressesSection.exclusionsExpanded = true
-                                }
-                            }
+                                    property bool exclusionsExpanded: false
 
-                            AdvancedFlowFilterSemanticGroup {
-                                objectName: "advancedFlowFilterIpAddressesExclusionsSection"
-                                Layout.fillWidth: true
-                                visible: ipAddressesSection.exclusionsExpanded
-                                title: "Exclude"
-                                fillColor: root.excludeRegionColor
-                                strokeColor: root.excludeRegionBorderColor
-                                actionVisible: true
-                                actionText: "Hide"
-                                actionObjectName: "advancedFlowFilterIpAddressesHideExclusionsButton"
-                                onActionTriggered: ipAddressesSection.exclusionsExpanded = false
+                                    function initializeExclusionsVisibility() {
+                                        exclusionsExpanded = root.editor
+                                            ? root.editor.sectionHasExclusions(ipAddressesSection.sectionId)
+                                            : false
+                                    }
 
-                                Repeater {
-                                    model: ipAddressesSection.excludeRows
+                                    Component.onCompleted: initializeExclusionsVisibility()
+                                    onDocumentReloadRevisionChanged: initializeExclusionsVisibility()
 
-                                    delegate: Rectangle {
-                                        required property var modelData
+                                    Connections {
+                                        target: root
 
+                                        function onInitializeDialogState() {
+                                            ipAddressesSection.initializeExclusionsVisibility()
+                                        }
+                                    }
+
+                                    Rectangle {
                                         Layout.fillWidth: true
-                                        implicitHeight: excludeAddressRowLayout.implicitHeight + 8
-                                        color: root.rowSurfaceColor
-                                        border.color: root.rowBorderColor
-                                        radius: 5
+                                        Layout.preferredHeight: 1
+                                        visible: ipAddressesSection.nonTerminal
+                                        color: root.sectionBorderColor
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Label {
+                                            objectName: ipAddressesSection.objectNamePrefix + "Title"
+                                            text: ipAddressesSection.title
+                                            color: root.primaryTextColor
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: ipAddressesSection.sectionSummaryText
+                                            color: root.secondaryTextColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+
+                                        CheckBox {
+                                            objectName: ipAddressesSection.objectNamePrefix + "EnabledCheckBox"
+                                            text: "Enabled"
+                                            checked: ipAddressesSection.sectionEnabledState
+                                            onToggled: {
+                                                if (root.editor) {
+                                                    root.editor.setSectionEnabled(ipAddressesSection.sectionId, checked)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        objectName: ipAddressesSection.objectNamePrefix + "HelpText"
+                                        Layout.fillWidth: true
+                                        text: ipAddressesSection.helpText
+                                        color: root.secondaryTextColor
+                                        font.pixelSize: 12
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    ColumnLayout {
+                                        objectName: ipAddressesSection.objectNamePrefix + "Content"
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        enabled: ipAddressesSection.sectionEnabledState
+                                        opacity: enabled ? 1.0 : 0.55
+
+                                        Label {
+                                            objectName: ipAddressesSection.objectNamePrefix + "ApplicabilityText"
+                                            Layout.fillWidth: true
+                                            visible: ipAddressesSection.nonTerminal
+                                                && ipAddressesSection.applicability.applicabilityKnown
+                                                && !ipAddressesSection.applicability.applicable
+                                            text: ipAddressesSection.applicability.statusText
+                                            color: root.warningTextColor
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        AdvancedFlowFilterSemanticGroup {
+                                            Layout.fillWidth: true
+                                            title: "Include"
+                                            fillColor: root.includeRegionColor
+                                            strokeColor: root.includeRegionBorderColor
+
+                                            Repeater {
+                                                model: ipAddressesSection.includeRows
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: includeAddressRowLayout.implicitHeight + 8
+                                                    color: root.rowSurfaceColor
+                                                    border.color: root.rowBorderColor
+                                                    radius: 5
+
+                                                    RowLayout {
+                                                        id: includeAddressRowLayout
+                                                        anchors.fill: parent
+                                                        anchors.margins: 4
+                                                        spacing: 8
+
+                                                        ComboBox {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "IncludeRow" + modelData.row + "ScopeComboBox"
+                                                            Layout.preferredWidth: ipAddressesSection.nonTerminal ? 200 : 170
+                                                            model: ipAddressesSection.scopeOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.scope)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowScope(false, modelData.row, model[currentIndex].value, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        CheckBox {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "IncludeRow" + modelData.row + "SubnetCheckBox"
+                                                            text: "Subnet"
+                                                            checked: modelData.subnetEnabled
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowSubnetEnabled(false, modelData.row, checked, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.preferredWidth: 52
+                                                            text: "Address"
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+
+                                                        TextField {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "IncludeRow" + modelData.row + "AddressTextField"
+                                                            Layout.preferredWidth: 220
+                                                            text: modelData.addressText
+                                                            placeholderText: modelData.subnetEnabled ? "10.0.0.0" : "192.168.1.10"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowAddressText(false, modelData.row, text, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.preferredWidth: 36
+                                                            opacity: modelData.subnetEnabled ? 1.0 : 0.0
+                                                            enabled: modelData.subnetEnabled
+                                                            text: "Prefix"
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+
+                                                        TextField {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "IncludeRow" + modelData.row + "PrefixTextField"
+                                                            Layout.preferredWidth: 76
+                                                            opacity: modelData.subnetEnabled ? 1.0 : 0.0
+                                                            enabled: modelData.subnetEnabled
+                                                            text: modelData.prefixText
+                                                            placeholderText: "24"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowPrefixText(false, modelData.row, text, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Item {
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        AdvancedFlowFilterRowRemoveButton {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "IncludeRow" + modelData.row + "RemoveButton"
+                                                            accessibleLabel: root.rowRemoveAccessibleLabel(ipAddressesSection.title + " include")
+                                                            tooltipText: "Remove rule"
+                                                            onClicked: {
+                                                                if (root.editor) {
+                                                                    root.editor.removeAddressRow(false, modelData.row, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            FilterTextButton {
+                                                objectName: ipAddressesSection.objectNamePrefix + "AddIncludeButton"
+                                                text: "+ Add address"
+                                                onClicked: {
+                                                    if (root.editor) {
+                                                        root.editor.addAddressRow(false, ipAddressesSection.nonTerminal)
+                                                    }
+                                                }
+                                            }
+                                        }
 
                                         RowLayout {
-                                            id: excludeAddressRowLayout
-                                            anchors.fill: parent
-                                            anchors.margins: 4
-                                            spacing: 8
-
-                                            ComboBox {
-                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "ScopeComboBox"
-                                                Layout.preferredWidth: 170
-                                                model: ipAddressesSection.scopeOptions
-                                                textRole: "label"
-                                                currentIndex: root.optionIndex(model, modelData.scope)
-                                                onActivated: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowScope(true, modelData.row, model[currentIndex].value)
-                                                    }
-                                                }
-                                            }
-
-                                            CheckBox {
-                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "SubnetCheckBox"
-                                                text: "Subnet"
-                                                checked: modelData.subnetEnabled
-                                                onToggled: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowSubnetEnabled(true, modelData.row, checked)
-                                                    }
-                                                }
-                                            }
-
-                                            Label {
-                                                Layout.preferredWidth: 52
-                                                text: "Address"
-                                                color: "#475569"
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            TextField {
-                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "AddressTextField"
-                                                Layout.preferredWidth: 220
-                                                text: modelData.addressText
-                                                placeholderText: modelData.subnetEnabled ? "2001:db8::" : "2001:db8::1"
-                                                onTextEdited: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowAddressText(true, modelData.row, text)
-                                                    }
-                                                }
-                                            }
-
-                                            Label {
-                                                Layout.preferredWidth: 36
-                                                opacity: modelData.subnetEnabled ? 1.0 : 0.0
-                                                enabled: modelData.subnetEnabled
-                                                text: "Prefix"
-                                                color: "#475569"
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            TextField {
-                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "PrefixTextField"
-                                                Layout.preferredWidth: 76
-                                                opacity: modelData.subnetEnabled ? 1.0 : 0.0
-                                                enabled: modelData.subnetEnabled
-                                                text: modelData.prefixText
-                                                placeholderText: "32"
-                                                onTextEdited: {
-                                                    if (root.editor) {
-                                                        root.editor.setAddressRowPrefixText(true, modelData.row, text)
-                                                    }
-                                                }
-                                            }
+                                            Layout.fillWidth: true
+                                            visible: !ipAddressesSection.exclusionsExpanded
 
                                             Item {
                                                 Layout.fillWidth: true
                                             }
 
-                                            AdvancedFlowFilterRowRemoveButton {
-                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "RemoveButton"
-                                                accessibleLabel: root.rowRemoveAccessibleLabel("IP addresses exclude")
-                                                tooltipText: "Remove rule"
-                                                onClicked: {
-                                                    if (root.editor) {
-                                                        root.editor.removeAddressRow(true, modelData.row)
+                                            FilterFlatTextButton {
+                                                objectName: ipAddressesSection.objectNamePrefix + "ExclusionsToggleButton"
+                                                text: "Exclusions"
+                                                padding: 2
+                                                onClicked: ipAddressesSection.exclusionsExpanded = true
+                                            }
+                                        }
+
+                                        AdvancedFlowFilterSemanticGroup {
+                                            objectName: ipAddressesSection.objectNamePrefix + "ExclusionsSection"
+                                            Layout.fillWidth: true
+                                            visible: ipAddressesSection.exclusionsExpanded
+                                            title: "Exclude"
+                                            fillColor: root.excludeRegionColor
+                                            strokeColor: root.excludeRegionBorderColor
+                                            actionVisible: true
+                                            actionText: "Hide"
+                                            actionObjectName: ipAddressesSection.objectNamePrefix + "HideExclusionsButton"
+                                            onActionTriggered: ipAddressesSection.exclusionsExpanded = false
+
+                                            Repeater {
+                                                model: ipAddressesSection.excludeRows
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: excludeAddressRowLayout.implicitHeight + 8
+                                                    color: root.rowSurfaceColor
+                                                    border.color: root.rowBorderColor
+                                                    radius: 5
+
+                                                    RowLayout {
+                                                        id: excludeAddressRowLayout
+                                                        anchors.fill: parent
+                                                        anchors.margins: 4
+                                                        spacing: 8
+
+                                                        ComboBox {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "ExcludeRow" + modelData.row + "ScopeComboBox"
+                                                            Layout.preferredWidth: ipAddressesSection.nonTerminal ? 200 : 170
+                                                            model: ipAddressesSection.scopeOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.scope)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowScope(true, modelData.row, model[currentIndex].value, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        CheckBox {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "ExcludeRow" + modelData.row + "SubnetCheckBox"
+                                                            text: "Subnet"
+                                                            checked: modelData.subnetEnabled
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowSubnetEnabled(true, modelData.row, checked, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.preferredWidth: 52
+                                                            text: "Address"
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+
+                                                        TextField {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "ExcludeRow" + modelData.row + "AddressTextField"
+                                                            Layout.preferredWidth: 220
+                                                            text: modelData.addressText
+                                                            placeholderText: modelData.subnetEnabled ? "2001:db8::" : "2001:db8::1"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowAddressText(true, modelData.row, text, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.preferredWidth: 36
+                                                            opacity: modelData.subnetEnabled ? 1.0 : 0.0
+                                                            enabled: modelData.subnetEnabled
+                                                            text: "Prefix"
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+
+                                                        TextField {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "ExcludeRow" + modelData.row + "PrefixTextField"
+                                                            Layout.preferredWidth: 76
+                                                            opacity: modelData.subnetEnabled ? 1.0 : 0.0
+                                                            enabled: modelData.subnetEnabled
+                                                            text: modelData.prefixText
+                                                            placeholderText: "32"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setAddressRowPrefixText(true, modelData.row, text, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Item {
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        AdvancedFlowFilterRowRemoveButton {
+                                                            objectName: ipAddressesSection.objectNamePrefix + "ExcludeRow" + modelData.row + "RemoveButton"
+                                                            accessibleLabel: root.rowRemoveAccessibleLabel(ipAddressesSection.title + " exclude")
+                                                            tooltipText: "Remove rule"
+                                                            onClicked: {
+                                                                if (root.editor) {
+                                                                    root.editor.removeAddressRow(true, modelData.row, ipAddressesSection.nonTerminal)
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                    }
-                                }
 
-                                FilterTextButton {
-                                    objectName: "advancedFlowFilterIpAddressesAddExcludeButton"
-                                    text: "+ Add address"
-                                    onClicked: {
-                                        if (root.editor) {
-                                            root.editor.addAddressRow(true)
+                                            FilterTextButton {
+                                                objectName: ipAddressesSection.objectNamePrefix + "AddExcludeButton"
+                                                text: "+ Add address"
+                                                onClicked: {
+                                                    if (root.editor) {
+                                                        root.editor.addAddressRow(true, ipAddressesSection.nonTerminal)
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
