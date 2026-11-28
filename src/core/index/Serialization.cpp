@@ -5419,10 +5419,114 @@ bool write_capture_index_v16(
            );
 }
 
-CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
+namespace {
+
+bool validate_v16_flow_metadata(
+    const CaptureIndexV16MetadataTier& metadata,
+    const CaptureIndexV16FastStatisticsTier& fast_tier,
+    CaptureIndexV16MetadataTierReadResult& result,
+    std::unordered_map<std::uint64_t, std::uint64_t>& expected_directory_packet_counts
+) {
+    const auto total_flow_count = fast_tier.capture_statistics_snapshot.total_flow_count;
+    if (metadata.connection_count() != total_flow_count) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "metadata row count does not match the canonical flow count in the fast snapshot";
+        return false;
+    }
+
+    std::vector<bool> seen_ordinals(total_flow_count, false);
+    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> expected_membership {};
+    expected_membership.reserve(metadata.connection_count());
+    expected_directory_packet_counts.reserve(metadata.connection_count() * 2U);
+    const auto validate_rows = [&](const auto& rows) -> bool {
+        for (const auto& row : rows) {
+            if (row.canonical_connection_ordinal >= total_flow_count ||
+                seen_ordinals[row.canonical_connection_ordinal]) {
+                result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+                result.error_detail = "canonical connection ordinals must be unique and dense";
+                return false;
+            }
+            if (!validate_v16_connection_metadata_row(
+                    row, fast_tier.protocol_path_registry, result.error_detail)) {
+                result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+                return false;
+            }
+            std::uint64_t flow_packet_count {0};
+            std::uint64_t flow_original_bytes {0};
+            if (!checked_add_u64(row.flow_a.packet_count,
+                    row.has_flow_b ? row.flow_b.packet_count : 0U, flow_packet_count) ||
+                !checked_add_u64(row.flow_a.original_byte_count,
+                    row.has_flow_b ? row.flow_b.original_byte_count : 0U, flow_original_bytes)) {
+                result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+                result.error_detail = "directional Flow aggregate counters overflow";
+                return false;
+            }
+            seen_ordinals[row.canonical_connection_ordinal] = true;
+            expected_membership[row.key.protocol_path_id].push_back(row.canonical_connection_ordinal);
+            expected_directory_packet_counts.emplace(
+                direction_identity_key(row.canonical_connection_ordinal, Direction::a_to_b),
+                row.flow_a.packet_count);
+            if (row.has_flow_b) {
+                expected_directory_packet_counts.emplace(
+                    direction_identity_key(row.canonical_connection_ordinal, Direction::b_to_a),
+                    row.flow_b.packet_count);
+            }
+        }
+        return true;
+    };
+    if (!validate_rows(metadata.ipv4_connections) || !validate_rows(metadata.ipv6_connections)) {
+        return false;
+    }
+    if (std::any_of(seen_ordinals.begin(), seen_ordinals.end(), [](const bool seen) { return !seen; })) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "canonical connection ordinals must cover the full [0, total_flow_count) range";
+        return false;
+    }
+
+    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> actual_membership {};
+    actual_membership.reserve(metadata.protocol_path_membership.size());
+    for (const auto& row : metadata.protocol_path_membership) {
+        if (row.protocol_path_id == kInvalidProtocolPathId ||
+            fast_tier.protocol_path_registry.find(row.protocol_path_id) == nullptr) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership referenced an unknown protocol path id";
+            return false;
+        }
+        auto& ordinals = actual_membership[row.protocol_path_id];
+        ordinals.insert(ordinals.end(), row.canonical_connection_ordinals.begin(),
+            row.canonical_connection_ordinals.end());
+    }
+    for (auto& [path_id, ordinals] : actual_membership) {
+        static_cast<void>(path_id);
+        if (!std::is_sorted(ordinals.begin(), ordinals.end()) ||
+            std::adjacent_find(ordinals.begin(), ordinals.end()) != ordinals.end()) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership ordinals must be strictly increasing without duplicates";
+            return false;
+        }
+        if (std::any_of(ordinals.begin(), ordinals.end(), [&](const std::uint32_t ordinal) {
+                return ordinal >= total_flow_count;
+            })) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership ordinal is outside the canonical flow ordinal range";
+            return false;
+        }
+    }
+    if (actual_membership != expected_membership) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+        result.error_detail = "protocol path membership rows do not match canonical metadata protocol path ownership";
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+static CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier_impl(
     std::istream& stream,
     CaptureIndexV16MetadataTier& metadata,
-    const CaptureIndexV16ReadControl* const read_control
+    const CaptureIndexV16ReadControl* const read_control,
+    CaptureIndexV16FlowMetadataTier* const flow_only_output
 ) {
     metadata = {};
 
@@ -5546,15 +5650,6 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
             return true;
         };
 
-    std::uint64_t max_packetref_directory_rows {0};
-    if (!checked_multiply_u64(total_flow_count, 2U, max_packetref_directory_rows) ||
-        max_packetref_directory_rows >
-            static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
-        result.error_detail = "fast snapshot total flow count exceeds packetref directory row limits";
-        return result;
-    }
-
     if (!read_chunked_metadata_family(
             CaptureIndexSectionId::ipv4_flow_metadata,
             [=](std::istream& payload_stream,
@@ -5620,6 +5715,28 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
             total_flow_count,
             CaptureIndexV16MetadataTierReadStatus::missing_protocol_path_membership_section,
             CaptureIndexV16MetadataTierReadStatus::malformed_protocol_path_membership_payload)) {
+        metadata = {};
+        return result;
+    }
+
+    std::unordered_map<std::uint64_t, std::uint64_t> expected_directory_packet_counts {};
+    if (!validate_v16_flow_metadata(
+            metadata, result.fast_statistics_tier, result, expected_directory_packet_counts)) {
+        metadata = {};
+        return result;
+    }
+    if (flow_only_output != nullptr) {
+        flow_only_output->ipv4_connections = std::move(metadata.ipv4_connections);
+        flow_only_output->ipv6_connections = std::move(metadata.ipv6_connections);
+        return result;
+    }
+
+    std::uint64_t max_packetref_directory_rows {0};
+    if (!checked_multiply_u64(total_flow_count, 2U, max_packetref_directory_rows) ||
+        max_packetref_directory_rows >
+            static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "fast snapshot total flow count exceeds packetref directory row limits";
         metadata = {};
         return result;
     }
@@ -5916,113 +6033,6 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
         return result;
     }
 
-    if (metadata.connection_count() != total_flow_count) {
-        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
-        result.error_detail = "metadata row count does not match the canonical flow count in the fast snapshot";
-        metadata = {};
-        return result;
-    }
-
-    std::vector<bool> seen_ordinals(total_flow_count, false);
-    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> expected_membership {};
-    std::unordered_map<std::uint64_t, std::uint64_t> expected_directory_packet_counts {};
-    expected_membership.reserve(metadata.connection_count());
-    expected_directory_packet_counts.reserve(metadata.connection_count() * 2U);
-
-    auto validate_metadata_rows =
-        [&](const auto& rows) -> bool {
-            for (const auto& row : rows) {
-                if (row.canonical_connection_ordinal >= total_flow_count ||
-                    seen_ordinals[row.canonical_connection_ordinal]) {
-                    result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
-                    result.error_detail = "canonical connection ordinals must be unique and dense";
-                    return false;
-                }
-
-                if (!validate_v16_connection_metadata_row(
-                        row,
-                        result.fast_statistics_tier.protocol_path_registry,
-                        result.error_detail)) {
-                    result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
-                    return false;
-                }
-
-                seen_ordinals[row.canonical_connection_ordinal] = true;
-                expected_membership[row.key.protocol_path_id].push_back(row.canonical_connection_ordinal);
-                expected_directory_packet_counts.emplace(
-                    direction_identity_key(row.canonical_connection_ordinal, Direction::a_to_b),
-                    row.flow_a.packet_count
-                );
-                if (row.has_flow_b) {
-                    expected_directory_packet_counts.emplace(
-                        direction_identity_key(row.canonical_connection_ordinal, Direction::b_to_a),
-                        row.flow_b.packet_count
-                    );
-                }
-            }
-
-            return true;
-        };
-
-    if (!validate_metadata_rows(metadata.ipv4_connections) ||
-        !validate_metadata_rows(metadata.ipv6_connections)) {
-        metadata = {};
-        return result;
-    }
-
-    if (std::any_of(seen_ordinals.begin(), seen_ordinals.end(), [](const bool seen) { return !seen; })) {
-        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
-        result.error_detail = "canonical connection ordinals must cover the full [0, total_flow_count) range";
-        metadata = {};
-        return result;
-    }
-
-    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> actual_membership {};
-    actual_membership.reserve(metadata.protocol_path_membership.size());
-    for (const auto& row : metadata.protocol_path_membership) {
-        if (row.protocol_path_id == kInvalidProtocolPathId ||
-            result.fast_statistics_tier.protocol_path_registry.find(row.protocol_path_id) == nullptr) {
-            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
-            result.error_detail = "protocol path membership referenced an unknown protocol path id";
-            metadata = {};
-            return result;
-        }
-
-        auto& ordinals = actual_membership[row.protocol_path_id];
-        ordinals.insert(
-            ordinals.end(),
-            row.canonical_connection_ordinals.begin(),
-            row.canonical_connection_ordinals.end()
-        );
-    }
-
-    for (auto& [path_id, ordinals] : actual_membership) {
-        static_cast<void>(path_id);
-        if (!std::is_sorted(ordinals.begin(), ordinals.end()) ||
-            std::adjacent_find(ordinals.begin(), ordinals.end()) != ordinals.end()) {
-            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
-            result.error_detail = "protocol path membership ordinals must be strictly increasing without duplicates";
-            metadata = {};
-            return result;
-        }
-
-        if (std::any_of(ordinals.begin(), ordinals.end(), [&](const std::uint32_t ordinal) {
-                return ordinal >= total_flow_count;
-            })) {
-            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
-            result.error_detail = "protocol path membership ordinal is outside the canonical flow ordinal range";
-            metadata = {};
-            return result;
-        }
-    }
-
-    if (actual_membership != expected_membership) {
-        result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
-        result.error_detail = "protocol path membership rows do not match canonical metadata protocol path ownership";
-        metadata = {};
-        return result;
-    }
-
     std::unordered_map<std::uint64_t, CaptureIndexV16PacketRefDirectoryEntry> directory_by_identity {};
     directory_by_identity.reserve(metadata.packetref_directory.size());
     for (const auto& row : metadata.packetref_directory) {
@@ -6153,6 +6163,24 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     }
 
     return result;
+}
+
+CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
+    std::istream& stream,
+    CaptureIndexV16MetadataTier& metadata,
+    const CaptureIndexV16ReadControl* const read_control
+) {
+    return read_v16_metadata_tier_impl(stream, metadata, read_control, nullptr);
+}
+
+CaptureIndexV16MetadataTierReadResult read_v16_flow_metadata_tier(
+    std::istream& stream,
+    CaptureIndexV16FlowMetadataTier& metadata,
+    const CaptureIndexV16ReadControl* const read_control
+) {
+    metadata = {};
+    CaptureIndexV16MetadataTier full_metadata {};
+    return read_v16_metadata_tier_impl(stream, full_metadata, read_control, &metadata);
 }
 
 CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(

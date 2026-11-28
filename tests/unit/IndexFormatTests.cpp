@@ -3255,6 +3255,52 @@ void run_index_format_tests() {
     }
 
     {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        const auto& detail_plans = plan_result.plan.packetref_detail_sections;
+        PFL_REQUIRE(!detail_plans.empty());
+        const auto& extents = detail_plans.front().extents;
+        const auto reverse = std::find_if(extents.begin(), extents.end(), [](const auto& extent) {
+            return extent.canonical_connection_ordinal == 0U && extent.direction == Direction::b_to_a;
+        });
+        PFL_REQUIRE(reverse != extents.end());
+
+        auto bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto sections = parse_sections(bytes);
+        const auto* detail_section = find_section_occurrence(
+            sections, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+            reverse->detail_section_occurrence_index);
+        PFL_REQUIRE(detail_section != nullptr);
+        const auto first_reverse_index_offset = static_cast<std::size_t>(
+            detail_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize +
+            reverse->payload_offset);
+        write_le64_at(bytes, first_reverse_index_offset, 0U);
+
+        const auto forbidden_ranges = section_payload_ranges(bytes, {
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+        });
+        PFL_REQUIRE(forbidden_ranges.size() == 1U);
+        ForbiddenRangeCountingStreamBuf flow_buffer(bytes, forbidden_ranges);
+        std::istream flow_stream(&flow_buffer);
+        CaptureIndexV16FlowMetadataTier flow_metadata {};
+        const auto flow_result = detail::read_v16_flow_metadata_tier(flow_stream, flow_metadata);
+        PFL_REQUIRE(static_cast<bool>(flow_result));
+        PFL_EXPECT(flow_metadata.ipv4_connections.size() == 1U);
+        PFL_EXPECT(flow_metadata.ipv6_connections.size() == 1U);
+        PFL_EXPECT(flow_buffer.forbidden_bytes_read() == 0U);
+
+        std::istringstream full_stream(
+            std::string(bytes.begin(), bytes.end()), std::ios::binary | std::ios::in);
+        CaptureIndexV16MetadataTier full_metadata {};
+        const auto full_result = detail::read_v16_metadata_tier(full_stream, full_metadata);
+        PFL_EXPECT(full_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::orientation_validation_failed);
+        PFL_EXPECT(full_metadata == CaptureIndexV16MetadataTier {});
+    }
+
+    {
         auto state = make_v16_metadata_capture_state_fixture();
         state.packet_locator.clear();
         const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
@@ -3328,6 +3374,14 @@ void run_index_format_tests() {
             const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
             PFL_EXPECT(
                 read_result.status ==
+                detail::CaptureIndexV16MetadataTierReadStatus::malformed_ipv4_flow_metadata_payload);
+
+            std::istringstream flow_stream(
+                std::string(mutated_bytes.begin(), mutated_bytes.end()),
+                std::ios::binary | std::ios::in);
+            CaptureIndexV16FlowMetadataTier flow_metadata {};
+            const auto flow_result = detail::read_v16_flow_metadata_tier(flow_stream, flow_metadata);
+            PFL_EXPECT(flow_result.status ==
                 detail::CaptureIndexV16MetadataTierReadStatus::malformed_ipv4_flow_metadata_payload);
         }
 

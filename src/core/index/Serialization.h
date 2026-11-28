@@ -741,6 +741,12 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     CaptureIndexV16MetadataTier& metadata,
     const CaptureIndexV16ReadControl* read_control = nullptr
 );
+// Reads only the fast tier and Flow metadata/membership sections; packet-detail statuses are not returned.
+CaptureIndexV16MetadataTierReadResult read_v16_flow_metadata_tier(
+    std::istream& stream,
+    CaptureIndexV16FlowMetadataTier& metadata,
+    const CaptureIndexV16ReadControl* read_control = nullptr
+);
 CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
     std::istream& stream,
     std::span<const CaptureIndexV16PacketRefDetailSectionInfo> detail_sections,

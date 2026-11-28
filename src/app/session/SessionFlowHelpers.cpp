@@ -3973,9 +3973,10 @@ CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
     });
 }
 
-CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+static CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
     const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
-    const CaptureIndexV16MetadataTier& metadata
+    const std::span<const CaptureIndexV16ConnectionMetadataV4> ipv4_connections,
+    const std::span<const CaptureIndexV16ConnectionMetadataV6> ipv6_connections
 ) {
     return build_context_protocol_path_summary(
         fast_tier.protocol_path_registry,
@@ -3993,13 +3994,29 @@ CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
                     row.flow_a.packet_count + (row.has_flow_b ? row.flow_b.packet_count : 0U),
                     row.flow_a.original_byte_count + (row.has_flow_b ? row.flow_b.original_byte_count : 0U));
             };
-            for (const auto& row : metadata.ipv4_connections) {
+            for (const auto& row : ipv4_connections) {
                 visit_row(row);
             }
-            for (const auto& row : metadata.ipv6_connections) {
+            for (const auto& row : ipv6_connections) {
                 visit_row(row);
             }
         });
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16MetadataTier& metadata
+) {
+    return build_protocol_path_summary_with_ip_context(
+        fast_tier, metadata.ipv4_connections, metadata.ipv6_connections);
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16FlowMetadataTier& metadata
+) {
+    return build_protocol_path_summary_with_ip_context(
+        fast_tier, metadata.ipv4_connections, metadata.ipv6_connections);
 }
 
 std::vector<FlowIndex> resolve_protocol_path_summary_flow_indices_with_ip_context(

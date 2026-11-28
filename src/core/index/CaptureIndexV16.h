@@ -195,6 +195,11 @@ struct CaptureIndexV16MetadataTier {
     ) = default;
 };
 
+struct CaptureIndexV16FlowMetadataTier {
+    std::vector<CaptureIndexV16ConnectionMetadataV4> ipv4_connections {};
+    std::vector<CaptureIndexV16ConnectionMetadataV6> ipv6_connections {};
+};
+
 struct CaptureIndexV16PacketRefExtentWritePlan {
     std::uint32_t canonical_connection_ordinal {0};
     Direction direction {Direction::a_to_b};

@@ -1448,8 +1448,8 @@ SummaryCommandExecutionResult execute_fast_v16_index_summary_command(
         }
         if (!context_ignored) {
             std::ifstream stream(options.input_path, std::ios::binary);
-            CaptureIndexV16MetadataTier metadata {};
-            const auto metadata_result = detail::read_v16_metadata_tier(stream, metadata);
+            CaptureIndexV16FlowMetadataTier metadata {};
+            const auto metadata_result = detail::read_v16_flow_metadata_tier(stream, metadata);
             if (!metadata_result) {
                 return {
                     .exit_code = 1,

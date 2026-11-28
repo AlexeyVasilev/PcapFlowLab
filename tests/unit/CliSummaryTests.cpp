@@ -19,6 +19,7 @@
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/SummaryCommand.h"
 #include "core/domain/CaptureImportSettings.h"
+#include "core/index/Serialization.h"
 
 namespace pfl::tests {
 
@@ -1946,6 +1947,63 @@ void expect_statistics_report_ip_context_cli_raw_and_index() {
     const auto combined_html = read_text_file(combined_html_path);
     PFL_EXPECT(contains_text(combined_html, "<h2>Protocol Path Statistics - Identity Tree + IP Context</h2>"));
     PFL_EXPECT(contains_text(combined_html, "IPv4 [192.0.2.60 &lt;-&gt; 198.51.100.60]"));
+
+    const auto corrupt_index_path = std::filesystem::temp_directory_path() / "pfl_cli_context_bad_detail.idx";
+    const auto corrupt_report_path = std::filesystem::temp_directory_path() / "pfl_cli_context_bad_detail.md";
+    std::filesystem::remove(corrupt_report_path);
+    PFL_REQUIRE(std::filesystem::copy_file(index_path, corrupt_index_path,
+        std::filesystem::copy_options::overwrite_existing));
+    {
+        std::ifstream stream(corrupt_index_path, std::ios::binary);
+        CaptureIndexV16MetadataTier metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(stream, metadata)));
+        PFL_REQUIRE(!metadata.packetref_detail_sections.empty());
+        const auto payload_offset = metadata.packetref_detail_sections.front().payload_file_offset;
+        PFL_REQUIRE(payload_offset >= detail::kCaptureIndexStableSectionHeaderEncodedSize);
+        std::fstream file(corrupt_index_path, std::ios::binary | std::ios::in | std::ios::out);
+        PFL_REQUIRE(file.is_open());
+        file.seekp(static_cast<std::streamoff>(payload_offset -
+            detail::kCaptureIndexStableSectionHeaderEncodedSize + 4U));
+        file.put(static_cast<char>(0xFF));
+        file.put(static_cast<char>(0xFF));
+        PFL_REQUIRE(static_cast<bool>(file));
+    }
+    {
+        std::ifstream stream(corrupt_index_path, std::ios::binary);
+        CaptureIndexV16MetadataTier metadata {};
+        const auto full_result = detail::read_v16_metadata_tier(stream, metadata);
+        PFL_EXPECT(full_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema);
+    }
+
+    cli::SummaryCommandOptions corrupt_tree_options {};
+    corrupt_tree_options.input_path = corrupt_index_path;
+    corrupt_tree_options.protocol_path_tree = true;
+    corrupt_tree_options.protocol_path_mode = kIdentityTreeIpContextMode;
+    const auto corrupt_tree = cli::execute_summary_command(corrupt_tree_options);
+    PFL_REQUIRE(corrupt_tree.exit_code == 0);
+    PFL_EXPECT(contains_text(corrupt_tree.stdout_text, "Mode: Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(corrupt_tree.stdout_text, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    const auto corrupt_tree_path = std::filesystem::temp_directory_path() / "pfl_cli_context_bad_detail_tree.txt";
+    std::filesystem::remove(corrupt_tree_path);
+    cli::SummaryCommandOptions corrupt_export_options {};
+    corrupt_export_options.input_path = corrupt_index_path;
+    corrupt_export_options.out_protocol_path_tree_path = corrupt_tree_path;
+    corrupt_export_options.protocol_path_mode = kIdentityTreeIpContextMode;
+    const auto corrupt_export = cli::execute_summary_command(corrupt_export_options);
+    PFL_REQUIRE(corrupt_export.exit_code == 0);
+    PFL_EXPECT(contains_text(read_text_file(corrupt_tree_path),
+        "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
+
+    cli::SummaryCommandOptions corrupt_report_options {};
+    corrupt_report_options.input_path = corrupt_index_path;
+    corrupt_report_options.out_statistics_markdown_path = corrupt_report_path;
+    const auto corrupt_report = cli::execute_summary_command(corrupt_report_options);
+    PFL_REQUIRE(corrupt_report.exit_code == 0);
+    const auto corrupt_markdown = read_text_file(corrupt_report_path);
+    PFL_EXPECT(contains_text(corrupt_markdown, "## Protocol Path Statistics - Identity Tree + IP Context"));
+    PFL_EXPECT(contains_text(corrupt_markdown, "IPv4 [192.0.2.60 <-> 198.51.100.60]"));
 
     const auto ignored_capture_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.pcap";
     const auto ignored_index_path = std::filesystem::temp_directory_path() / "pfl_cli_context_report_ignored.idx";

@@ -224,6 +224,10 @@ CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
     const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
     const CaptureIndexV16MetadataTier& metadata
 );
+CaptureProtocolPathSummary build_protocol_path_summary_with_ip_context(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16FlowMetadataTier& metadata
+);
 std::vector<FlowIndex> resolve_protocol_path_summary_flow_indices_with_ip_context(
     const CaptureProtocolPathSummary& summary,
     std::uint64_t node_id,
